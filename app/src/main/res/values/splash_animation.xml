@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="splash_icon_lead_in">100</integer>
+    <integer name="splash_icon_reveal">500</integer>
+    <integer name="splash_icon_animation_duration">600</integer>
+</resources>
