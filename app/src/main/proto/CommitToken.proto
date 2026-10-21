@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+option java_package = "com.reiux.lumen.proto";
+
+
+message CommitToken {
+  int64 field1 = 1;
+  bytes field2 = 2;
+}

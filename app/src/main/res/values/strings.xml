@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lumen</string>
+    <string name="title_activity_main">Lumen</string>
+    <string name="package_name">com.reiux.lumen</string>
+    <string name="custom_url_scheme">com.reiux.lumen</string>
+</resources>

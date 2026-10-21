@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option java_package = "com.reiux.lumen.proto";
+
+message CommitUploadResponse {
+  message ResultContainer {
+    message MediaKeyContainer {
+      string media_key = 1;
+    }
+    MediaKeyContainer field3 = 3;
+  }
+  ResultContainer field1 = 1;
+}
