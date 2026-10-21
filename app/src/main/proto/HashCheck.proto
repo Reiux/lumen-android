@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option java_package = "com.reiux.lumen.proto";
+
+message HashCheck {
+  message Container {
+    message Sha1Wrapper {
+      bytes sha1Hash = 1;
+    }
+    Sha1Wrapper field1 = 1;
+
+    message DummyWrapper {
+    }
+    DummyWrapper field2 = 2;
+  }
+  Container field1 = 1;
+}

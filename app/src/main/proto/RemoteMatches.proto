@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option java_package = "com.reiux.lumen.proto";
+
+message RemoteMatches {
+  message Root {
+    message SubRoot {
+      message Sha1Node {
+        bytes sha1_hash = 1;
+      }
+      Sha1Node field1 = 1;
+
+      message MatchNode {
+        string media_key = 1;
+      }
+      MatchNode field2 = 2;
+    }
+    SubRoot field2 = 2;
+  }
+  Root field1 = 1;
+}

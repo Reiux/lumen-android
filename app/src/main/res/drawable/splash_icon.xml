@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:name="aperture_group"
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Top-Right Blade -->
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:rotation="0">
+            <path
+                android:fillColor="@color/splash_blade_1"
+                android:pathData="M 54,26 C 65,26 76,36 76,47 C 76,52 70,54 63,54 C 59,44 54,35 54,26 Z" />
+        </group>
+
+        <!-- Bottom-Right Blade -->
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:rotation="90">
+            <path
+                android:fillColor="@color/splash_blade_2"
+                android:pathData="M 54,26 C 65,26 76,36 76,47 C 76,52 70,54 63,54 C 59,44 54,35 54,26 Z" />
+        </group>
+
+        <!-- Bottom-Left Blade -->
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:rotation="180">
+            <path
+                android:fillColor="@color/splash_blade_3"
+                android:pathData="M 54,26 C 65,26 76,36 76,47 C 76,52 70,54 63,54 C 59,44 54,35 54,26 Z" />
+        </group>
+
+        <!-- Top-Left Blade -->
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:rotation="270">
+            <path
+                android:fillColor="@color/splash_blade_4"
+                android:pathData="M 54,26 C 65,26 76,36 76,47 C 76,52 70,54 63,54 C 59,44 54,35 54,26 Z" />
+        </group>
+
+        <!-- Central Radiant Lens Core -->
+        <path
+            android:fillColor="@color/splash_center_core"
+            android:pathData="M 54,54 m -7,0 a 7,7 0 1,0 14,0 a 7,7 0 1,0 -14,0" />
+    </group>
+</vector>
