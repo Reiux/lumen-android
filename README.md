@@ -1,53 +1,52 @@
 # Lumen
 
-**Unlimited, full-quality photo and video backup for your phone.**
+**Unlimited Google Photos backup for your phone in full original quality.**
 
 ![Downloads](https://img.shields.io/github/downloads/Reiux/lumen-android/total?style=for-the-badge)
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
 [![Android](https://img.shields.io/badge/android-14%20%7C%2015%20%7C%2016-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 
 > [!NOTE]
-> **Works on any regular Android phone.** You do not need root, special phone modifications, or custom software to use Lumen.
+> **No root or mods needed.** Works on standard Android phones (Android 8.0+).
 
-Lumen is an open-source Android app that backs up your photos and videos to Google Photos in full original quality without filling up your Google account storage space.
+Lumen is an open-source Android app that backs up your camera roll to Google Photos without using up your Google account storage.
 
-Normally, storing full-resolution photos counts against your Google storage limit. Lumen sends your uploads directly from your phone to Google Photos using request headers that tell Google the files are coming from an eligible Pixel device, so they store for free in full quality.
+### How it works
+Google gives free original-quality uploads to certain Pixel devices. When you back up through Lumen, the app sends your photos directly from your phone to Google Photos with headers that tell Google's upload servers the files are coming from a Pixel. Google stores them at full resolution, and your storage space stays untouched.
 
-Everything travels directly from your phone to Google. There are no middleman servers, no hidden fees, and no ads or tracking.
+Everything runs on your phone. No middleman servers, no paid accounts, no ads, and no tracking.
 
 ---
 
-## Security & Privacy
+## Security & Account Access
 
-**We never see or store your Google password, and we cannot access your Google Account.**
+**Your password is never requested, stored, or seen by Lumen.**
 
-When you sign in, Google gives Lumen an **OAuth token**. Think of an OAuth token like a temporary hotel key card:
-- It **only** gives Lumen permission to drop photos into your Google Photos library.
-- It **cannot** be used to read your emails, view your private Google Drive files, or change your password.
-- All uploads go straight from your phone to Google (`photos.googleapis.com`). No third-party server ever touches your files or account.
+When you sign in, Google gives the app an **OAuth token**.
+- It works like a temporary key card that only lets Lumen put photos into your Google Photos library.
+- It cannot read your emails, open your Google Drive files, or change your account details.
+- Uploads go straight from your phone to Google (`photos.googleapis.com`). No outside server ever touches your data.
 
 ---
 
 ## Features
 
-- **Free Unlimited Backup** — Save all your camera photos and videos in full original resolution without using up your Google storage quota.
-- **Direct & Private** — Files go straight from your device to Google Photos. No external servers, middleman proxies, or analytics.
-- **Modern & Responsive UI** — Built with Jetpack Compose and Material 3, featuring smooth animations, shape-morphing buttons, and customizable color themes.
-- **Works on Phones, Foldables & Tablets** — Designed to automatically adjust into clean side-by-side screens on larger displays and landscape orientation.
-- **Live Upload Progress** — Shows clear status bar chips with real-time transfer speeds and progress while uploading.
-- **Smart Duplicate Prevention** — Checks your photos locally and against Google Photos before uploading so you never waste data uploading the same file twice.
-- **Automatic Background Backup** — Optionally pauses and resumes uploads automatically when connected to Wi-Fi or when your phone is plugged into a charger.
-- **Troubleshooting & Tools** — Built-in diagnostics, background battery guides for Xiaomi, Samsung, and OnePlus phones, and live activity logs.
-- **Hidden Easter Eggs** — Contains 3 hidden Easter Eggs throughout the app for curious users to discover.
+- **Unlimited Original Quality**: Upload photos and videos at full resolution without filling up your Google One storage.
+- **Direct & Private**: Connects straight from your phone to Google Photos with zero analytics or third-party servers.
+- **Material 3 Expressive UI**: Built with Compose, spring animations, shape-changing buttons, and customizable color themes.
+- **Tablet & Foldable Support**: Adapts into a side-by-side split screen on larger displays or landscape mode.
+- **Live Status Bar Updates**: Shows progress chips in your status bar with live speed and file counters while backing up.
+- **Duplicate Prevention**: Checks files locally and in the cloud before uploading so you don't re-upload photos you already have.
+- **Background Sync**: Pauses and resumes automatically when connected to Wi-Fi or a charger.
+- **Self-Diagnostics & Logs**: Built-in test suite, battery setup guides for Xiaomi, Samsung, and OnePlus devices, and live activity logs.
+- **Hidden Features**: A few hidden surprises tucked around the app to find.
 
 ---
 
-## Supported Media Formats
-
-Supports all standard photo and video formats recognized by Google Photos:
+## Supported Formats
 
 <details>
-<summary>Show supported media formats</summary>
+<summary>View supported file types</summary>
 
 | Category | Formats |
 |---|---|
@@ -61,26 +60,20 @@ Supports all standard photo and video formats recognized by Google Photos:
 ## Requirements
 
 - Android 8.0 or newer
-- Active Google Account
-- Wi-Fi or Mobile Data connection
+- Google Account
+- Network connection (Wi-Fi or Mobile Data)
 
 ---
 
 ## Download
 
-Grab the latest version from the [Releases](https://github.com/Reiux/lumen-android/releases) page:
-- `lumen-release.apk` — Standard app for everyday use
-- `lumen-dev-debug.apk` — Developer build with live logging tools
+Get the latest APK on the [Releases](https://github.com/Reiux/lumen-android/releases) page:
+- `lumen-release.apk` (Standard app)
+- `lumen-dev-debug.apk` (Developer build with debug tools)
 
 ---
 
 ## Building from Source
-
-For developers who want to inspect or build the project from scratch:
-
-**Prerequisites:**
-- JDK 21
-- Android SDK 36 (Android 16)
 
 ```bash
 git clone https://github.com/Reiux/lumen-android.git
@@ -92,16 +85,16 @@ env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug assembleRelease
 
 ---
 
-## Credits & Acknowledgments
+## Credits
 
-- **Developer**: Created by **[Reiux](https://github.com/Reiux)**.
-- **Core Protocol Logic**: Special thanks to **[xob0t/gotohp](https://github.com/xob0t/gotohp)** for reverse-engineering the Google Photos upload protocol and authentication engine.
+- **Developer**: [Reiux](https://github.com/Reiux)
+- **Core Protocol**: Thanks to [xob0t/gotohp](https://github.com/xob0t/gotohp) for reverse-engineering the Google Photos upload protocol and authentication logic.
 
 ---
 
 ## Disclaimer
 
-Lumen is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Google LLC. Users use this app and services at their own discretion and risk.
+Lumen is an independent open-source project and is not affiliated with or endorsed by Google LLC. The software is provided "as-is" under the Apache 2.0 license.
 
 ---
 
