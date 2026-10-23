@@ -4,7 +4,7 @@
 
 ![Downloads](https://img.shields.io/github/downloads/Reiux/lumen-android/total?style=for-the-badge)
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
-[![Android](https://img.shields.io/badge/android-14%20%7C%2015%20%7C%2016-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/android-14%20%7C%2015%20%7C%2016%20%7C%2017-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 
 > [!NOTE]
 > **No root or mods needed.** Works on standard Android phones (Android 8.0+).
