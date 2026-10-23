@@ -14,6 +14,7 @@ import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
 import com.reiux.lumen.ui.components.NavDestination
 import com.reiux.lumen.util.LumenLogger
+import com.reiux.lumen.util.MediaFileReader
 import android.provider.MediaStore
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,10 +42,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedDestination = MutableStateFlow(NavDestination.BACKUP)
     val selectedDestination: StateFlow<NavDestination> = _selectedDestination.asStateFlow()
 
-    // --- Mock Mode States ---
+    // --- Mock Mode & Showcase Mode States ---
     private val _isMockMode = MutableStateFlow(false)
     val isMockMode: StateFlow<Boolean> = _isMockMode.asStateFlow()
 
+    private val _isShowcaseMode = MutableStateFlow(false)
+    val isShowcaseMode: StateFlow<Boolean> = _isShowcaseMode.asStateFlow()
+
+    // Showcase Mode Dataset (Pristine static data for screenshots)
+    private val _showcaseAccounts = listOf(
+        GoogleAccount("alex.morgan@gmail.com", "showcase_cred_1", "Alex Morgan"),
+        GoogleAccount("photos.vault@gmail.com", "showcase_cred_2", "Backup Vault")
+    )
+
+    private val _showcaseActiveItem = UploadItem(
+        id = "showcase_1",
+        filePath = "/sdcard/DCIM/Camera/IMG_20261023_184500.jpg",
+        fileName = "IMG_20261023_184500.jpg",
+        fileSize = 12_500_000L,
+        bytesUploaded = 8_500_000L,
+        status = UploadStatus.UPLOADING
+    )
+
+    private val _showcaseQueue = listOf(
+        _showcaseActiveItem,
+        UploadItem(
+            id = "showcase_2",
+            filePath = "/sdcard/DCIM/Camera/VID_20261023_182500.mp4",
+            fileName = "VID_20261023_182500.mp4",
+            fileSize = 48_000_000L,
+            status = UploadStatus.HASHING
+        ),
+        UploadItem(
+            id = "showcase_3",
+            filePath = "/sdcard/DCIM/Camera/IMG_20261023_182000.jpg",
+            fileName = "IMG_20261023_182000.jpg",
+            fileSize = 9_100_000L,
+            status = UploadStatus.CHECKING
+        ),
+        UploadItem(
+            id = "showcase_4",
+            filePath = "/sdcard/Pictures/Screenshots/Screenshot_20261023.png",
+            fileName = "Screenshot_20261023.png",
+            fileSize = 3_400_000L,
+            status = UploadStatus.QUEUED
+        ),
+        UploadItem(
+            id = "showcase_5",
+            filePath = "/sdcard/DCIM/Camera/IMG_20261022_173000.jpg",
+            fileName = "IMG_20261022_173000.jpg",
+            fileSize = 6_400_000L,
+            status = UploadStatus.COMPLETED
+        )
+    )
+
+    // Original Frontend Mock Simulation Dataset & State
     private val _mockAccounts = MutableStateFlow(
         listOf(
             GoogleAccount(
@@ -175,50 +227,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Exposed StateFlows (Dynamic routing: Mock vs Live) ---
+    // --- Exposed StateFlows (Dynamic routing: Showcase vs Mock vs Live) ---
     @OptIn(ExperimentalCoroutinesApi::class)
-    val accounts: StateFlow<List<GoogleAccount>> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockAccounts else accountRepo.accounts
+    val accounts: StateFlow<List<GoogleAccount>> = combine(_isShowcaseMode, _isMockMode, accountRepo.accounts) { showcase, mock, real ->
+        when {
+            showcase -> _showcaseAccounts
+            mock -> _mockAccounts.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val selectedAccount: StateFlow<GoogleAccount?> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockSelectedAccount else accountRepo.selectedAccount
+    val selectedAccount: StateFlow<GoogleAccount?> = combine(_isShowcaseMode, _isMockMode, accountRepo.selectedAccount) { showcase, mock, real ->
+        when {
+            showcase -> _showcaseAccounts.firstOrNull()
+            mock -> _mockSelectedAccount.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val settings: StateFlow<BackupSettings> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockSettings else settingsRepo.settings
+    val settings: StateFlow<BackupSettings> = combine(_isShowcaseMode, _isMockMode, settingsRepo.settings) { showcase, mock, real ->
+        val devUnlocked = real.developerModeUnlocked || _mockSettings.value.developerModeUnlocked
+        when {
+            showcase -> _mockSettings.value.copy(developerModeUnlocked = devUnlocked)
+            mock -> _mockSettings.value.copy(developerModeUnlocked = devUnlocked)
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepo.settings.value)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val isUploading: StateFlow<Boolean> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockIsUploading else uploadRepo.isUploading
+    val isUploading: StateFlow<Boolean> = combine(_isShowcaseMode, _isMockMode, uploadRepo.isUploading) { showcase, mock, real ->
+        when {
+            showcase -> true
+            mock -> _mockIsUploading.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val currentUploadingItem: StateFlow<UploadItem?> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockCurrentUploadingItem else uploadRepo.currentUploadingItem
+    val currentUploadingItem: StateFlow<UploadItem?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.currentUploadingItem) { showcase, mock, real ->
+        when {
+            showcase -> _showcaseActiveItem
+            mock -> _mockCurrentUploadingItem.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val queue: StateFlow<List<UploadItem>> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockQueue else uploadRepo.queue
+    val queue: StateFlow<List<UploadItem>> = combine(_isShowcaseMode, _isMockMode, uploadRepo.queue) { showcase, mock, real ->
+        when {
+            showcase -> _showcaseQueue
+            mock -> _mockQueue.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val completedCount: StateFlow<Int> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockCompletedCount else uploadRepo.completedCount
+    val completedCount: StateFlow<Int> = combine(_isShowcaseMode, _isMockMode, uploadRepo.completedCount) { showcase, mock, real ->
+        when {
+            showcase -> 88
+            mock -> _mockCompletedCount.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val conditionNotice: StateFlow<String?> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockConditionNotice else uploadRepo.conditionNotice
+    val conditionNotice: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.conditionNotice) { showcase, mock, real ->
+        when {
+            showcase -> null
+            mock -> _mockConditionNotice.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val uploadSpeed: StateFlow<String?> = _isMockMode.flatMapLatest { mock ->
-        if (mock) _mockUploadSpeed else uploadRepo.uploadSpeed
+    val uploadSpeed: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.uploadSpeed) { showcase, mock, real ->
+        when {
+            showcase -> "12.4 MB/s"
+            mock -> _mockUploadSpeed.value
+            else -> real
+        }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _isAddingAccount = MutableStateFlow(false)
@@ -240,12 +329,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedDestination.value = dest
     }
 
+    fun setShowcaseMode(enabled: Boolean) {
+        LumenLogger.i("ShowcaseMode", "Screenshot Showcase mode set to: $enabled")
+        if (enabled) {
+            _isMockMode.value = false
+            mockSimJob?.cancel()
+            mockSimJob = null
+            _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = true)
+        }
+        _isShowcaseMode.value = enabled
+    }
+
+    fun toggleShowcaseMode() {
+        setShowcaseMode(!_isShowcaseMode.value)
+    }
+
     // --- Mock Mode Controls ---
     fun setMockMode(enabled: Boolean) {
         LumenLogger.i("MockMode", "Mock mode set to: $enabled")
         if (enabled) {
-            val devMode = settingsRepo.settings.value.developerModeUnlocked
-            _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = devMode)
+            _isShowcaseMode.value = false
+            _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = true)
         }
         _isMockMode.value = enabled
         if (enabled) {
@@ -358,205 +462,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- Backup Operations ---
     fun startBackup() {
         if (_isMockMode.value) {
-            LumenLogger.i("BackupUI", "startBackup triggered (Mock Mode)")
-            viewModelScope.launch {
-                _isScanningFolders.value = true
-                delay(1200)
-                _isScanningFolders.value = false
-                _mockIsUploading.value = true
-                startMockSimulation()
-            }
+            _mockIsUploading.value = true
+            startMockSimulation()
             return
         }
-        val account = selectedAccount.value ?: run {
-            LumenLogger.w("BackupUI", "startBackup ignored: No account selected")
+        val account = selectedAccount.value
+        if (account == null) {
+            LumenLogger.w("BackupUI", "Cannot start backup: No account selected")
             return
         }
-        LumenLogger.i("BackupUI", "startBackup triggered for account: ${account.email}")
+        val enabledFolders = settings.value.folders.filter { it.enabled }.map { File(it.path) }
+        LumenLogger.i("BackupUI") { "User initiated backup with ${enabledFolders.size} active folders" }
+
         viewModelScope.launch {
             _isScanningFolders.value = true
-            delay(1200)
-            val supportedExts = setOf(
-                "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
-                "mp4", "mov", "mkv", "avi", "3gp", "webm"
-            )
-            val extStorage = try {
-                android.os.Environment.getExternalStorageDirectory().absolutePath
-            } catch (_: Exception) {
-                "/storage/emulated/0"
-            }
-            val filesToUpload = withContext(Dispatchers.IO) {
-                val found = mutableListOf<File>()
-                for (folder in settings.value.folders) {
-                    if (!folder.enabled) continue
-                    val resolvedPath = if (folder.path.startsWith("/sdcard")) {
-                        folder.path.replaceFirst("/sdcard", extStorage)
-                    } else folder.path
-                    val dir = File(resolvedPath)
-                    if (dir.exists() && dir.isDirectory) {
-                        try {
-                            dir.walkTopDown().maxDepth(3).forEach { file ->
-                                if (file.isFile && file.extension.lowercase() in supportedExts) {
-                                    found.add(file)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            LumenLogger.w("BackupUI", "walkTopDown error on $resolvedPath: ${e.message}")
-                        }
-                    }
-                }
-
-                // Query MediaStore to reliably discover files across Scoped Storage boundaries
-                val enabledPaths = settings.value.folders.filter { it.enabled }.map { it.path }
-                if (enabledPaths.isNotEmpty()) {
-                    val mediaStoreFiles = queryMediaStoreFilesForFolders(getApplication(), enabledPaths, supportedExts)
-                    found.addAll(mediaStoreFiles)
-                }
-
-                // Deduplicate by path
-                val seenPaths = mutableSetOf<String>()
-                val uniqueFiles = mutableListOf<File>()
-                for (f in found) {
-                    val path = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
-                    if (seenPaths.add(path)) {
-                        uniqueFiles.add(f)
-                    }
-                }
-                uniqueFiles
-            }
-
-            LumenLogger.i("BackupUI", "Scanned enabled folders: found ${filesToUpload.size} media files")
-
-            if (filesToUpload.isNotEmpty()) {
-                val isStorageSaver = settings.value.storageSaverQuality
-                val useQuota = settings.value.useQuota
-                uploadRepo.enqueueFiles(filesToUpload, account, isStorageSaver, useQuota)
-            } else {
-                withContext(Dispatchers.Main) {
-                    val hasPerm = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        androidx.core.content.ContextCompat.checkSelfPermission(
-                            getApplication(),
-                            android.Manifest.permission.READ_MEDIA_IMAGES
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    } else {
-                        androidx.core.content.ContextCompat.checkSelfPermission(
-                            getApplication(),
-                            android.Manifest.permission.READ_EXTERNAL_STORAGE
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    }
-                    if (!hasPerm) {
-                        LumenLogger.w("BackupUI", "Sync folders aborted: Storage/Media permission not granted")
-                        android.widget.Toast.makeText(
-                            getApplication(),
-                            "Photos and videos permission is required to sync folders",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            }
-            _isScanningFolders.value = false
-        }
-    }
-
-    private fun queryMediaStoreFilesForFolders(
-        context: Context,
-        enabledFolderPaths: List<String>,
-        supportedExts: Set<String>
-    ): List<File> {
-        val results = mutableListOf<File>()
-        val extStorage = try {
-            android.os.Environment.getExternalStorageDirectory().absolutePath
-        } catch (_: Exception) {
-            "/storage/emulated/0"
-        }
-        val allNormalizedEnabledPaths = enabledFolderPaths.flatMap { folderPath ->
-            val canonical = try { File(folderPath).canonicalPath } catch (_: Exception) { folderPath }
-            listOf(folderPath, canonical, folderPath.replaceFirst("/sdcard", extStorage))
-        }.toSet()
-
-        val projection = arrayOf(MediaStore.MediaColumns.DATA)
-        val queryUris = listOf(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        )
-
-        for (uri in queryUris) {
             try {
-                context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                    while (cursor.moveToNext()) {
-                        if (dataCol >= 0) {
-                            val path = cursor.getString(dataCol)
-                            if (!path.isNullOrEmpty() && allNormalizedEnabledPaths.any { path.startsWith(it) }) {
-                                val file = File(path)
-                                if (file.extension.lowercase() in supportedExts) {
-                                    results.add(file)
-                                }
-                            }
+                withContext(Dispatchers.IO) {
+                    val mediaFiles = mutableListOf<File>()
+                    for (folder in enabledFolders) {
+                        if (folder.exists() && folder.isDirectory) {
+                            val found = MediaFileReader.scanMediaFiles(folder)
+                            mediaFiles.addAll(found)
                         }
                     }
+                    LumenLogger.i("BackupUI") { "Scanned ${mediaFiles.size} media files from active folders" }
+                    if (mediaFiles.isNotEmpty()) {
+                        uploadRepo.enqueueFiles(mediaFiles, account, settings.value.storageSaverQuality, settings.value.useQuota)
+                    }
                 }
-            } catch (_: Exception) {}
+            } finally {
+                _isScanningFolders.value = false
+            }
         }
-        return results
     }
 
     fun uploadSelectedUris(uris: List<Uri>, context: Context) {
-        if (_isMockMode.value) {
-            LumenLogger.i("PickerUI") { "User picked ${uris.size} items (Mock Mode)" }
-            addMockUploadItems()
+        val account = selectedAccount.value
+        if (account == null) {
+            LumenLogger.w("BackupUI", "Cannot upload selected URIs: No account selected")
             return
         }
-        val account = selectedAccount.value ?: run {
-            LumenLogger.w("PickerUI") { "uploadSelectedUris ignored: No account selected" }
-            return
-        }
-        LumenLogger.i("PickerUI") { "User selected ${uris.size} media file URIs to upload" }
+        LumenLogger.i("BackupUI", "User picked ${uris.size} URIs via System Photo Picker")
+
         viewModelScope.launch {
-            _isScanningFolders.value = true
-            delay(1200)
-            val copiedFiles = withContext(Dispatchers.IO) {
-                val cacheDir = File(context.cacheDir, "manual_uploads").apply { mkdirs() }
+            withContext(Dispatchers.IO) {
                 val files = mutableListOf<File>()
                 for (uri in uris) {
-                    try {
-                        val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}.jpg"
-                        val destFile = File(cacheDir, fileName)
-                        val mimeType = context.contentResolver.getType(uri) ?: "unknown"
-                        val isPersisted = try {
-                            context.contentResolver.persistedUriPermissions.any { it.uri == uri }
-                        } catch (_: Exception) { false }
-
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            FileOutputStream(destFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        if (destFile.exists() && destFile.length() > 0) {
-                            files.add(destFile)
-                            LumenLogger.d("PickerUI") {
-                                "Picked file result: name='$fileName' size=${destFile.length()}B mime='$mimeType' uriPermissionPersisted=$isPersisted"
-                            }
-                        }
-                    } catch (e: Exception) {
-                        LumenLogger.e("PickerUI", tr = e) { "Error copying URI $uri: ${e.message}" }
+                    val originalName = getFileNameFromUri(context, uri) ?: "picker_${System.currentTimeMillis()}.jpg"
+                    val file = MediaFileReader.stageUriFile(context, uri, originalName)
+                    if (file != null) {
+                        files.add(file)
                     }
                 }
-                files
+                if (files.isNotEmpty()) {
+                    uploadRepo.enqueueFiles(files, account, settings.value.storageSaverQuality, settings.value.useQuota)
+                }
             }
-
-            if (copiedFiles.isNotEmpty()) {
-                LumenLogger.i("PickerUI") { "Enqueuing ${copiedFiles.size} picked files for upload to ${LumenLogger.redact(account.email)}" }
-                val isStorageSaver = settings.value.storageSaverQuality
-                val useQuota = settings.value.useQuota
-                uploadRepo.enqueueFiles(copiedFiles, account, isStorageSaver, useQuota)
-            }
-            _isScanningFolders.value = false
         }
     }
 
     fun runLoggingSelfTest() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             LumenLogger.i("Diagnostics") { "=== RUNNING LOGGING SELF-TEST ===" }
 
             // 1. Fake Full Upload (Success) with op#upl_test001
@@ -816,6 +782,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDeveloperMode(unlocked: Boolean) {
         LumenLogger.i("SettingsUI", "Developer mode updated to: $unlocked")
+        if (!unlocked) {
+            _isShowcaseMode.value = false
+            _isMockMode.value = false
+            mockSimJob?.cancel()
+            mockSimJob = null
+        }
         _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = unlocked)
         settingsRepo.updateDeveloperMode(unlocked)
     }

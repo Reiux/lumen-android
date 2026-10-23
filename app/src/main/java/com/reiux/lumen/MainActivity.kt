@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
                 val completedCount by viewModel.completedCount.collectAsState()
                 val conditionNotice by viewModel.conditionNotice.collectAsState()
                 val isMockMode by viewModel.isMockMode.collectAsState()
+                val isShowcaseMode by viewModel.isShowcaseMode.collectAsState()
                 val isAddingAccount by viewModel.isAddingAccount.collectAsState()
                 val addAccountError by viewModel.addAccountError.collectAsState()
                 val uploadSpeed by viewModel.uploadSpeed.collectAsState()
@@ -191,7 +192,9 @@ class MainActivity : ComponentActivity() {
                         NavDestination.SETTINGS -> SettingsScreen(
                             settings = settings,
                             isMockMode = isMockMode,
+                            isShowcaseMode = isShowcaseMode,
                             onToggleMockMode = { viewModel.toggleMockMode() },
+                            onToggleShowcaseMode = { viewModel.toggleShowcaseMode() },
                             onUpdateAutoBackup = { viewModel.updateAutoBackup(it) },
                             onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
                             onUpdateChargingOnly = { viewModel.updateChargingOnly(it) },
