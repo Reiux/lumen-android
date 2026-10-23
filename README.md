@@ -6,8 +6,13 @@
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
 [![Android](https://img.shields.io/badge/android-14%20%7C%2015%20%7C%2016%20%7C%2017-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 
+<p align="center">
+  <img src=".github/assets/banner.png" alt="Lumen Android Banner">
+</p>
+
 > [!NOTE]
-> **No root or mods needed.** Works on standard Android phones (Android 8.0+).
+> **No root or mods needed.** Works on standard Android phones (Android 8.0+).  
+> *Looking for the desktop version? Check out **[Lumen for Desktop](https://github.com/Reiux/lumen)**.*
 
 Lumen is an open-source Android app that backs up your camera roll to Google Photos without using up your Google account storage.
 
