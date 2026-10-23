@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -229,84 +232,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Exposed StateFlows (Dynamic routing: Showcase vs Mock vs Live) ---
     @OptIn(ExperimentalCoroutinesApi::class)
-    val accounts: StateFlow<List<GoogleAccount>> = combine(_isShowcaseMode, _isMockMode, accountRepo.accounts) { showcase, mock, real ->
+    val accounts: StateFlow<List<GoogleAccount>> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> _showcaseAccounts
-            mock -> _mockAccounts.value
-            else -> real
+            showcase -> flowOf(_showcaseAccounts)
+            mock -> _mockAccounts
+            else -> accountRepo.accounts
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val selectedAccount: StateFlow<GoogleAccount?> = combine(_isShowcaseMode, _isMockMode, accountRepo.selectedAccount) { showcase, mock, real ->
+    val selectedAccount: StateFlow<GoogleAccount?> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> _showcaseAccounts.firstOrNull()
-            mock -> _mockSelectedAccount.value
-            else -> real
+            showcase -> flowOf(_showcaseAccounts.firstOrNull())
+            mock -> _mockSelectedAccount
+            else -> accountRepo.selectedAccount
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val settings: StateFlow<BackupSettings> = combine(_isShowcaseMode, _isMockMode, settingsRepo.settings) { showcase, mock, real ->
-        val devUnlocked = real.developerModeUnlocked || _mockSettings.value.developerModeUnlocked
+    val settings: StateFlow<BackupSettings> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> _mockSettings.value.copy(developerModeUnlocked = devUnlocked)
-            mock -> _mockSettings.value.copy(developerModeUnlocked = devUnlocked)
-            else -> real
+            showcase -> _mockSettings.map { it.copy(developerModeUnlocked = true) }
+            mock -> _mockSettings.map { it.copy(developerModeUnlocked = true) }
+            else -> settingsRepo.settings
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepo.settings.value)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val isUploading: StateFlow<Boolean> = combine(_isShowcaseMode, _isMockMode, uploadRepo.isUploading) { showcase, mock, real ->
+    val isUploading: StateFlow<Boolean> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> true
-            mock -> _mockIsUploading.value
-            else -> real
+            showcase -> flowOf(true)
+            mock -> _mockIsUploading
+            else -> uploadRepo.isUploading
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val currentUploadingItem: StateFlow<UploadItem?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.currentUploadingItem) { showcase, mock, real ->
+    val currentUploadingItem: StateFlow<UploadItem?> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> _showcaseActiveItem
-            mock -> _mockCurrentUploadingItem.value
-            else -> real
+            showcase -> flowOf(_showcaseActiveItem)
+            mock -> _mockCurrentUploadingItem
+            else -> uploadRepo.currentUploadingItem
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val queue: StateFlow<List<UploadItem>> = combine(_isShowcaseMode, _isMockMode, uploadRepo.queue) { showcase, mock, real ->
+    val queue: StateFlow<List<UploadItem>> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> _showcaseQueue
-            mock -> _mockQueue.value
-            else -> real
+            showcase -> flowOf(_showcaseQueue)
+            mock -> _mockQueue
+            else -> uploadRepo.queue
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val completedCount: StateFlow<Int> = combine(_isShowcaseMode, _isMockMode, uploadRepo.completedCount) { showcase, mock, real ->
+    val completedCount: StateFlow<Int> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> 88
-            mock -> _mockCompletedCount.value
-            else -> real
+            showcase -> flowOf(88)
+            mock -> _mockCompletedCount
+            else -> uploadRepo.completedCount
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val conditionNotice: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.conditionNotice) { showcase, mock, real ->
+    val conditionNotice: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> null
-            mock -> _mockConditionNotice.value
-            else -> real
+            showcase -> flowOf(null)
+            mock -> _mockConditionNotice
+            else -> uploadRepo.conditionNotice
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val uploadSpeed: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode, uploadRepo.uploadSpeed) { showcase, mock, real ->
+    val uploadSpeed: StateFlow<String?> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
-            showcase -> "12.4 MB/s"
-            mock -> _mockUploadSpeed.value
-            else -> real
+            showcase -> flowOf("12.4 MB/s")
+            mock -> _mockUploadSpeed
+            else -> uploadRepo.uploadSpeed
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -402,6 +404,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startMockSimulation() {
         mockSimJob?.cancel()
         _mockIsUploading.value = true
+        _mockCompletedCount.value = 0
         mockSimJob = viewModelScope.launch {
             while (_isMockMode.value && _mockIsUploading.value) {
                 var active = _mockQueue.value.firstOrNull { it.status == UploadStatus.UPLOADING }
@@ -462,8 +465,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- Backup Operations ---
     fun startBackup() {
         if (_isMockMode.value) {
+            if (_mockIsUploading.value) return
             _mockIsUploading.value = true
             startMockSimulation()
+            return
+        }
+        if (_isScanningFolders.value || uploadRepo.isUploading.value) {
+            LumenLogger.d("BackupUI", "Backup or scan already in progress, ignoring start request")
             return
         }
         val account = selectedAccount.value
