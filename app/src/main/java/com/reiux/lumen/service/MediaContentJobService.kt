@@ -51,15 +51,6 @@ class MediaContentJobService : JobService() {
                 .setTriggerContentUpdateDelay(1500)
                 .setTriggerContentMaxDelay(4000)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Persist across reboots if permission is available
-                try {
-                    builder.setPersisted(true)
-                } catch (e: Exception) {
-                    Log.w(TAG, "setPersisted failed: ${e.message}")
-                }
-            }
-
             try {
                 scheduler.schedule(builder.build())
                 Log.d(TAG, "JobScheduler registered for MediaStore triggers")

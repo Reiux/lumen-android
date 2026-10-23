@@ -120,39 +120,41 @@ class UploadRepository(
     }
 
     fun enqueueFiles(files: List<File>, account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
-        val activePaths = _queue.value
-            .filter {
-                it.status == UploadStatus.QUEUED ||
-                it.status == UploadStatus.HASHING ||
-                it.status == UploadStatus.CHECKING ||
-                it.status == UploadStatus.UPLOADING ||
-                it.status == UploadStatus.COMMITTING
-            }
-            .map { it.filePath }
-            .toSet()
-
-        val filesToEnqueue = files.filter { it.absolutePath !in activePaths }
-        if (filesToEnqueue.isNotEmpty()) {
-            val pathsToEnqueue = filesToEnqueue.map { it.absolutePath }.toSet()
-            // Clear any stale completed, skipped, or failed items for these exact paths so they get re-evaluated fresh
-            val remainingQueue = _queue.value.filter { it.filePath !in pathsToEnqueue }
-            val newItems = filesToEnqueue.map { file ->
-                val id = UUID.randomUUID().toString()
-                val opId = "upl_${id.take(8)}"
-                LumenLogger.d("UploadEngine", opId = opId) {
-                    "File enqueued: path=${file.absolutePath} name=${file.name} size=${file.length()}bytes"
+        synchronized(_queue) {
+            val activePaths = _queue.value
+                .filter {
+                    it.status == UploadStatus.QUEUED ||
+                    it.status == UploadStatus.HASHING ||
+                    it.status == UploadStatus.CHECKING ||
+                    it.status == UploadStatus.UPLOADING ||
+                    it.status == UploadStatus.COMMITTING
                 }
-                UploadItem(
-                    id = id,
-                    filePath = file.absolutePath,
-                    fileName = file.name,
-                    fileSize = file.length(),
-                    status = UploadStatus.QUEUED
-                )
-            }
-            _queue.value = remainingQueue + newItems
-            LumenLogger.i("UploadEngine") {
-                "Enqueued ${newItems.size} files for upload. Total queue size: ${_queue.value.size}"
+                .map { it.filePath }
+                .toSet()
+
+            val filesToEnqueue = files.filter { it.absolutePath !in activePaths }
+            if (filesToEnqueue.isNotEmpty()) {
+                val pathsToEnqueue = filesToEnqueue.map { it.absolutePath }.toSet()
+                // Clear any stale completed, skipped, or failed items for these exact paths so they get re-evaluated fresh
+                val remainingQueue = _queue.value.filter { it.filePath !in pathsToEnqueue }
+                val newItems = filesToEnqueue.map { file ->
+                    val id = UUID.randomUUID().toString()
+                    val opId = "upl_${id.take(8)}"
+                    LumenLogger.d("UploadEngine", opId = opId) {
+                        "File enqueued: path=${file.absolutePath} name=${file.name} size=${file.length()}bytes"
+                    }
+                    UploadItem(
+                        id = id,
+                        filePath = file.absolutePath,
+                        fileName = file.name,
+                        fileSize = file.length(),
+                        status = UploadStatus.QUEUED
+                    )
+                }
+                _queue.value = remainingQueue + newItems
+                LumenLogger.i("UploadEngine") {
+                    "Enqueued ${newItems.size} files for upload. Total queue size: ${_queue.value.size}"
+                }
             }
         }
         startQueue(account, storageSaver, useQuota)
@@ -161,6 +163,8 @@ class UploadRepository(
     fun startQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
         if (_isUploading.value) return
 
+        _completedCount.value = 0
+        
         LumenLogger.i("UploadEngine") {
             "Starting upload queue for ${LumenLogger.redact(account.email)} (StorageSaver: $storageSaver, UseQuota: $useQuota)"
         }
@@ -395,7 +399,6 @@ class UploadRepository(
                     "Local cache HIT mediaKey=$cachedMediaKey reason=already_backed_up totalDurationMs=$totalMs. Skipping upload."
                 }
                 updateItemCompleted(item.id, cachedMediaKey, isSkipped = true)
-                _completedCount.value += 1
                 return
             }
             LumenLogger.d("UploadEngine", opId = opId) { "Local cache MISS" }
@@ -429,7 +432,6 @@ class UploadRepository(
                     mtime = file.lastModified() / 1000
                 )
                 updateItemCompleted(item.id, existingMediaKey, isSkipped = true)
-                _completedCount.value += 1
                 return
             }
             LumenLogger.d("UploadEngine", opId = opId) { "Remote dedup MISS checkDurationMs=$remoteCheckDuration" }
