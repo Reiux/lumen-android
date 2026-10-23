@@ -77,7 +77,9 @@ fun SettingsScreen(
     onUpdateColorPreset: (String) -> Unit,
     onUpdateNotifications: (Boolean) -> Unit,
     isMockMode: Boolean = false,
+    isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
+    onToggleShowcaseMode: () -> Unit = {},
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDevDiagnostics: () -> Unit = {},
@@ -194,18 +196,28 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            SettingSwitchRow(
-                                title = "Frontend Mock Mode",
-                                subtitle = "Test UI screens with sample accounts and files",
-                                checked = isMockMode,
-                                onCheckedChange = { onToggleMockMode() }
-                            )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingSwitchRow(
+                            title = "Screenshot Showcase Mode",
+                            subtitle = "Freeze UI into static sample data for banner screenshots",
+                            checked = isShowcaseMode,
+                            onCheckedChange = { onToggleShowcaseMode() }
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        SettingSwitchRow(
+                            title = "Frontend Mock Simulation",
+                            subtitle = "Run active background upload loops and timers",
+                            checked = isMockMode,
+                            onCheckedChange = { onToggleMockMode() }
+                        )
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -855,8 +867,18 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             SettingSwitchRow(
-                                title = "Frontend Mock Mode",
-                                subtitle = "Test UI screens with sample accounts and files",
+                                title = "Screenshot Showcase Mode",
+                                subtitle = "Freeze UI into static sample data for banner screenshots",
+                                checked = isShowcaseMode,
+                                onCheckedChange = { onToggleShowcaseMode() }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingSwitchRow(
+                                title = "Frontend Mock Simulation",
+                                subtitle = "Run active background upload loops and timers",
                                 checked = isMockMode,
                                 onCheckedChange = { onToggleMockMode() }
                             )

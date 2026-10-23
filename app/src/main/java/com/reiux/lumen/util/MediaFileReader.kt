@@ -197,4 +197,40 @@ object MediaFileReader {
             } catch (_: Exception) {}
         }
     }
+
+    private val supportedExts = setOf(
+        "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
+        "mp4", "mov", "mkv", "avi", "3gp", "webm"
+    )
+
+    fun scanMediaFiles(dir: File): List<File> {
+        val result = mutableListOf<File>()
+        if (!dir.exists() || !dir.isDirectory) return result
+        val files = dir.listFiles() ?: return result
+        for (f in files) {
+            if (f.isFile && f.length() > 0) {
+                val ext = f.extension.lowercase()
+                if (ext in supportedExts) {
+                    result.add(f)
+                }
+            }
+        }
+        return result
+    }
+
+    fun stageUriFile(context: Context, uri: Uri, fileName: String): File? {
+        return try {
+            val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
+            val tempFile = File(stagingDir, fileName)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (tempFile.exists() && tempFile.length() > 0) tempFile else null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stage URI $uri: ${e.message}")
+            null
+        }
+    }
 }
