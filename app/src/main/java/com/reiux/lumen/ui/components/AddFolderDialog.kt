@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -28,10 +30,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -71,7 +74,13 @@ fun AddFolderDialog(
             "Screenshots" to "/sdcard/Pictures/Screenshots",
             "Pictures" to "/sdcard/Pictures",
             "Downloads" to "/sdcard/Download",
-            "WhatsApp" to "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images"
+            "WhatsApp" to "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
+            "Messenger" to "/sdcard/Pictures/Messenger",
+            "Instagram" to "/sdcard/Pictures/Instagram",
+            "Telegram" to "/sdcard/Telegram",
+            "Facebook" to "/sdcard/DCIM/Facebook",
+            "TikTok" to "/sdcard/Movies/TikTok",
+            "Reddit" to "/sdcard/Pictures/Reddit"
         )
     }
 
@@ -149,10 +158,10 @@ fun AddFolderDialog(
                                     path = presetPath
                                     displayName = name
                                 }
-                                FilterChip(
-                                    selected = path == presetPath,
-                                    onClick = haptic,
-                                    label = { Text(name) }
+                                ExpressivePresetChip(
+                                    name = name,
+                                    isSelected = path == presetPath,
+                                    onClick = haptic
                                 )
                             }
                         }
@@ -257,10 +266,10 @@ fun AddFolderDialog(
                                 path = presetPath
                                 displayName = name
                             }
-                            FilterChip(
-                                selected = path == presetPath,
-                                onClick = haptic,
-                                label = { Text(name) }
+                            ExpressivePresetChip(
+                                name = name,
+                                isSelected = path == presetPath,
+                                onClick = haptic
                             )
                         }
                     }
@@ -365,6 +374,51 @@ fun AddFolderDialog(
         shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     )
+}
+
+@Composable
+private fun ExpressivePresetChip(
+    name: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(12.dp)
+
+    Surface(
+        modifier = Modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                shape = shape
+            ),
+        shape = shape,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = if (isSelected) 2.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
 }
 
 /**

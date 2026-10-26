@@ -11,23 +11,25 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.reiux.lumen.util.Season
 
 @Composable
 fun LumenTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     colorPreset: String = "Dynamic",
+    activeSeason: Season = Season.NONE,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    val allPresets = BasePresets + PrismPreset + MatrixPreset
-    val preset = allPresets.find { it.name.equals(colorPreset, ignoreCase = true) } ?: BasePresets[0]
+    val allPresets = BasePresets + PrismPreset + MatrixPreset + SpookyPreset + XmasPreset + NewYrPreset
+    val selectedPreset = allPresets.find { it.name.equals(colorPreset, ignoreCase = true) } ?: BasePresets[0]
 
     val colorScheme = when {
         colorPreset.equals("Dynamic", ignoreCase = true) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> preset.darkScheme
-        else -> preset.lightScheme
+        darkTheme -> selectedPreset.darkScheme
+        else -> selectedPreset.lightScheme
     }
 
     val view = LocalView.current

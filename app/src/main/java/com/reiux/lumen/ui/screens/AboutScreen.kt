@@ -43,6 +43,8 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.UploadFile
+import com.reiux.lumen.util.EasterEggsManager
+import com.reiux.lumen.util.Season
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,12 +56,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -82,11 +87,14 @@ import com.reiux.lumen.util.LumenLogger
 fun AboutScreen(
     saveLogsEnabled: Boolean,
     onToggleSaveLogs: (Boolean) -> Unit,
+    selectedAccount: com.reiux.lumen.data.model.GoogleAccount? = null,
+    settings: com.reiux.lumen.data.model.BackupSettings? = null,
     developerModeUnlocked: Boolean = false,
     unlockedPrismTheme: Boolean = false,
     onToggleDeveloperMode: (Boolean) -> Unit = {},
     onUnlockPrismTheme: () -> Unit = {},
     onUnlockMatrixTheme: () -> Unit = {},
+    forcedSeason: String = "NONE",
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -96,6 +104,10 @@ fun AboutScreen(
     var showMatrixDialog by remember { mutableStateOf(false) }
     var showPrismBurst by remember { mutableStateOf(false) }
     var lastLogOpenTime by remember { mutableLongStateOf(0L) }
+
+    val activeSeason = remember(forcedSeason) {
+        EasterEggsManager.resolveActiveSeason(forcedSeason)
+    }
 
     val (appVersionName, appVersionCode) = remember(context) {
         try {
@@ -114,7 +126,11 @@ fun AboutScreen(
     }
 
     if (showLogViewer) {
-        LogViewerDialog(onDismiss = { showLogViewer = false })
+        LogViewerDialog(
+            selectedAccount = selectedAccount,
+            settings = settings,
+            onDismiss = { showLogViewer = false }
+        )
     }
 
     if (showLicensesDialog) {
@@ -218,9 +234,8 @@ fun AboutScreen(
                             appVersionCode = appVersionCode,
                             developerModeUnlocked = developerModeUnlocked,
                             unlockedPrismTheme = unlockedPrismTheme,
-                            onUnlockPrismTheme = onUnlockPrismTheme,
+                            activeSeason = activeSeason,
                             onUnlockMatrixTheme = onUnlockMatrixTheme,
-                            onShowPrismBurst = { showPrismBurst = true },
                             onShowMatrixDialog = { showMatrixDialog = true }
                         )
 
@@ -401,9 +416,8 @@ fun AboutScreen(
                         appVersionCode = appVersionCode,
                         developerModeUnlocked = developerModeUnlocked,
                         unlockedPrismTheme = unlockedPrismTheme,
-                        onUnlockPrismTheme = onUnlockPrismTheme,
+                        activeSeason = activeSeason,
                         onUnlockMatrixTheme = onUnlockMatrixTheme,
-                        onShowPrismBurst = { showPrismBurst = true },
                         onShowMatrixDialog = { showMatrixDialog = true }
                     )
 
@@ -567,23 +581,34 @@ private fun BrandHeaderSection(
     appVersionCode: Long,
     developerModeUnlocked: Boolean,
     unlockedPrismTheme: Boolean,
-    onUnlockPrismTheme: () -> Unit,
+    activeSeason: Season = Season.NONE,
     onUnlockMatrixTheme: () -> Unit,
-    onShowPrismBurst: () -> Unit,
     onShowMatrixDialog: () -> Unit
 ) {
-    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    var logoTapCount by remember { mutableIntStateOf(0) }
-    var logoLastTapTime by remember { mutableLongStateOf(0L) }
     var versionTapCount by remember { mutableIntStateOf(0) }
     var versionLastTapTime by remember { mutableLongStateOf(0L) }
 
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (developerModeUnlocked) 360f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+    var manualRotation by remember { mutableFloatStateOf(0f) }
+    var isHolding by remember { mutableStateOf(false) }
+
+    val animatedRotation by animateFloatAsState(
+        targetValue = manualRotation + (if (developerModeUnlocked) 360f else 0f),
+        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "logoDevRotation"
     )
+
+    LaunchedEffect(isHolding) {
+        if (isHolding) {
+            val startTime = System.currentTimeMillis()
+            while (isHolding) {
+                delay(16L) // ~60fps
+                val elapsed = System.currentTimeMillis() - startTime
+                val speedFactor = (1f + (elapsed / 500f) * (elapsed / 500f)).coerceAtMost(10f)
+                manualRotation += (6f * speedFactor) // Clockwise rotation!
+            }
+        }
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -594,24 +619,13 @@ private fun BrandHeaderSection(
                 .size(100.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = {
-                            val now = System.currentTimeMillis()
-                            if (now - logoLastTapTime > 1200L) {
-                                logoTapCount = 1
-                            } else {
-                                logoTapCount++
-                            }
-                            logoLastTapTime = now
+                        onPress = {
+                            isHolding = true
+                            tryAwaitRelease()
+                            isHolding = false
                         },
-                        onLongPress = {
-                            val now = System.currentTimeMillis()
-                            if (logoTapCount >= 3 && (now - logoLastTapTime) < 2000L) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onUnlockPrismTheme()
-                                onShowPrismBurst()
-                                Toast.makeText(context, "Unlocked 'Master of Light' & Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
-                                logoTapCount = 0
-                            }
+                        onTap = {
+                            manualRotation += 45f // Clockwise step!
                         }
                     )
                 },
@@ -619,7 +633,8 @@ private fun BrandHeaderSection(
         ) {
             DynamicLumenIcon(
                 size = 100.dp,
-                rotationAngle = rotationAngle
+                rotationAngle = animatedRotation,
+                activeSeason = activeSeason
             )
         }
 

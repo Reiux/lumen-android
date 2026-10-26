@@ -163,17 +163,9 @@ class UploadForegroundService : Service() {
         val totalInQueue = actualQueue.size
         val completedInQueue = actualQueue.count { it.status == UploadStatus.COMPLETED }
 
-        // Calculate overall batch bytes progress for actual uploads
-        val totalBatchBytes = actualQueue.sumOf { it.fileSize }
-        val doneBatchBytes = actualQueue.sumOf { item ->
-            when (item.status) {
-                UploadStatus.COMPLETED -> item.fileSize
-                UploadStatus.UPLOADING, UploadStatus.COMMITTING -> item.bytesUploaded
-                else -> 0L
-            }
-        }
-        val batchPercent = if (totalBatchBytes > 0) {
-            ((doneBatchBytes.toDouble() / totalBatchBytes.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+        // Calculate batch progress strictly based on completed file count vs total file count
+        val batchPercentByCount = if (totalInQueue > 0) {
+            ((completedInQueue.toDouble() / totalInQueue.toDouble()) * 100.0).toInt().coerceIn(0, 100)
         } else 0
 
         // Calculate current file progress
@@ -199,10 +191,10 @@ class UploadForegroundService : Service() {
             text = "Paused: $conditionNotice"
             subText = if (totalInQueue > 0) "$fileIndex/$totalInQueue" else null
             chipText = if (totalInQueue > 0) "$fileIndex/$totalInQueue • Paused" else "Paused"
-            progressCurrent = batchPercent
+            progressCurrent = batchPercentByCount
         } else {
             title = "Uploading $currentName"
-            chipText = if (totalInQueue > 1) "$fileIndex/$totalInQueue • $batchPercent%" else "$filePercent%"
+            chipText = if (totalInQueue > 1) "$fileIndex/$totalInQueue • $batchPercentByCount%" else "$filePercent%"
 
             val countPrefix = if (totalInQueue > 1) "$fileIndex/$totalInQueue" else ""
             val speedSuffix = if (!uploadSpeed.isNullOrEmpty()) " • $uploadSpeed" else ""
@@ -217,29 +209,29 @@ class UploadForegroundService : Service() {
             when (currentItem?.status) {
                 UploadStatus.HASHING -> {
                     text = "Checking file..."
-                    progressCurrent = batchPercent
+                    progressCurrent = batchPercentByCount
                     progressIndeterminate = true
                 }
                 UploadStatus.CHECKING -> {
                     text = "Checking Google Photos for duplicates..."
-                    progressCurrent = batchPercent
+                    progressCurrent = batchPercentByCount
                     progressIndeterminate = true
                 }
                 UploadStatus.UPLOADING -> {
                     val uploadedStr = formatBytes(currentFileUploaded)
                     val totalStr = formatBytes(currentFileSize)
                     text = "$uploadedStr of $totalStr • $filePercent%"
-                    progressCurrent = if (totalInQueue > 1) batchPercent else filePercent
+                    progressCurrent = if (totalInQueue > 1) batchPercentByCount else filePercent
                     progressIndeterminate = false
                 }
                 UploadStatus.COMMITTING -> {
                     text = "Saving to Google Photos..."
-                    progressCurrent = batchPercent
+                    progressCurrent = batchPercentByCount
                     progressIndeterminate = false
                 }
                 else -> {
                     text = "Preparing..."
-                    progressCurrent = batchPercent
+                    progressCurrent = batchPercentByCount
                     progressIndeterminate = totalInQueue == 0
                 }
             }
@@ -267,7 +259,13 @@ class UploadForegroundService : Service() {
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openIntent)
 
-        applyLiveUpdatePromotions(builder, chipText)
+        val livePillText = if (conditionNotice != null) {
+            "Paused"
+        } else {
+            if (isUploading && batchPercentByCount >= 0) "$batchPercentByCount%" else "Backup"
+        }
+
+        applyLiveUpdatePromotions(builder, livePillText)
 
         if (!subText.isNullOrEmpty()) {
             builder.setSubText(subText)

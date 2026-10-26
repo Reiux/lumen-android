@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Let's map splash_background to the built-in system neutral color dynamically here -->
+        <item name="android:windowSplashScreenBackground">@android:color/system_neutral1_900</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/avd_splash_icon</item>
+        <item name="windowSplashScreenAnimationDuration">@integer/splash_icon_animation_duration</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lumen</item>
+    </style>
+</resources>

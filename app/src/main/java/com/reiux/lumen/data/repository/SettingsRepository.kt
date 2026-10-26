@@ -32,6 +32,10 @@ class SettingsRepository(context: Context) {
         val hasCompletedOnboarding = prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false)
         val unlockedPrism = prefs.getBoolean(KEY_UNLOCKED_PRISM, false)
         val unlockedMatrix = prefs.getBoolean(KEY_UNLOCKED_MATRIX, false)
+        val unlockedSpooky = prefs.getBoolean(KEY_UNLOCKED_SPOOKY, false)
+        val unlockedXmas = prefs.getBoolean(KEY_UNLOCKED_XMAS, false)
+        val unlockedNewYr = prefs.getBoolean(KEY_UNLOCKED_NEWYR, false)
+        val forcedSeason = prefs.getString(KEY_FORCED_SEASON, "NONE") ?: "NONE"
 
         val foldersJson = prefs.getString(KEY_FOLDERS, null)
         val folders = if (!foldersJson.isNullOrEmpty()) {
@@ -75,6 +79,10 @@ class SettingsRepository(context: Context) {
             hasCompletedOnboarding = hasCompletedOnboarding,
             unlockedPrismTheme = unlockedPrism,
             unlockedMatrixTheme = unlockedMatrix,
+            unlockedSpookyTheme = unlockedSpooky,
+            unlockedXmasTheme = unlockedXmas,
+            unlockedNewYrTheme = unlockedNewYr,
+            forcedSeason = forcedSeason,
             folders = folders
         )
     }
@@ -190,6 +198,96 @@ class SettingsRepository(context: Context) {
         _settings.value = _settings.value.copy(hasCompletedOnboarding = completed)
     }
 
+    fun updateForcedSeason(season: String) {
+        val old = _settings.value.forcedSeason
+        val editor = prefs.edit().putString(KEY_FORCED_SEASON, season)
+
+        var unlockedSpooky = _settings.value.unlockedSpookyTheme
+        var unlockedXmas = _settings.value.unlockedXmasTheme
+        var unlockedNewYr = _settings.value.unlockedNewYrTheme
+
+        when (season.uppercase()) {
+            "HALLOWEEN" -> {
+                editor.putBoolean(KEY_UNLOCKED_SPOOKY, true)
+                unlockedSpooky = true
+            }
+            "CHRISTMAS" -> {
+                editor.putBoolean(KEY_UNLOCKED_XMAS, true)
+                unlockedXmas = true
+            }
+            "NEW_YEAR" -> {
+                editor.putBoolean(KEY_UNLOCKED_NEWYR, true)
+                unlockedNewYr = true
+            }
+        }
+        editor.apply()
+
+        LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_FORCED_SEASON value=$season" }
+        LumenLogger.i("Settings") { "forcedSeason changed: old='$old' -> new='$season'" }
+        _settings.value = _settings.value.copy(
+            forcedSeason = season,
+            unlockedSpookyTheme = unlockedSpooky,
+            unlockedXmasTheme = unlockedXmas,
+            unlockedNewYrTheme = unlockedNewYr
+        )
+    }
+
+    fun getLastSeenDarkState(): Boolean? {
+        return if (prefs.contains(KEY_LAST_SEEN_DARK)) {
+            prefs.getBoolean(KEY_LAST_SEEN_DARK, false)
+        } else null
+    }
+
+    fun setLastSeenDarkState(isDark: Boolean) {
+        prefs.edit().putBoolean(KEY_LAST_SEEN_DARK, isDark).apply()
+    }
+
+    fun getBoldChoiceDate(): String? {
+        return prefs.getString(KEY_BOLD_CHOICE_DATE, null)
+    }
+
+    fun setBoldChoiceDate(dateStr: String) {
+        prefs.edit().putString(KEY_BOLD_CHOICE_DATE, dateStr).apply()
+    }
+
+    fun recordRealUploads(count: Int): Pair<Long, Int?> {
+        val oldTotal = prefs.getLong(KEY_LIFETIME_UPLOADS, 0L)
+        val newTotal = oldTotal + count
+        prefs.edit().putLong(KEY_LIFETIME_UPLOADS, newTotal).apply()
+
+        var milestoneTriggered: Int? = null
+        if (oldTotal < 100 && newTotal >= 100 && !prefs.getBoolean(KEY_MILESTONE_100_SHOWN, false)) {
+            milestoneTriggered = 100
+            prefs.edit().putBoolean(KEY_MILESTONE_100_SHOWN, true).apply()
+        } else if (oldTotal < 1000 && newTotal >= 1000 && !prefs.getBoolean(KEY_MILESTONE_1000_SHOWN, false)) {
+            milestoneTriggered = 1000
+            prefs.edit().putBoolean(KEY_MILESTONE_1000_SHOWN, true).apply()
+        } else if (oldTotal < 10000 && newTotal >= 10000 && !prefs.getBoolean(KEY_MILESTONE_10000_SHOWN, false)) {
+            milestoneTriggered = 10000
+            prefs.edit().putBoolean(KEY_MILESTONE_10000_SHOWN, true).apply()
+        }
+
+        return Pair(newTotal, milestoneTriggered)
+    }
+
+    fun getLateNightDate(): String? {
+        return prefs.getString(KEY_LATE_NIGHT_DATE, null)
+    }
+
+    fun setLateNightDate(dateStr: String) {
+        prefs.edit().putString(KEY_LATE_NIGHT_DATE, dateStr).apply()
+    }
+
+    fun isSeasonalGreetingShown(seasonName: String, year: Int): Boolean {
+        val key = "seasonal_greeting_${seasonName}_$year"
+        return prefs.getBoolean(key, false)
+    }
+
+    fun setSeasonalGreetingShown(seasonName: String, year: Int) {
+        val key = "seasonal_greeting_${seasonName}_$year"
+        prefs.edit().putBoolean(key, true).apply()
+    }
+
     fun toggleFolder(path: String, enabled: Boolean) {
         val old = _settings.value.folders.firstOrNull { it.path == path }?.enabled
         val updated = _settings.value.folders.map {
@@ -243,6 +341,21 @@ class SettingsRepository(context: Context) {
         updateColorPreset("Matrix")
     }
 
+    fun unlockSeasonalTheme(seasonName: String) {
+        val key = when (seasonName.uppercase()) {
+            "HALLOWEEN" -> KEY_UNLOCKED_SPOOKY
+            "CHRISTMAS" -> KEY_UNLOCKED_XMAS
+            "NEW_YEAR" -> KEY_UNLOCKED_NEWYR
+            else -> return
+        }
+        prefs.edit().putBoolean(key, true).apply()
+        _settings.value = _settings.value.copy(
+            unlockedSpookyTheme = prefs.getBoolean(KEY_UNLOCKED_SPOOKY, false),
+            unlockedXmasTheme = prefs.getBoolean(KEY_UNLOCKED_XMAS, false),
+            unlockedNewYrTheme = prefs.getBoolean(KEY_UNLOCKED_NEWYR, false)
+        )
+    }
+
     companion object {
         private const val KEY_AUTO_BACKUP = "auto_backup"
         private const val KEY_WIFI_ONLY = "wifi_only"
@@ -257,6 +370,17 @@ class SettingsRepository(context: Context) {
         private const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         private const val KEY_UNLOCKED_PRISM = "unlocked_prism_theme"
         private const val KEY_UNLOCKED_MATRIX = "unlocked_matrix_theme"
+        private const val KEY_UNLOCKED_SPOOKY = "unlocked_spooky_theme"
+        private const val KEY_UNLOCKED_XMAS = "unlocked_xmas_theme"
+        private const val KEY_UNLOCKED_NEWYR = "unlocked_newyr_theme"
+        private const val KEY_FORCED_SEASON = "forced_season"
+        private const val KEY_LAST_SEEN_DARK = "last_seen_dark"
+        private const val KEY_BOLD_CHOICE_DATE = "last_bold_choice_date"
+        private const val KEY_LIFETIME_UPLOADS = "lifetime_uploads"
+        private const val KEY_MILESTONE_100_SHOWN = "milestone_100_shown"
+        private const val KEY_MILESTONE_1000_SHOWN = "milestone_1000_shown"
+        private const val KEY_MILESTONE_10000_SHOWN = "milestone_10000_shown"
+        private const val KEY_LATE_NIGHT_DATE = "last_late_night_date"
         private const val KEY_FOLDERS = "folders"
     }
 }

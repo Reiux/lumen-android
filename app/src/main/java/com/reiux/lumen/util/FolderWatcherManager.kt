@@ -152,6 +152,12 @@ class FolderWatcherManager(
             "Raw FileObserver event: file='${file.name}' event=$eventName dir='${dir.path}' ext='$ext'"
         }
 
+        // Ignore hidden files and Android trash folders/files
+        if (file.name.startsWith(".") || file.name.startsWith(".trash") || dir.name.startsWith(".")) {
+            LumenLogger.v(TAG) { "Ignored hidden/trash file: '${file.name}'" }
+            return
+        }
+
         if (ext in supportedExts) {
             LumenLogger.d(TAG) { "Candidate media accepted: '${file.name}', scheduling debounce..." }
             queueFileForBackup(file)

@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.reiux.lumen.util.Season
 
 @Composable
 fun DynamicLumenIcon(
@@ -18,24 +19,43 @@ fun DynamicLumenIcon(
     size: Dp = 38.dp,
     rotationAngle: Float = 0f,
     scaleFactor: Float = 1f,
-    blade1Color: Color = MaterialTheme.colorScheme.primary,
-    blade2Color: Color = MaterialTheme.colorScheme.secondary,
-    blade3Color: Color = MaterialTheme.colorScheme.tertiary,
-    blade4Color: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-    centerColor: Color = MaterialTheme.colorScheme.onSurface
+    activeSeason: Season = Season.NONE,
+    blade1Color: Color? = null,
+    blade2Color: Color? = null,
+    blade3Color: Color? = null,
+    blade4Color: Color? = null,
+    centerColor: Color? = null
 ) {
+    val (seasonB1, seasonB2, seasonB3, seasonB4, seasonCenter) = when (activeSeason) {
+        Season.HALLOWEEN -> Quintuple(
+            Color(0xFFFF6D00), Color(0xFF7B1FA2), Color(0xFF00E676), Color(0xFFFF3D00), Color(0xFFFFD600)
+        )
+        Season.CHRISTMAS -> Quintuple(
+            Color(0xFFD50000), Color(0xFF00C853), Color(0xFFFFD600), Color(0xFF80D8FF), Color(0xFFFFD600)
+        )
+        Season.NEW_YEAR -> Quintuple(
+            Color(0xFFFFD600), Color(0xFF00F2FE), Color(0xFFFF007F), Color(0xFFE0E0E0), Color(0xFFE0E0E0)
+        )
+        Season.NONE -> Quintuple(null, null, null, null, null)
+    }
+
+    val b1 = blade1Color ?: seasonB1 ?: MaterialTheme.colorScheme.primary
+    val b2 = blade2Color ?: seasonB2 ?: MaterialTheme.colorScheme.secondary
+    val b3 = blade3Color ?: seasonB3 ?: MaterialTheme.colorScheme.tertiary
+    val b4 = blade4Color ?: seasonB4 ?: MaterialTheme.colorScheme.primaryContainer
+    val center = centerColor ?: seasonCenter ?: MaterialTheme.colorScheme.onSurface
+
     Canvas(modifier = modifier.size(size)) {
         val w = this.size.width
-        val h = this.size.height
         val scale = w / 108f
 
-        scale(scaleFactor, pivot = center) {
-            rotate(rotationAngle, pivot = center) {
-                val bladeColors = listOf(blade1Color, blade2Color, blade3Color, blade4Color)
+        scale(scaleFactor, pivot = this.center) {
+            rotate(rotationAngle, pivot = this.center) {
+                val bladeColors = listOf(b1, b2, b3, b4)
 
                 // Draw 4 rotating aperture blades
                 bladeColors.forEachIndexed { index, color ->
-                    rotate(degrees = index * 90f, pivot = center) {
+                    rotate(degrees = index * 90f, pivot = this.center) {
                         val path = Path().apply {
                             moveTo(54f * scale, 26f * scale)
                             cubicTo(
@@ -61,11 +81,19 @@ fun DynamicLumenIcon(
 
                 // Central Radiant Lens Core
                 drawCircle(
-                    color = centerColor,
+                    color = center,
                     radius = 7f * scale,
-                    center = center
+                    center = this.center
                 )
             }
         }
     }
 }
+
+private data class Quintuple<T1, T2, T3, T4, T5>(
+    val first: T1,
+    val second: T2,
+    val third: T3,
+    val fourth: T4,
+    val fifth: T5
+)

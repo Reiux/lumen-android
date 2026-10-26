@@ -1,10 +1,21 @@
 package com.reiux.lumen.ui.screens
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -84,6 +96,7 @@ fun SettingsScreen(
     onReplayOnboarding: () -> Unit = {},
     onOpenDevDiagnostics: () -> Unit = {},
     onToggleDeveloperMode: (Boolean) -> Unit = {},
+    onUpdateForcedSeason: (String) -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -111,8 +124,26 @@ fun SettingsScreen(
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
-    val presetsToDisplay = remember(settings.unlockedPrismTheme, settings.unlockedMatrixTheme) {
-        getAvailablePresets(settings.unlockedPrismTheme, settings.unlockedMatrixTheme)
+    val activeSeason = remember(settings.forcedSeason) {
+        com.reiux.lumen.util.EasterEggsManager.resolveActiveSeason(settings.forcedSeason)
+    }
+
+    val presetsToDisplay = remember(
+        settings.unlockedPrismTheme,
+        settings.unlockedMatrixTheme,
+        settings.unlockedSpookyTheme,
+        settings.unlockedXmasTheme,
+        settings.unlockedNewYrTheme,
+        activeSeason
+    ) {
+        getAvailablePresets(
+            settings.unlockedPrismTheme,
+            settings.unlockedMatrixTheme,
+            settings.unlockedSpookyTheme,
+            settings.unlockedXmasTheme,
+            settings.unlockedNewYrTheme,
+            activeSeason
+        )
     }
 
     if (isWideLayout) {
@@ -202,46 +233,95 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = "Screenshot Showcase Mode",
-                            subtitle = "Freeze UI into static sample data for banner screenshots",
-                            checked = isShowcaseMode,
-                            onCheckedChange = { onToggleShowcaseMode() }
+                        if (com.reiux.lumen.BuildConfig.DEBUG) {
+                            SettingSwitchRow(
+                                title = "Screenshot Showcase Mode",
+                                subtitle = "Freeze UI into static sample data for banner screenshots",
+                                checked = isShowcaseMode,
+                                onCheckedChange = { onToggleShowcaseMode() }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingSwitchRow(
+                                title = "Frontend Mock Simulation",
+                                subtitle = "Run active background upload loops and timers",
+                                checked = isMockMode,
+                                onCheckedChange = { onToggleMockMode() }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                        SettingActionRow(
+                            title = "Run Diagnostics",
+                            subtitle = "Check endpoints, hashing speed, and permissions",
+                            actionLabel = "Run",
+                            onClick = onOpenDevDiagnostics
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
-                        SettingSwitchRow(
-                            title = "Frontend Mock Simulation",
-                            subtitle = "Run active background upload loops and timers",
-                            checked = isMockMode,
-                            onCheckedChange = { onToggleMockMode() }
+                        SettingActionRow(
+                            title = "Replay Setup Walkthrough",
+                            subtitle = "Go through the initial setup screens again",
+                            actionLabel = "Replay",
+                            onClick = onReplayOnboarding
                         )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        if (com.reiux.lumen.BuildConfig.DEBUG) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                Text(
+                                    text = "Force Season Theme",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Override date-based seasonal tints",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
+                                    seasons.forEach { s ->
+                                        val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
+                                        ExpressiveTonalButton(
+                                            onClick = { onUpdateForcedSeason(s) },
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = when (s) {
+                                                    "NONE" -> "None"
+                                                    "HALLOWEEN" -> "Halloween"
+                                                    "CHRISTMAS" -> "Christmas"
+                                                    "NEW_YEAR" -> "New Year"
+                                                    else -> s
+                                                },
+                                                fontSize = 10.sp,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
-                            SettingActionRow(
-                                title = "Run Diagnostics",
-                                subtitle = "Check endpoints, hashing speed, and permissions",
-                                actionLabel = "Run",
-                                onClick = onOpenDevDiagnostics
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingActionRow(
-                                title = "Replay Setup Walkthrough",
-                                subtitle = "Go through the initial setup screens again",
-                                actionLabel = "Replay",
-                                onClick = onReplayOnboarding
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
+                        }
                             SettingActionRow(
                                 title = "Turn Off Developer Mode",
                                 subtitle = "Hide developer tools across the app",
@@ -866,26 +946,28 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            SettingSwitchRow(
-                                title = "Screenshot Showcase Mode",
-                                subtitle = "Freeze UI into static sample data for banner screenshots",
-                                checked = isShowcaseMode,
-                                onCheckedChange = { onToggleShowcaseMode() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingSwitchRow(
-                                title = "Frontend Mock Simulation",
-                                subtitle = "Run active background upload loops and timers",
-                                checked = isMockMode,
-                                onCheckedChange = { onToggleMockMode() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
+                            if (com.reiux.lumen.BuildConfig.DEBUG) {
+                                SettingSwitchRow(
+                                    title = "Screenshot Showcase Mode",
+                                    subtitle = "Freeze UI into static sample data for banner screenshots",
+                                    checked = isShowcaseMode,
+                                    onCheckedChange = { onToggleShowcaseMode() }
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                                SettingSwitchRow(
+                                    title = "Frontend Mock Simulation",
+                                    subtitle = "Run active background upload loops and timers",
+                                    checked = isMockMode,
+                                    onCheckedChange = { onToggleMockMode() }
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
                             SettingActionRow(
                                 title = "Run Diagnostics",
                                 subtitle = "Check endpoints, hashing speed, and permissions",
@@ -906,6 +988,53 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
+                            if (com.reiux.lumen.BuildConfig.DEBUG) {
+                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                    Text(
+                                        text = "Force Season Theme",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Override date-based seasonal tints",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
+                                        seasons.forEach { s ->
+                                            val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
+                                            ExpressiveTonalButton(
+                                                onClick = { onUpdateForcedSeason(s) },
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (s) {
+                                                        "NONE" -> "None"
+                                                        "HALLOWEEN" -> "Halloween"
+                                                        "CHRISTMAS" -> "Christmas"
+                                                        "NEW_YEAR" -> "New Year"
+                                                        else -> s
+                                                    },
+                                                    fontSize = 10.sp,
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
                             SettingActionRow(
                                 title = "Turn Off Developer Mode",
                                 subtitle = "Hide developer tools across the app",
@@ -995,41 +1124,46 @@ fun PalettePresetCard(
     onClick: () -> Unit
 ) {
     val hapticClick = rememberHapticClick(onClick = onClick)
+    val shape = RoundedCornerShape(16.dp)
 
     Surface(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(shape)
             .clickable(onClick = hapticClick)
             .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp)
+                width = 1.5.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                shape = shape
             ),
-        shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerLow
+        shape = shape,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = if (isSelected) 2.dp else 0.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Three mini swatches
-            Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
+            // Three overlapping mini swatches
+            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
                 Box(
                     modifier = Modifier
                         .size(18.dp)
                         .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                         .background(preset.previewPrimary)
                 )
                 Box(
                     modifier = Modifier
                         .size(18.dp)
                         .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                         .background(preset.previewSecondary)
                 )
                 Box(
                     modifier = Modifier
                         .size(18.dp)
                         .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                         .background(preset.previewTertiary)
                 )
             }
@@ -1040,18 +1174,8 @@ fun PalettePresetCard(
                 text = preset.name,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
             )
-
-            if (isSelected) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
         }
     }
 }
