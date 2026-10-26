@@ -12,9 +12,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -95,8 +99,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings by viewModel.settings.collectAsState()
+            val isMockMode by viewModel.isMockMode.collectAsState()
 
-            LumenTheme(colorPreset = settings.colorPreset) {
+            val activeSeason = remember(settings.forcedSeason) {
+                com.reiux.lumen.util.EasterEggsManager.resolveActiveSeason(settings.forcedSeason)
+            }
+
+            LumenTheme(
+                colorPreset = settings.colorPreset,
+                activeSeason = activeSeason
+            ) {
                 var showDevDiagnostics by remember { mutableStateOf(false) }
                 var showAboutScreen by remember { mutableStateOf(false) }
 
@@ -132,6 +144,22 @@ class MainActivity : ComponentActivity() {
                     else -> "Expanded"
                 }
 
+                val isDarkNow = isSystemInDarkTheme()
+                val lastDarkState = remember { viewModel.getLastSeenDarkState() }
+                var playLightsOffAnim by remember { mutableStateOf(false) }
+
+                LaunchedEffect(isDarkNow) {
+                    if (lastDarkState != null) {
+                        if (!lastDarkState && isDarkNow) {
+                            playLightsOffAnim = true
+                            com.reiux.lumen.util.LumenLogger.i("EasterEgg") { "Triggered 'Lights off' radial dim overlay" }
+                        } else if (lastDarkState && !isDarkNow) {
+                            com.reiux.lumen.util.EasterEggsManager.triggerLightsOffBoldChoice(this@MainActivity)
+                        }
+                    }
+                    viewModel.setLastSeenDarkState(isDarkNow)
+                }
+
                 LaunchedEffect(useNavRail, widthDp, heightDp) {
                     com.reiux.lumen.util.LumenLogger.i("Layout") {
                         "Window layout: width=${widthDp}dp height=${heightDp}dp class=$widthClass mode=${if (useNavRail) "NavRail (Landscape/Wide)" else "NavBar (Portrait/Compact)"}"
@@ -154,6 +182,7 @@ class MainActivity : ComponentActivity() {
                             isScanningFolders = isScanningFolders,
                             developerModeUnlocked = settings.developerModeUnlocked,
                             isMockMode = isMockMode,
+                            forcedSeason = settings.forcedSeason,
                             onToggleMockCondition = { viewModel.toggleMockConditionNotice() },
                             onAddMockFiles = { viewModel.addMockUploadItems() },
                             onExitMockMode = { viewModel.setMockMode(false) },
@@ -163,6 +192,7 @@ class MainActivity : ComponentActivity() {
                             onClearCompleted = { viewModel.clearCompleted() },
                             onNavigateToAccounts = { viewModel.selectDestination(NavDestination.ACCOUNTS) },
                             onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
+                            onTriggerLightsOff = { playLightsOffAnim = true },
                             modifier = screenModifier
                         )
 
@@ -204,6 +234,7 @@ class MainActivity : ComponentActivity() {
                             onUpdateColorPreset = { viewModel.updateColorPreset(it) },
                             onUpdateNotifications = { viewModel.updateNotifications(it) },
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
+                            onUpdateForcedSeason = { viewModel.updateForcedSeason(it) },
                             onReplayOnboarding = { viewModel.setHasCompletedOnboarding(false) },
                             onOpenDevDiagnostics = {
                                 com.reiux.lumen.util.LumenLogger.i("UI", "Opening Dev Diagnostics")
@@ -306,6 +337,28 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    if (playLightsOffAnim) {
+                        val animProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+                        LaunchedEffect(Unit) {
+                            animProgress.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(500, easing = LinearEasing)
+                            )
+                            playLightsOffAnim = false
+                        }
+                        val alpha = if (animProgress.value < 0.5f) {
+                            animProgress.value * 1.6f
+                        } else {
+                            (1f - animProgress.value) * 1.6f
+                        }.coerceIn(0f, 0.8f)
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = alpha))
+                        )
+                    }
+
                     AnimatedVisibility(
                         visible = showAboutScreen,
                         enter = slideInHorizontally(
@@ -320,11 +373,14 @@ class MainActivity : ComponentActivity() {
                         AboutScreen(
                             saveLogsEnabled = settings.saveLogsEnabled,
                             onToggleSaveLogs = { viewModel.updateSaveLogs(it, this@MainActivity) },
+                            selectedAccount = selectedAccount,
+                            settings = settings,
                             developerModeUnlocked = settings.developerModeUnlocked,
                             unlockedPrismTheme = settings.unlockedPrismTheme,
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
                             onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
                             onUnlockMatrixTheme = { viewModel.unlockMatrixTheme() },
+                            forcedSeason = settings.forcedSeason,
                             onNavigateBack = {
                                 com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting About screen" }
                                 showAboutScreen = false
@@ -339,6 +395,9 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { showDevDiagnostics = false }
                         )
                     }
+
+                    com.reiux.lumen.ui.components.FallingSnowOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.CHRISTMAS)
+                    com.reiux.lumen.ui.components.FlyingBatOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.HALLOWEEN)
                 }
             }
         }

@@ -405,23 +405,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mockSimJob?.cancel()
         _mockIsUploading.value = true
         _mockCompletedCount.value = 0
+
+        val mockRunId = "Mock Run 1"
+        LumenLogger.logRunStart(
+            runId = mockRunId,
+            queuedCount = _mockQueue.value.size,
+            wifiOnly = _mockSettings.value.wifiOnly,
+            chargingOnly = _mockSettings.value.chargingOnly,
+            storageSaver = _mockSettings.value.storageSaverQuality,
+            useQuota = _mockSettings.value.useQuota,
+            threads = _mockSettings.value.uploadThreads,
+            isMock = true
+        )
+
         mockSimJob = viewModelScope.launch {
+            var uploadedCount = 0
+            var skippedCount = 0
+            var failedCount = 0
+            var totalBytesProcessed = 0L
+            val simStart = System.currentTimeMillis()
+
             while (_isMockMode.value && _mockIsUploading.value) {
                 var active = _mockQueue.value.firstOrNull { it.status == UploadStatus.UPLOADING }
                 if (active == null) {
                     val next = _mockQueue.value.firstOrNull { it.status == UploadStatus.QUEUED } ?: break
 
-                    // 1. Simulate Hashing phase
+                    // Simulate Hashing
                     _mockQueue.value = _mockQueue.value.map { if (it.id == next.id) it.copy(status = UploadStatus.HASHING) else it }
                     _mockCurrentUploadingItem.value = next.copy(status = UploadStatus.HASHING)
-                    delay(500)
+                    delay(400)
 
-                    // 2. Simulate Checking library phase
+                    // Simulate Checking
                     _mockQueue.value = _mockQueue.value.map { if (it.id == next.id) it.copy(status = UploadStatus.CHECKING) else it }
                     _mockCurrentUploadingItem.value = next.copy(status = UploadStatus.CHECKING)
-                    delay(500)
+                    delay(400)
 
-                    // 3. Begin active upload
                     active = next.copy(status = UploadStatus.UPLOADING, bytesUploaded = 0L)
                     _mockQueue.value = _mockQueue.value.map { if (it.id == next.id) active else it }
                     _mockCurrentUploadingItem.value = active
@@ -429,36 +447,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val totalBytes = active.fileSize
                 var currentBytes = active.bytesUploaded
-                val step = (totalBytes / 25).coerceAtLeast(120 * 1024)
-                _mockUploadSpeed.value = "5.6 MB/s"
+                val step = (totalBytes / 20).coerceAtLeast(150 * 1024)
+                _mockUploadSpeed.value = "8.4 MB/s"
 
                 while (currentBytes < totalBytes && _mockIsUploading.value && _isMockMode.value) {
-                    delay(100)
+                    delay(80)
                     currentBytes = (currentBytes + step).coerceAtMost(totalBytes)
                     val updated = active.copy(bytesUploaded = currentBytes)
                     _mockCurrentUploadingItem.value = updated
                     _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) updated else it }
-                    _mockUploadSpeed.value = if ((currentBytes / 1024) % 2 == 0L) "5.8 MB/s" else "5.4 MB/s"
+                    _mockUploadSpeed.value = if ((currentBytes / 1024) % 2 == 0L) "8.6 MB/s" else "8.2 MB/s"
                 }
 
                 if (!_mockIsUploading.value || !_isMockMode.value) break
 
-                // 4. Simulate Committing phase
+                // Committing
                 _mockUploadSpeed.value = null
                 val committing = active.copy(status = UploadStatus.COMMITTING, bytesUploaded = totalBytes)
                 _mockCurrentUploadingItem.value = committing
                 _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) committing else it }
-                delay(400)
-
-                // 5. Complete item and loop to next
-                _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) it.copy(status = UploadStatus.COMPLETED) else it }
-                _mockCompletedCount.value += 1
-                _mockCurrentUploadingItem.value = null
                 delay(300)
+
+                if (active.fileName.contains("CORRUPTED", ignoreCase = true)) {
+                    failedCount++
+                    val classified = com.reiux.lumen.util.ErrorClassifier.classify(null, 504, "Scotty upload server timeout (HTTP 504)")
+                    LumenLogger.logFileResult(
+                        runId = mockRunId,
+                        fileName = active.fileName,
+                        sizeBytes = totalBytes,
+                        durationMs = 1200L,
+                        outcome = com.reiux.lumen.util.UploadOutcome.FAILED,
+                        reasonCode = classified.reasonCode,
+                        userMessage = classified.userMessage,
+                        suggestedAction = classified.suggestedAction,
+                        rawMessage = "Scotty upload server timeout (HTTP 504)",
+                        isMock = true
+                    )
+                    _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) it.copy(status = UploadStatus.FAILED) else it }
+                } else if (active.fileName.contains("SKIPPED", ignoreCase = true) || active.status == UploadStatus.SKIPPED) {
+                    skippedCount++
+                    LumenLogger.logFileResult(
+                        runId = mockRunId,
+                        fileName = active.fileName,
+                        sizeBytes = totalBytes,
+                        durationMs = 300L,
+                        outcome = com.reiux.lumen.util.UploadOutcome.SKIPPED_DUPLICATE,
+                        reasonCode = "DUPLICATE",
+                        userMessage = "Skipped (already in Google Photos)",
+                        suggestedAction = "No action needed.",
+                        rawMessage = "Duplicate cloud match",
+                        isMock = true
+                    )
+                    _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) it.copy(status = UploadStatus.SKIPPED) else it }
+                } else {
+                    uploadedCount++
+                    totalBytesProcessed += totalBytes
+                    LumenLogger.logFileResult(
+                        runId = mockRunId,
+                        fileName = active.fileName,
+                        sizeBytes = totalBytes,
+                        durationMs = 1100L,
+                        outcome = com.reiux.lumen.util.UploadOutcome.UPLOADED,
+                        rawMessage = "Upload SUCCESS mediaKey=mock_key_${active.id.take(4)}",
+                        isMock = true
+                    )
+                    _mockQueue.value = _mockQueue.value.map { if (it.id == active.id) it.copy(status = UploadStatus.COMPLETED) else it }
+                    _mockCompletedCount.value += 1
+                }
+
+                _mockCurrentUploadingItem.value = null
+                delay(200)
             }
+
             _mockIsUploading.value = false
             _mockCurrentUploadingItem.value = null
             _mockUploadSpeed.value = null
+
+            val simDuration = (System.currentTimeMillis() - simStart).coerceAtLeast(1)
+            val avgSpeed = (totalBytesProcessed.toDouble() * 1000.0) / simDuration.toDouble()
+            LumenLogger.logRunSummary(
+                runId = mockRunId,
+                uploadedCount = uploadedCount,
+                skippedCount = skippedCount,
+                failedCount = failedCount,
+                totalBytes = totalBytesProcessed,
+                durationMs = simDuration,
+                avgSpeedBps = avgSpeed,
+                isMock = true
+            )
         }
     }
 
@@ -786,6 +862,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setHasCompletedOnboarding(completed: Boolean) {
         LumenLogger.i("Onboarding", "Onboarding state updated to: $completed")
         settingsRepo.updateHasCompletedOnboarding(completed)
+    }
+
+    fun updateForcedSeason(season: String) {
+        LumenLogger.i("SettingsUI", "Forced season updated to: $season")
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(forcedSeason = season)
+        } else {
+            settingsRepo.updateForcedSeason(season)
+        }
+    }
+
+    fun getLastSeenDarkState(): Boolean? {
+        return settingsRepo.getLastSeenDarkState()
+    }
+
+    fun setLastSeenDarkState(isDark: Boolean) {
+        settingsRepo.setLastSeenDarkState(isDark)
     }
 
     fun updateDeveloperMode(unlocked: Boolean) {

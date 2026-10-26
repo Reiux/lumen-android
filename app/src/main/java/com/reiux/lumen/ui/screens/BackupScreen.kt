@@ -5,8 +5,30 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
+import com.reiux.lumen.util.EasterEggsManager
+import com.reiux.lumen.util.Season
+import com.reiux.lumen.util.rememberShakeDetector
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
 import android.widget.Toast
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
@@ -49,6 +72,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -98,6 +122,9 @@ fun BackupScreen(
     isScanningFolders: Boolean = false,
     developerModeUnlocked: Boolean = false,
     isMockMode: Boolean = false,
+    hyperdriveAuraEnabled: Boolean = false,
+    unlockedPrismTheme: Boolean = false,
+    forcedSeason: String = "NONE",
     onToggleMockCondition: () -> Unit = {},
     onAddMockFiles: () -> Unit = {},
     onExitMockMode: () -> Unit = {},
@@ -108,8 +135,11 @@ fun BackupScreen(
     onClearCompleted: () -> Unit,
     onNavigateToAccounts: () -> Unit,
     onUnlockPrismTheme: () -> Unit = {},
+    onTriggerLightsOff: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
@@ -119,6 +149,39 @@ fun BackupScreen(
     }
 
     var showDevDiagnostics by remember { mutableStateOf(false) }
+
+    var triggerShakeFlicker by remember { mutableStateOf(false) }
+    var mockEmptyStateVariantIndex by remember { mutableStateOf<Int?>(null) }
+    var mockForcedPunTitle by remember { mutableStateOf<String?>(null) }
+    var showMockCompletionCelebration by remember { mutableStateOf(false) }
+    var mockSelectedSeason by remember { mutableStateOf(Season.NONE) }
+
+    rememberShakeDetector {
+        triggerShakeFlicker = true
+    }
+
+    val flickerAlpha = remember { Animatable(1f) }
+    LaunchedEffect(triggerShakeFlicker) {
+        if (triggerShakeFlicker) {
+            flickerAlpha.animateTo(0.2f, tween(100))
+            flickerAlpha.animateTo(1.0f, tween(100))
+            flickerAlpha.animateTo(0.3f, tween(150))
+            flickerAlpha.animateTo(1.0f, tween(250))
+            triggerShakeFlicker = false
+        }
+    }
+
+    val activeSeason = if (isMockMode && mockSelectedSeason != Season.NONE) {
+        mockSelectedSeason
+    } else {
+        EasterEggsManager.resolveActiveSeason(forcedSeason)
+    }
+
+    LaunchedEffect(activeSeason) {
+        if (activeSeason != Season.NONE && !isMockMode) {
+            EasterEggsManager.checkSeasonalGreeting(context, activeSeason)
+        }
+    }
 
     if (showDevDiagnostics) {
         DevDiagnosticsDialog(
@@ -137,7 +200,8 @@ fun BackupScreen(
         Row(
             modifier = modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .graphicsLayer { alpha = flickerAlpha.value },
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Left Pane: Controls & Hero Status
@@ -155,6 +219,8 @@ fun BackupScreen(
                     storageSaverQuality = storageSaverQuality,
                     useQuota = useQuota,
                     developerModeUnlocked = developerModeUnlocked,
+                    unlockedPrismTheme = unlockedPrismTheme,
+                    activeSeason = activeSeason,
                     onOpenDiagnostics = { showDevDiagnostics = true },
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
@@ -163,7 +229,25 @@ fun BackupScreen(
                     MockModeCard(
                         onExitMockMode = onExitMockMode,
                         onToggleMockCondition = onToggleMockCondition,
-                        onAddMockFiles = onAddMockFiles
+                        onAddMockFiles = onAddMockFiles,
+                        mockSeason = activeSeason,
+                        onTriggerLightsOff = {
+                            onTriggerLightsOff()
+                        },
+                        onTriggerBoldChoice = { EasterEggsManager.triggerLightsOffBoldChoice(context, force = true) },
+                        onTriggerCompletionPun = {
+                            mockForcedPunTitle = EasterEggsManager.getCompletionTitle(context, force = true)
+                            showMockCompletionCelebration = true
+                        },
+                        onTriggerMilestone = { m -> EasterEggsManager.checkMilestoneToast(context, m) },
+                        onTriggerLateNight = { EasterEggsManager.checkLateNightToast(context, force = true) },
+                        onCycleEmptyStateVariant = {
+                            val curr = mockEmptyStateVariantIndex ?: 0
+                            mockEmptyStateVariantIndex = (curr + 1) % 5
+                        },
+                        onTriggerShakeFlicker = { triggerShakeFlicker = true },
+                        onSelectMockSeason = { s -> mockSelectedSeason = s },
+                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) }
                     )
                 }
 
@@ -180,6 +264,9 @@ fun BackupScreen(
                     completedCount = completedCount,
                     conditionNotice = conditionNotice,
                     isScanningFolders = isScanningFolders,
+                    hyperdriveAuraEnabled = hyperdriveAuraEnabled,
+                    showMockCompletionCelebration = showMockCompletionCelebration,
+                    mockForcedPunTitle = mockForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
                     onCancelBackup = onCancelBackup,
@@ -225,7 +312,7 @@ fun BackupScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (queue.isEmpty()) {
+                if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -251,8 +338,15 @@ fun BackupScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
+                                if (mockEmptyStateVariantIndex != null) {
+                                    EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
+                                } else {
+                                    EasterEggsManager.getEmptyStateSubtitle(context)
+                                }
+                            }
                             Text(
-                                text = "Choose photos & videos or tap Sync Folders to start backup",
+                                text = emptySubtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -282,7 +376,8 @@ fun BackupScreen(
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 680.dp)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .graphicsLayer { alpha = flickerAlpha.value },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -291,6 +386,8 @@ fun BackupScreen(
                     storageSaverQuality = storageSaverQuality,
                     useQuota = useQuota,
                     developerModeUnlocked = developerModeUnlocked,
+                    unlockedPrismTheme = unlockedPrismTheme,
+                    activeSeason = activeSeason,
                     onOpenDiagnostics = { showDevDiagnostics = true },
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
@@ -301,7 +398,25 @@ fun BackupScreen(
                     MockModeCard(
                         onExitMockMode = onExitMockMode,
                         onToggleMockCondition = onToggleMockCondition,
-                        onAddMockFiles = onAddMockFiles
+                        onAddMockFiles = onAddMockFiles,
+                        mockSeason = activeSeason,
+                        onTriggerLightsOff = {
+                            onTriggerLightsOff()
+                        },
+                        onTriggerBoldChoice = { EasterEggsManager.triggerLightsOffBoldChoice(context, force = true) },
+                        onTriggerCompletionPun = {
+                            mockForcedPunTitle = EasterEggsManager.getCompletionTitle(context, force = true)
+                            showMockCompletionCelebration = true
+                        },
+                        onTriggerMilestone = { m -> EasterEggsManager.checkMilestoneToast(context, m) },
+                        onTriggerLateNight = { EasterEggsManager.checkLateNightToast(context, force = true) },
+                        onCycleEmptyStateVariant = {
+                            val curr = mockEmptyStateVariantIndex ?: 0
+                            mockEmptyStateVariantIndex = (curr + 1) % 5
+                        },
+                        onTriggerShakeFlicker = { triggerShakeFlicker = true },
+                        onSelectMockSeason = { s -> mockSelectedSeason = s },
+                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) }
                     )
                 }
             }
@@ -322,6 +437,9 @@ fun BackupScreen(
                     completedCount = completedCount,
                     conditionNotice = conditionNotice,
                     isScanningFolders = isScanningFolders,
+                    hyperdriveAuraEnabled = hyperdriveAuraEnabled,
+                    showMockCompletionCelebration = showMockCompletionCelebration,
+                    mockForcedPunTitle = mockForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
                     onCancelBackup = onCancelBackup,
@@ -358,6 +476,50 @@ fun BackupScreen(
                     }
                 }
 
+                if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CloudDone,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Queue is empty",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
+                                    if (mockEmptyStateVariantIndex != null) {
+                                        EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
+                                    } else {
+                                        EasterEggsManager.getEmptyStateSubtitle(context)
+                                    }
+                                }
+                                Text(
+                                    text = emptySubtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 items(queue.takeLast(25).reversed()) { item ->
                     UploadItemRow(item = item)
                 }
@@ -375,6 +537,8 @@ private fun BackupTopHeader(
     storageSaverQuality: Boolean,
     useQuota: Boolean,
     developerModeUnlocked: Boolean = false,
+    unlockedPrismTheme: Boolean = false,
+    activeSeason: Season = Season.NONE,
     onOpenDiagnostics: () -> Unit,
     onUnlockPrismTheme: () -> Unit = {}
 ) {
@@ -383,6 +547,17 @@ private fun BackupTopHeader(
     var tapCount by remember { mutableIntStateOf(0) }
     var lastTapTime by remember { mutableLongStateOf(0L) }
     var showBurst by remember { mutableStateOf(false) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "prismSpin")
+    val prismSpinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "prismSpinAngle"
+    )
 
     if (showBurst) {
         PlayfulParticleBurstOverlay(
@@ -407,21 +582,23 @@ private fun BackupTopHeader(
                             tapCount++
                         }
                         lastTapTime = now
-                    },
-                    onLongPress = {
-                        val now = System.currentTimeMillis()
-                        if (tapCount >= 3 && (now - lastTapTime) < 1800L) {
+
+                        if (tapCount >= 3) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onUnlockPrismTheme()
                             showBurst = true
-                            Toast.makeText(context, "Unlocked 'Master of Light' & Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Unlocked Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
                             tapCount = 0
                         }
                     }
                 )
             }
         ) {
-            DynamicLumenIcon(size = 40.dp)
+            DynamicLumenIcon(
+                size = 40.dp,
+                rotationAngle = if (unlockedPrismTheme) prismSpinAngle else 0f,
+                activeSeason = activeSeason
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
@@ -500,12 +677,25 @@ private fun BackupTopHeader(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MockModeCard(
     onExitMockMode: () -> Unit,
     onToggleMockCondition: () -> Unit,
-    onAddMockFiles: () -> Unit
+    onAddMockFiles: () -> Unit,
+    mockSeason: Season,
+    onTriggerLightsOff: () -> Unit,
+    onTriggerBoldChoice: () -> Unit,
+    onTriggerCompletionPun: () -> Unit,
+    onTriggerMilestone: (Int) -> Unit,
+    onTriggerLateNight: () -> Unit,
+    onCycleEmptyStateVariant: () -> Unit,
+    onTriggerShakeFlicker: () -> Unit,
+    onSelectMockSeason: (Season) -> Unit,
+    onTriggerSeasonalGreeting: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -564,6 +754,147 @@ private fun MockModeCard(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Text("+ Add 2 Files", fontSize = 11.sp, maxLines = 1)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Easter Egg Tester",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerLightsOff()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Lights Off", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerBoldChoice()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Bold Choice", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerCompletionPun()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Pun Title", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerMilestone(100)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("M100", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerMilestone(1000)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("M1k", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerMilestone(10000)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("M10k", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerLateNight()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Late Night", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onCycleEmptyStateVariant()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Cycle Subtitle", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerShakeFlicker()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Shake Flicker", fontSize = 10.sp)
+                }
+
+                val seasons = listOf(Season.NONE, Season.HALLOWEEN, Season.CHRISTMAS, Season.NEW_YEAR)
+                seasons.forEach { s ->
+                    val isSel = mockSeason == s
+                    ExpressiveTonalButton(
+                        onClick = {
+                            try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                            onSelectMockSeason(s)
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = when (s) {
+                                Season.NONE -> "Season: Off"
+                                Season.HALLOWEEN -> "Halloween"
+                                Season.CHRISTMAS -> "Christmas"
+                                Season.NEW_YEAR -> "New Year"
+                            },
+                            fontSize = 10.sp,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onTriggerSeasonalGreeting()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Show Greeting", fontSize = 10.sp)
                 }
             }
         }
@@ -654,6 +985,9 @@ private fun HeroBackupCard(
     completedCount: Int,
     conditionNotice: String?,
     isScanningFolders: Boolean = false,
+    hyperdriveAuraEnabled: Boolean = false,
+    showMockCompletionCelebration: Boolean = false,
+    mockForcedPunTitle: String? = null,
     selectedAccount: GoogleAccount?,
     onStartBackup: () -> Unit,
     onCancelBackup: () -> Unit,
@@ -699,18 +1033,55 @@ private fun HeroBackupCard(
     val isDone = totalInQueue == 0 || queue.all { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
     val completedRecently = completedCount > 0 && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
 
-    if (completedRecently) {
+    if (completedRecently || showMockCompletionCelebration) {
         PlayfulCompletionCelebration(
-            completedCount = completedCount,
+            completedCount = if (completedCount > 0) completedCount else 5,
             enabledButtons = selectedAccount != null,
             onStartBackup = onStartBackup,
-            onPickPhotos = onPickPhotos
+            onPickPhotos = onPickPhotos,
+            customTitle = mockForcedPunTitle
         )
         return
     }
 
+    val infiniteTransition = rememberInfiniteTransition(label = "hyperdriveAura")
+    val auraRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "auraRotation"
+    )
+
+    val auraModifier = if (hyperdriveAuraEnabled) {
+        Modifier.drawWithContent {
+            drawContent()
+            rotate(degrees = auraRotation, pivot = center) {
+                drawRoundRect(
+                    brush = Brush.sweepGradient(
+                        colors = listOf(
+                            Color(0xFF00F2FE),
+                            Color(0xFF4FACFE),
+                            Color(0xFF00FF66),
+                            Color(0xFFFF007F),
+                            Color(0xFF00F2FE)
+                        ),
+                        center = center
+                    ),
+                    size = size,
+                    cornerRadius = CornerRadius(28.dp.toPx()),
+                    style = Stroke(width = 3.dp.toPx())
+                )
+            }
+        }
+    } else Modifier
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(auraModifier),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -790,6 +1161,7 @@ private fun HeroBackupCard(
 
                 ExpressiveWavyLinearProgress(
                     progress = progress.coerceIn(0f, 1f),
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.fillMaxWidth()
                 )
 

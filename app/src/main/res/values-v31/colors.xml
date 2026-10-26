@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dynamic Material You Colors for App Icon (Used by Android 12+ Light Theme) -->
+    <color name="brand_blade_1">@android:color/system_accent1_400</color>
+    <color name="brand_blade_2">@android:color/system_accent1_500</color>
+    <color name="brand_blade_3">@android:color/system_accent2_400</color>
+    <color name="brand_blade_4">@android:color/system_neutral1_400</color>
+    <color name="brand_center_core">@android:color/system_neutral1_900</color>
+    <color name="brand_background">@android:color/system_neutral1_50</color>
+</resources>

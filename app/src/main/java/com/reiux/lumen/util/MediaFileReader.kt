@@ -206,11 +206,24 @@ object MediaFileReader {
     fun scanMediaFiles(dir: File): List<File> {
         val result = mutableListOf<File>()
         if (!dir.exists() || !dir.isDirectory) return result
+        
+        // Skip hidden folders (folders starting with '.')
+        if (dir.name.startsWith(".")) return result
+        
         val files = dir.listFiles() ?: return result
         for (f in files) {
-            if (f.isFile && f.length() > 0) {
+            // Traverse into subdirectories (if they are not hidden)
+            if (f.isDirectory) {
+                if (!f.name.startsWith(".")) {
+                    result.addAll(scanMediaFiles(f))
+                }
+            } else if (f.isFile && f.length() > 0) {
+                val name = f.name
                 val ext = f.extension.lowercase()
-                if (ext in supportedExts) {
+                
+                // Skip files specifically marked as Android trash (.trash-xxx...)
+                // Skip any file that starts with a dot (hidden file)
+                if (!name.startsWith(".trash") && !name.startsWith(".") && ext in supportedExts) {
                     result.add(f)
                 }
             }

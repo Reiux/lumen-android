@@ -51,7 +51,8 @@ fun PlayfulCompletionCelebration(
     enabledButtons: Boolean,
     onStartBackup: () -> Unit,
     onPickPhotos: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    customTitle: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -162,7 +163,7 @@ fun PlayfulCompletionCelebration(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "All Backed Up!",
+                text = customTitle ?: "All Backed Up!",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer

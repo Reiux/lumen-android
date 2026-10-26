@@ -193,6 +193,9 @@ class UploadRepository(
                 _currentUploadingItem.value = null
                 _conditionNotice.value = null
                 LumenLogger.i("UploadEngine") { "Upload queue completed / finished" }
+                launch(Dispatchers.Main) {
+                    com.reiux.lumen.util.EasterEggsManager.checkLateNightToast(context)
+                }
             }
         }
     }
@@ -524,6 +527,13 @@ class UploadRepository(
                     }
                     updateItemCompleted(item.id, mediaKey, isSkipped = false)
                     _completedCount.value += 1
+
+                    val (_, milestoneTriggered) = settingsRepository.recordRealUploads(1)
+                    if (milestoneTriggered != null) {
+                        scope.launch(Dispatchers.Main) {
+                            com.reiux.lumen.util.EasterEggsManager.checkMilestoneToast(context, milestoneTriggered)
+                        }
+                    }
                     return // Success!
 
                 } catch (e: Exception) {

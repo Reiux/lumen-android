@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.reiux.lumen.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,11 +24,11 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
+import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 
@@ -52,6 +53,24 @@ enum class LogCategory(val displayName: String) {
     OTHER("Other")
 }
 
+enum class LogKind {
+    GENERAL,
+    RUN_START,
+    FILE_RESULT,
+    RUN_SUMMARY,
+    BLOCKED,
+    ACCOUNT,
+    ERROR,
+    SYSTEM
+}
+
+enum class UploadOutcome {
+    NONE,
+    UPLOADED,
+    SKIPPED_DUPLICATE,
+    FAILED
+}
+
 data class LogEntry(
     val id: Long,
     val timestamp: Long,
@@ -61,7 +80,18 @@ data class LogEntry(
     val opId: String? = null,
     val category: LogCategory = LogCategory.OTHER,
     val message: String,
-    val throwableText: String? = null
+    val throwableText: String? = null,
+    val kind: LogKind = LogKind.GENERAL,
+    val runId: String? = null,
+    val fileName: String? = null,
+    val sizeBytes: Long? = null,
+    val durationMs: Long? = null,
+    val outcome: UploadOutcome = UploadOutcome.NONE,
+    val reasonCode: String? = null,
+    val userMessage: String? = null,
+    val suggestedAction: String? = null,
+    val repeatCount: Int = 1,
+    val isMock: Boolean = false
 ) {
     val formattedTime: String
         get() = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(timestamp))
@@ -75,34 +105,34 @@ data class LogEntry(
 
     val fullFormattedText: String
         get() {
-            val base = "[$formattedTime] [${level.name}/$tag] [$threadName] [$opString] $message"
+            val repeatStr = if (repeatCount > 1) " (x$repeatCount)" else ""
+            val base = "[$formattedTime] [${level.name}/$tag] [$threadName] [$opString] $message$repeatStr"
             return if (!throwableText.isNullOrEmpty()) "$base\n$throwableText" else base
         }
 }
 
 object LumenLogger {
-    private const val MAX_IN_MEMORY_LOGS = 2500
+    private const val MAX_IN_MEMORY_LOGS = 3000
     private const val ROTATING_FILE_COUNT = 5
     private const val MAX_FILE_SIZE_BYTES = 2L * 1024L * 1024L // 2 MB
-    private const val RATE_LIMIT_MAX_PER_SEC = 20
+    private const val BATCH_EMIT_DELAY_MS = 250L
 
     private var nextId = 0L
     private val droppedCounter = AtomicLong(0L)
 
+    private val memoryLogBuffer = ArrayDeque<LogEntry>()
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
 
     private val _droppedEvents = MutableStateFlow(0L)
     val droppedEvents: StateFlow<Long> = _droppedEvents.asStateFlow()
 
-    // Verbose / Dev diagnostics toggle: ON = VERBOSE & DEBUG enabled; OFF = INFO, WARN, ERROR only
-    var isVerboseEnabled: Boolean = true
+    var isVerboseEnabled: Boolean = BuildConfig.DEBUG
         private set
 
-    var devDiagnosticsEnabled: Boolean = false
+    var devDiagnosticsEnabled: Boolean = BuildConfig.DEBUG
         private set
 
-    // Category filter toggles (Live in viewer; default all enabled)
     val activeCategories = ConcurrentHashMap<LogCategory, Boolean>().apply {
         LogCategory.entries.forEach { put(it, true) }
     }
@@ -112,49 +142,74 @@ object LumenLogger {
     private var currentFileIndex = 0
     private val scope = CoroutineScope(Dispatchers.IO)
     private var snapshotJob: Job? = null
+    private var batchEmitJob: Job? = null
     private var appContext: Context? = null
 
-    // Rate limiter tracking
-    private class RateLimitTracker {
-        var windowSecond = 0L
-        var count = 0
-        var suppressed = 0
-    }
-    private val rateLimiters = ConcurrentHashMap<String, RateLimitTracker>()
+    private var lastSnapshotMemMb = -1L
+    private var lastSnapshotThreads = -1
 
     // Redaction patterns
     private val emailPattern = Pattern.compile("(?i)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+")
     private val bearerPattern = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9_\\-\\.]+")
     private val sensitiveParamPattern = Pattern.compile("(?i)(token|masterToken|credentialString|upload_token|password|auth|secret)=([^&\\s]+)")
 
-    fun init(context: Context, saveLogsEnabled: Boolean, isDevDiagnostics: Boolean = true) {
+    fun init(context: Context, saveLogsEnabled: Boolean, isDevDiagnostics: Boolean = BuildConfig.DEBUG) {
         appContext = context.applicationContext
         logDir = File(context.cacheDir, "logs").apply { mkdirs() }
         devDiagnosticsEnabled = isDevDiagnostics
-        isVerboseEnabled = isDevDiagnostics || saveLogsEnabled
-        isFileLoggingEnabled = saveLogsEnabled || isDevDiagnostics
+        isVerboseEnabled = isDevDiagnostics || BuildConfig.DEBUG
+        isFileLoggingEnabled = saveLogsEnabled || BuildConfig.DEBUG
 
         installCrashHandler()
         startPeriodicSnapshot()
+        startBatchEmitter()
+
+        // Append Session Start Marker to file log
+        writeSessionStartMarker()
 
         i("LumenLogger") {
             "LumenLogger initialized (verbose=$isVerboseEnabled, fileLogging=$isFileLoggingEnabled, devDiagnostics=$devDiagnosticsEnabled, cacheDir=${logDir?.absolutePath})"
         }
     }
 
+    private fun writeSessionStartMarker() {
+        val dir = logDir ?: return
+        try {
+            val file = File(dir, "lumen_$currentFileIndex.log")
+            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+            FileWriter(file, true).use { writer ->
+                writer.appendLine("=== SESSION STARTED: $dateStr ===")
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun startBatchEmitter() {
+        batchEmitJob?.cancel()
+        batchEmitJob = scope.launch {
+            while (isActive) {
+                delay(BATCH_EMIT_DELAY_MS)
+                flushMemoryBufferToStateFlow()
+            }
+        }
+    }
+
+    private fun flushMemoryBufferToStateFlow() {
+        synchronized(memoryLogBuffer) {
+            _logs.value = memoryLogBuffer.toList()
+        }
+    }
+
     fun setDevDiagnostics(enabled: Boolean, context: Context? = null) {
         devDiagnosticsEnabled = enabled
-        isVerboseEnabled = enabled || isFileLoggingEnabled
-        if (enabled) {
-            isFileLoggingEnabled = true
-        }
+        isVerboseEnabled = enabled || BuildConfig.DEBUG
+        isFileLoggingEnabled = enabled || isFileLoggingEnabled
         context?.let { appContext = it.applicationContext }
         i("LumenLogger") { "devDiagnosticsEnabled set to: $enabled (isVerboseEnabled=$isVerboseEnabled, isFileLoggingEnabled=$isFileLoggingEnabled)" }
     }
 
     fun setFileLogging(enabled: Boolean, context: Context) {
         appContext = context.applicationContext
-        isFileLoggingEnabled = enabled
+        isFileLoggingEnabled = enabled || BuildConfig.DEBUG
         if (logDir == null) {
             logDir = File(context.cacheDir, "logs").apply { mkdirs() }
         }
@@ -170,7 +225,6 @@ object LumenLogger {
     // --- Redaction ---
     fun redact(text: String): String {
         var result = text
-        // Mask emails: e.g. alex.rivera@gmail.com -> a***@gmail.com
         val emailMatcher = emailPattern.matcher(result)
         val emailSb = StringBuffer()
         while (emailMatcher.find()) {
@@ -181,21 +235,16 @@ object LumenLogger {
             } else {
                 "***@" + fullEmail.substring(atIdx + 1)
             }
-            emailMatcher.appendReplacement(emailSb, MatcherQuote(masked))
+            emailMatcher.appendReplacement(emailSb, java.util.regex.Matcher.quoteReplacement(masked))
         }
         emailMatcher.appendTail(emailSb)
         result = emailSb.toString()
 
-        // Mask Bearer tokens
         result = bearerPattern.matcher(result).replaceAll("$1[REDACTED]")
-
-        // Mask query string secrets
         result = sensitiveParamPattern.matcher(result).replaceAll("$1=[REDACTED]")
 
         return result
     }
-
-    private fun MatcherQuote(s: String): String = java.util.regex.Matcher.quoteReplacement(s)
 
     // --- Category Resolver ---
     private fun inferCategory(tag: String): LogCategory {
@@ -213,13 +262,18 @@ object LumenLogger {
         }
     }
 
-    // --- Core Logging Logic ---
-    private fun shouldLog(level: LogLevel): Boolean {
-        return if (isVerboseEnabled || devDiagnosticsEnabled) {
-            true // Log all levels in verbose / dev mode
-        } else {
-            level.priority >= LogLevel.INFO.priority // Drop VERBOSE and DEBUG when verbose is off
+    private fun shouldLog(level: LogLevel, tag: String): Boolean {
+        // Demoted categories in non-dev release builds
+        val category = inferCategory(tag)
+        if (!isVerboseEnabled && !devDiagnosticsEnabled) {
+            if (category == LogCategory.ANIM || category == LogCategory.INTERACTION || category == LogCategory.STORAGE) {
+                return false
+            }
+            if (level.priority < LogLevel.INFO.priority) {
+                return false
+            }
         }
+        return true
     }
 
     fun log(
@@ -227,44 +281,22 @@ object LumenLogger {
         tag: String,
         opId: String? = null,
         tr: Throwable? = null,
+        kind: LogKind = LogKind.GENERAL,
+        runId: String? = null,
+        fileName: String? = null,
+        sizeBytes: Long? = null,
+        durationMs: Long? = null,
+        outcome: UploadOutcome = UploadOutcome.NONE,
+        reasonCode: String? = null,
+        userMessage: String? = null,
+        suggestedAction: String? = null,
+        isMock: Boolean = false,
         messageProvider: () -> String
     ) {
-        if (!shouldLog(level)) return
+        if (!shouldLog(level, tag)) return
 
-        val now = System.currentTimeMillis()
-        val currentSec = now / 1000L
-
-        // Rate limiter check for identical repetitive lines
         val rawMessage = try { messageProvider() } catch (e: Exception) { "<Log evaluation failed: ${e.message}>" }
         val redactedMessage = redact(rawMessage)
-
-        val rateKey = "$tag:$redactedMessage"
-        val tracker = rateLimiters.computeIfAbsent(rateKey) { RateLimitTracker() }
-        synchronized(tracker) {
-            if (tracker.windowSecond != currentSec) {
-                if (tracker.suppressed > 0) {
-                    emitLogEntry(
-                        LogLevel.WARN,
-                        "RateLimiter",
-                        threadName = Thread.currentThread().name,
-                        opId = null,
-                        category = LogCategory.PERF,
-                        message = "${tracker.suppressed} similar lines suppressed for tag: $tag",
-                        throwable = null
-                    )
-                }
-                tracker.windowSecond = currentSec
-                tracker.count = 1
-                tracker.suppressed = 0
-            } else {
-                tracker.count++
-                if (tracker.count > RATE_LIMIT_MAX_PER_SEC) {
-                    tracker.suppressed++
-                    return
-                }
-            }
-        }
-
         val threadName = Thread.currentThread().name
         val category = inferCategory(tag)
 
@@ -275,7 +307,17 @@ object LumenLogger {
             opId = opId,
             category = category,
             message = redactedMessage,
-            throwable = tr
+            throwable = tr,
+            kind = kind,
+            runId = runId,
+            fileName = fileName,
+            sizeBytes = sizeBytes,
+            durationMs = durationMs,
+            outcome = outcome,
+            reasonCode = reasonCode,
+            userMessage = userMessage,
+            suggestedAction = suggestedAction,
+            isMock = isMock
         )
     }
 
@@ -286,55 +328,90 @@ object LumenLogger {
         opId: String?,
         category: LogCategory,
         message: String,
-        throwable: Throwable?
+        throwable: Throwable?,
+        kind: LogKind = LogKind.GENERAL,
+        runId: String? = null,
+        fileName: String? = null,
+        sizeBytes: Long? = null,
+        durationMs: Long? = null,
+        outcome: UploadOutcome = UploadOutcome.NONE,
+        reasonCode: String? = null,
+        userMessage: String? = null,
+        suggestedAction: String? = null,
+        isMock: Boolean = false
     ) {
         val throwableText = throwable?.let { redact(buildStackTraceString(it)) }
 
-        val entry = LogEntry(
-            id = synchronized(this) { ++nextId },
-            timestamp = System.currentTimeMillis(),
-            level = level,
-            tag = tag,
-            threadName = threadName,
-            opId = opId,
-            category = category,
-            message = message,
-            throwableText = throwableText
-        )
-
-        // Android logcat mirror (safely caught for non-Android unit test environments)
-        try {
-            when (level) {
-                LogLevel.VERBOSE -> Log.v(tag, entry.fullFormattedText)
-                LogLevel.DEBUG -> Log.d(tag, entry.fullFormattedText)
-                LogLevel.INFO -> Log.i(tag, entry.fullFormattedText)
-                LogLevel.WARN -> Log.w(tag, entry.fullFormattedText, throwable)
-                LogLevel.ERROR -> Log.e(tag, entry.fullFormattedText, throwable)
+        synchronized(memoryLogBuffer) {
+            // Collapse consecutive identical lines
+            val lastEntry = memoryLogBuffer.peekLast()
+            if (lastEntry != null &&
+                lastEntry.tag == tag &&
+                lastEntry.level == level &&
+                lastEntry.message == message &&
+                lastEntry.kind == LogKind.GENERAL
+            ) {
+                val updatedLast = lastEntry.copy(
+                    repeatCount = lastEntry.repeatCount + 1,
+                    timestamp = System.currentTimeMillis()
+                )
+                memoryLogBuffer.removeLast()
+                memoryLogBuffer.addLast(updatedLast)
+                _logs.value = memoryLogBuffer.toList()
+                return
             }
-        } catch (_: Throwable) {}
 
-        // In-memory queue
-        synchronized(_logs) {
-            val current = _logs.value
-            val updated = if (current.size >= MAX_IN_MEMORY_LOGS) {
-                val dropCount = current.size - MAX_IN_MEMORY_LOGS + 1
-                _droppedEvents.value = droppedCounter.addAndGet(dropCount.toLong())
-                current.drop(dropCount) + entry
-            } else {
-                current + entry
+            val entry = LogEntry(
+                id = ++nextId,
+                timestamp = System.currentTimeMillis(),
+                level = level,
+                tag = tag,
+                threadName = threadName,
+                opId = opId,
+                category = category,
+                message = message,
+                throwableText = throwableText,
+                kind = kind,
+                runId = runId,
+                fileName = fileName,
+                sizeBytes = sizeBytes,
+                durationMs = durationMs,
+                outcome = outcome,
+                reasonCode = reasonCode,
+                userMessage = userMessage,
+                suggestedAction = suggestedAction,
+                repeatCount = 1,
+                isMock = isMock
+            )
+
+            // Mirror to logcat
+            try {
+                when (level) {
+                    LogLevel.VERBOSE -> Log.v(tag, entry.fullFormattedText)
+                    LogLevel.DEBUG -> Log.d(tag, entry.fullFormattedText)
+                    LogLevel.INFO -> Log.i(tag, entry.fullFormattedText)
+                    LogLevel.WARN -> Log.w(tag, entry.fullFormattedText, throwable)
+                    LogLevel.ERROR -> Log.e(tag, entry.fullFormattedText, throwable)
+                }
+            } catch (_: Throwable) {}
+
+            // Buffer handling
+            if (memoryLogBuffer.size >= MAX_IN_MEMORY_LOGS) {
+                memoryLogBuffer.pollFirst()
+                _droppedEvents.value = droppedCounter.incrementAndGet()
             }
-            _logs.value = updated
-        }
+            memoryLogBuffer.addLast(entry)
+            _logs.value = memoryLogBuffer.toList()
 
-        // File logging
-        if (isFileLoggingEnabled && logDir != null) {
-            scope.launch {
-                appendToFileRotating(entry)
+            // File logging (exclude mock entries from real disk files)
+            if (isFileLoggingEnabled && logDir != null && !isMock) {
+                scope.launch {
+                    appendToFileRotating(entry)
+                }
             }
         }
     }
 
-    // --- Rotating File Storage (5 files x 2MB) ---
     private fun appendToFileRotating(entry: LogEntry) {
         try {
             val dir = logDir ?: return
@@ -357,25 +434,128 @@ object LumenLogger {
         }
     }
 
-    // --- Lazy Logging API ---
+    // --- Structured Logging Helpers ---
+    fun logRunStart(
+        runId: String,
+        queuedCount: Int,
+        wifiOnly: Boolean,
+        chargingOnly: Boolean,
+        storageSaver: Boolean,
+        useQuota: Boolean,
+        threads: Int,
+        isMock: Boolean = false
+    ) {
+        val msg = "Backup run '$runId' started: $queuedCount files queued (wifiOnly=$wifiOnly, chargingOnly=$chargingOnly, storageSaver=$storageSaver, useQuota=$useQuota, threads=$threads)"
+        log(
+            level = LogLevel.INFO,
+            tag = "UploadEngine",
+            kind = LogKind.RUN_START,
+            runId = runId,
+            isMock = isMock
+        ) { msg }
+    }
+
+    fun logFileResult(
+        runId: String,
+        fileName: String,
+        sizeBytes: Long,
+        durationMs: Long,
+        outcome: UploadOutcome,
+        reasonCode: String? = null,
+        userMessage: String? = null,
+        suggestedAction: String? = null,
+        rawMessage: String,
+        isMock: Boolean = false
+    ) {
+        val level = when (outcome) {
+            UploadOutcome.FAILED -> LogLevel.ERROR
+            UploadOutcome.SKIPPED_DUPLICATE -> LogLevel.INFO
+            UploadOutcome.UPLOADED -> LogLevel.INFO
+            UploadOutcome.NONE -> LogLevel.DEBUG
+        }
+        log(
+            level = level,
+            tag = "UploadEngine",
+            kind = LogKind.FILE_RESULT,
+            runId = runId,
+            fileName = fileName,
+            sizeBytes = sizeBytes,
+            durationMs = durationMs,
+            outcome = outcome,
+            reasonCode = reasonCode,
+            userMessage = userMessage,
+            suggestedAction = suggestedAction,
+            isMock = isMock
+        ) { rawMessage }
+    }
+
+    fun logRunSummary(
+        runId: String,
+        uploadedCount: Int,
+        skippedCount: Int,
+        failedCount: Int,
+        totalBytes: Long,
+        durationMs: Long,
+        avgSpeedBps: Double,
+        isMock: Boolean = false
+    ) {
+        val speedStr = if (avgSpeedBps >= 1024 * 1024) {
+            String.format(Locale.US, "%.1f MB/s", avgSpeedBps / (1024 * 1024))
+        } else {
+            String.format(Locale.US, "%.1f KB/s", avgSpeedBps / 1024)
+        }
+        val sizeStr = String.format(Locale.US, "%.1f MB", totalBytes.toDouble() / (1024 * 1024))
+        val msg = "Backup run '$runId' summary: $uploadedCount uploaded, $skippedCount skipped, $failedCount failed ($sizeStr total, duration ${durationMs / 1000}s, avg $speedStr)"
+
+        log(
+            level = LogLevel.INFO,
+            tag = "UploadEngine",
+            kind = LogKind.RUN_SUMMARY,
+            runId = runId,
+            durationMs = durationMs,
+            sizeBytes = totalBytes,
+            isMock = isMock
+        ) { msg }
+    }
+
+    fun logBlocked(
+        runId: String,
+        reasonCode: String,
+        userMessage: String,
+        suggestedAction: String,
+        isMock: Boolean = false
+    ) {
+        log(
+            level = LogLevel.WARN,
+            tag = "UploadEngine",
+            kind = LogKind.BLOCKED,
+            runId = runId,
+            reasonCode = reasonCode,
+            userMessage = userMessage,
+            suggestedAction = suggestedAction,
+            isMock = isMock
+        ) { "Backup run '$runId' BLOCKED: $userMessage ($suggestedAction)" }
+    }
+
+    // --- Standard Lazy Logging API ---
     inline fun v(tag: String, opId: String? = null, tr: Throwable? = null, noinline msg: () -> String) {
-        log(LogLevel.VERBOSE, tag, opId, tr, msg)
+        log(LogLevel.VERBOSE, tag, opId, tr, messageProvider = msg)
     }
 
     inline fun d(tag: String, opId: String? = null, tr: Throwable? = null, noinline msg: () -> String) {
-        log(LogLevel.DEBUG, tag, opId, tr, msg)
+        log(LogLevel.DEBUG, tag, opId, tr, messageProvider = msg)
     }
 
     inline fun i(tag: String, opId: String? = null, tr: Throwable? = null, noinline msg: () -> String) {
-        log(LogLevel.INFO, tag, opId, tr, msg)
+        log(LogLevel.INFO, tag, opId, tr, messageProvider = msg)
     }
 
     inline fun w(tag: String, opId: String? = null, tr: Throwable? = null, noinline msg: () -> String) {
-        log(LogLevel.WARN, tag, opId, tr, msg)
+        log(LogLevel.WARN, tag, opId, tr, messageProvider = msg)
     }
 
     inline fun e(tag: String, opId: String? = null, tr: Throwable? = null, noinline msg: () -> String) {
-        log(LogLevel.ERROR, tag, opId, tr, msg)
+        log(LogLevel.ERROR, tag, opId, tr, messageProvider = msg)
     }
 
     // String overloads
@@ -447,13 +627,8 @@ object LumenLogger {
         trigger: String,
         token: String? = null
     ) {
-        d("Anim") {
+        v("Anim") {
             "[ANIM START] name='$name' target='$target' prop='$property' from='$from' -> to='$to' spec='$spec' trigger='$trigger'${token?.let { " token='$it'" } ?: ""}"
-        }
-        if ((property == "alpha" || property == "color") && spec.contains("dampingRatio", ignoreCase = true)) {
-            w("Anim") {
-                "MotionScheme Warning: Effects property '$property' on '$target' may overshoot with spring spec '$spec'. Use non-overshooting spring/effects token."
-            }
         }
     }
 
@@ -465,7 +640,7 @@ object LumenLogger {
         completed: Boolean,
         interruptedBy: String? = null
     ) {
-        d("Anim") {
+        v("Anim") {
             "[ANIM END] name='$name' target='$target' duration=${durationMs}ms finalValue='$finalValue' status=${if (completed) "COMPLETED" else "INTERRUPTED by '$interruptedBy'"}"
         }
     }
@@ -480,7 +655,6 @@ object LumenLogger {
                     e("Crash", opId = "CRASH", tr = throwable) {
                         "FATAL UNCAUGHT EXCEPTION on thread '${thread.name}' (id=${thread.id}): ${throwable.message}"
                     }
-                    // Synchronously write to crash log file
                     logDir?.let { dir ->
                         val crashFile = File(dir, "lumen_crash.log")
                         FileWriter(crashFile, true).use { writer ->
@@ -492,13 +666,13 @@ object LumenLogger {
                             writer.appendLine("==========================================")
                         }
                     }
-                } catch (ignored: Exception) {}
+                } catch (_: Exception) {}
                 originalHandler?.uncaughtException(thread, throwable)
             }
         }
     }
 
-    // --- Periodic 30s Snapshot (Verbose Mode) ---
+    // --- Periodic 30s Snapshot ---
     private fun startPeriodicSnapshot() {
         snapshotJob?.cancel()
         snapshotJob = scope.launch {
@@ -514,139 +688,63 @@ object LumenLogger {
     private fun takeSystemSnapshot() {
         val runtime = Runtime.getRuntime()
         val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
-        val maxMemMb = runtime.maxMemory() / (1024 * 1024)
         val activeThreads = Thread.activeCount()
 
-        val ctx = appContext
-        var netType = "Unknown"
-        var batteryLevel = -1
-        var isCharging = false
-
-        if (ctx != null) {
-            try {
-                val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                val net = cm?.activeNetwork
-                val caps = cm?.getNetworkCapabilities(net)
-                netType = when {
-                    caps == null -> "None"
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
-                    else -> "Other"
-                }
-
-                val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-                batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-                isCharging = DeviceConditions.isDeviceCharging(ctx)
-            } catch (_: Exception) {}
-        }
-
-        d("Perf") {
-            "[SNAPSHOT 30s] heap_used=${usedMemMb}MB max_heap=${maxMemMb}MB threads=$activeThreads network=$netType battery=$batteryLevel% charging=$isCharging events_dropped=${_droppedEvents.value}"
-        }
-    }
-
-    // --- Stacktrace Helper with Cause Chain ---
-    fun buildStackTraceString(t: Throwable): String {
-        val sb = StringBuilder()
-        var current: Throwable? = t
-        var depth = 0
-        while (current != null && depth < 6) {
-            if (depth > 0) sb.append("\nCaused by: ")
-            sb.append(current::class.java.name).append(": ").append(current.message).append("\n")
-            for (elem in current.stackTrace.take(20)) {
-                sb.append("    at ").append(elem.toString()).append("\n")
+        // Only emit if memory or thread count changed meaningfully
+        if (Math.abs(usedMemMb - lastSnapshotMemMb) >= 10 || activeThreads != lastSnapshotThreads) {
+            lastSnapshotMemMb = usedMemMb
+            lastSnapshotThreads = activeThreads
+            v("Perf") {
+                "System snapshot: usedMem=${usedMemMb}MB activeThreads=$activeThreads"
             }
-            current = current.cause
-            depth++
         }
-        return sb.toString()
     }
 
-    // --- Export Logs to Shared File ---
-    fun exportLogs(context: Context, extraMetadata: Map<String, String> = emptyMap()) {
-        scope.launch {
+    fun exportLogs(context: Context) {
+        val dir = logDir ?: return
+        scope.launch(Dispatchers.IO) {
             try {
-                val exportDir = File(context.cacheDir, "logs").apply { mkdirs() }
-                val exportFile = File(exportDir, "lumen_debug_export.txt")
-
-                val header = buildExportHeader(context, extraMetadata)
-                val logsCopy = synchronized(_logs) { _logs.value }
-
+                val exportFile = File(context.cacheDir, "lumen_export_logs.txt")
                 FileWriter(exportFile, false).use { writer ->
-                    writer.write(header)
-                    writer.write("\n=================== LOG ENTRIES (${logsCopy.size}) ===================\n")
-                    for (entry in logsCopy) {
-                        writer.appendLine(entry.fullFormattedText)
+                    dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
+                        writer.appendLine("--- FILE: ${logFile.name} ---")
+                        writer.append(logFile.readText())
+                        writer.appendLine()
                     }
                 }
-
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    exportFile
-                )
-
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", exportFile)
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Lumen Debug Logs - ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())}")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-
-                val chooser = Intent.createChooser(intent, "Export Lumen Debug Logs").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                val chooser = Intent.createChooser(intent, "Export Lumen Logs")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(chooser)
-                i("LumenLogger") { "Exported ${logsCopy.size} logs to $uri" }
             } catch (e: Exception) {
-                e("LumenLogger", tr = e) { "Failed to export logs: ${e.message}" }
+                LumenLogger.e("LumenLogger", "Export logs failed: ${e.message}", e)
             }
         }
     }
 
-    fun buildExportHeader(context: Context, extraMetadata: Map<String, String> = emptyMap()): String {
-        val pm = context.packageManager
-        val pInfo = try { pm.getPackageInfo(context.packageName, 0) } catch (_: Exception) { null }
-        val versionName = pInfo?.versionName ?: "1.0.0-dev"
-        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            pInfo?.longVersionCode ?: 1L
-        } else {
-            @Suppress("DEPRECATION")
-            pInfo?.versionCode?.toLong() ?: 1L
-        }
-
-        return buildString {
-            appendLine("==========================================")
-            appendLine("LUMEN DEBUG LOGS EXPORT")
-            appendLine("Generated: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
-            appendLine("App Version: $versionName (build $versionCode)")
-            appendLine("Build Type: debug")
-            appendLine("Android SDK: ${Build.VERSION.SDK_INT} (Android ${Build.VERSION.RELEASE})")
-            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
-            appendLine("Locale: ${Locale.getDefault()}")
-            appendLine("Events Dropped: ${_droppedEvents.value}")
-            if (extraMetadata.isNotEmpty()) {
-                appendLine("--- Context & Settings ---")
-                extraMetadata.forEach { (k, v) ->
-                    appendLine("$k: $v")
-                }
-            }
-            appendLine("==========================================")
-        }
-    }
-
-    fun clearLogs(context: Context) {
-        synchronized(_logs) {
+    fun clearLogs(context: Context? = null) {
+        synchronized(memoryLogBuffer) {
+            memoryLogBuffer.clear()
             _logs.value = emptyList()
-            _droppedEvents.value = 0L
-            droppedCounter.set(0L)
         }
-        scope.launch {
-            try {
-                logDir?.listFiles()?.forEach { if (it.name.startsWith("lumen_")) it.delete() }
-            } catch (_: Exception) {}
+        logDir?.listFiles()?.forEach { it.delete() }
+        i("LumenLogger") { "Cleared all logs" }
+    }
+
+    private fun buildStackTraceString(t: Throwable): String {
+        val sb = StringBuilder()
+        sb.append(t.javaClass.name).append(": ").append(t.message).append("\n")
+        for (element in t.stackTrace.take(15)) {
+            sb.append("\tat ").append(element.toString()).append("\n")
         }
-        i("LumenLogger") { "Cleared in-memory logs and rotating log files" }
+        t.cause?.let { cause ->
+            sb.append("Caused by: ").append(buildStackTraceString(cause))
+        }
+        return sb.toString()
     }
 }
