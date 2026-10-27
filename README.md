@@ -97,9 +97,21 @@ env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug assembleRelease
 
 ---
 
+## Account Safety & Risks
+
+Lumen is an unofficial tool and isn't affiliated with Google. It uploads photos using an unofficial method that Google didn't design for third-party apps.
+
+- **Terms of Service**: Using Lumen may break Google's Terms of Service. Google can log you out, limit, or ban your account at any time.
+- **Gmail & Drive Access**: If Google restricts your account, you could lose access to Gmail, Google Drive, and other services linked to that email.
+- **Use a Secondary Account**: Use an email you're okay with losing access to. Don't use your primary personal email or accounts used for work, school, or banking.
+- **Keep Your Local Copies**: Don't rely on Google Photos as your only backup. Keep your original files on your phone or local storage.
+- **Avoid Repeated Sign-Ins**: If Google logs you out or asks for verification, don't spam sign-in attempts. Lumen will pause automatically when it detects account issues. Each sign-in registers a new device, so avoid logging in and out repeatedly.
+
+---
+
 ## Disclaimer
 
-Lumen is an independent open-source project and is not affiliated with or endorsed by Google LLC. The software is provided "as-is" under the Apache 2.0 license.
+Lumen is an independent open-source project and is not affiliated with or endorsed by Google LLC. Using Lumen may violate Google's Terms of Service and can result in account restrictions. Use at your own risk. The software is provided "as-is" under the Apache 2.0 license.
 
 ---
 
