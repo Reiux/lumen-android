@@ -205,38 +205,56 @@ fun launchApkInstall(context: Context, apkFile: File) {
 fun parseSimpleMarkdown(text: String, primaryColor: androidx.compose.ui.graphics.Color): androidx.compose.ui.text.AnnotatedString {
     val builder = androidx.compose.ui.text.AnnotatedString.Builder()
     
-    text.lines().forEach { line ->
-        var currentLine = line.trimEnd()
+    text.lines().forEach { rawLine ->
+        val line = rawLine.trim()
         
         when {
-            currentLine.startsWith("### ") -> {
+            line.startsWith("###### ") -> {
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryColor)) {
+                    appendInlineMarkdown(builder, line.removePrefix("###### ").trim())
+                }
+                builder.append("\n")
+            }
+            line.startsWith("##### ") -> {
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryColor)) {
+                    appendInlineMarkdown(builder, line.removePrefix("##### ").trim())
+                }
+                builder.append("\n")
+            }
+            line.startsWith("#### ") -> {
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryColor)) {
+                    appendInlineMarkdown(builder, line.removePrefix("#### ").trim())
+                }
+                builder.append("\n")
+            }
+            line.startsWith("### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp, color = primaryColor)) {
-                    append(currentLine.removePrefix("### "))
+                    appendInlineMarkdown(builder, line.removePrefix("### ").trim())
                 }
                 builder.append("\n")
             }
-            currentLine.startsWith("## ") -> {
+            line.startsWith("## ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = primaryColor)) {
-                    append(currentLine.removePrefix("## "))
+                    appendInlineMarkdown(builder, line.removePrefix("## ").trim())
                 }
                 builder.append("\n")
             }
-            currentLine.startsWith("# ") -> {
-                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 24.sp, color = primaryColor)) {
-                    append(currentLine.removePrefix("# "))
+            line.startsWith("# ") -> {
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 22.sp, color = primaryColor)) {
+                    appendInlineMarkdown(builder, line.removePrefix("# ").trim())
                 }
                 builder.append("\n")
             }
-            currentLine.startsWith("- ") || currentLine.startsWith("* ") -> {
+            line.startsWith("- ") || line.startsWith("* ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = primaryColor)) {
                     append(" •  ")
                 }
-                appendInlineMarkdown(builder, currentLine.drop(2))
+                appendInlineMarkdown(builder, line.drop(2).trim())
                 builder.append("\n")
             }
             else -> {
-                if (currentLine.isNotEmpty()) {
-                    appendInlineMarkdown(builder, currentLine)
+                if (line.isNotEmpty()) {
+                    appendInlineMarkdown(builder, line)
                 }
                 builder.append("\n")
             }
