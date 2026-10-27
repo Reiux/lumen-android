@@ -1,7 +1,9 @@
 package com.reiux.lumen.data.network
 
 import android.net.Uri
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.GoogleAccount
+import com.reiux.lumen.util.AuthFailureException
 import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -143,13 +145,31 @@ class GoogleAuthClient(
 
         val body = respBytes.decodeToString()
         val parsed = parseKeyValueResponse(body)
+        val googleError = parsed["Error"] ?: parsed["Info"]
 
-        val bearerToken = parsed["Auth"] ?: throw IOException("Auth response missing bearer token: $body")
+        if (!response.isSuccessful || !googleError.isNullOrEmpty()) {
+            val errCode = response.code
+            val rawDetail = "HTTP $errCode: ${googleError ?: body.take(300)}"
+            val kind = when (googleError) {
+                "NeedsBrowser", "NeedsVerification", "CaptchaRequired", "DeviceManagementRequired", "BadAuthentication", "NeedPermission", "TermsOfServiceNotAccepted" -> AuthFailureKind.SIGN_IN_REQUIRED
+                "AccountDisabled", "AccountDeleted", "ServiceDisabled", "AccessNotConfigured", "GoogleAccountDataDeletion", "AccountLocked" -> AuthFailureKind.ACCOUNT_RESTRICTED
+                else -> if (errCode == 429) AuthFailureKind.RATE_LIMITED else AuthFailureKind.SIGN_IN_REQUIRED
+            }
+            LumenLogger.w("Auth") { "getBearerToken failed ($kind): $rawDetail" }
+            throw com.reiux.lumen.util.AuthFailureException(kind = kind, rawDetail = rawDetail)
+        }
+
+        val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response: $body")
         val expirySec = parsed["Expiry"]?.toLongOrNull() ?: (now + 3600)
 
         tokenCache[account.email] = CachedToken(bearerToken, expirySec)
         LumenLogger.d("Auth", "Acquired Photos bearer token for ${account.email} (expires in ${expirySec - now}s)")
         bearerToken
+    }
+
+    fun invalidateCache(email: String) {
+        tokenCache.remove(email)
+        LumenLogger.d("Auth", "Invalidated token cache for $email")
     }
 
     private fun generateAndroidId(): String {

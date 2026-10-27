@@ -2,6 +2,8 @@ package com.reiux.lumen.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.reiux.lumen.data.model.AccountBlock
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.util.LumenLogger
@@ -30,6 +32,7 @@ class SettingsRepository(context: Context) {
         val saveLogs = prefs.getBoolean(KEY_SAVE_LOGS, false)
         val devMode = prefs.getBoolean(KEY_DEV_MODE, false)
         val hasCompletedOnboarding = prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false)
+        val hasAcknowledgedRisk = prefs.getBoolean(KEY_HAS_ACKNOWLEDGED_ACCOUNT_RISK, false)
         val unlockedPrism = prefs.getBoolean(KEY_UNLOCKED_PRISM, false)
         val unlockedMatrix = prefs.getBoolean(KEY_UNLOCKED_MATRIX, false)
         val unlockedSpooky = prefs.getBoolean(KEY_UNLOCKED_SPOOKY, false)
@@ -47,7 +50,8 @@ class SettingsRepository(context: Context) {
                     BackupFolder(
                         path = obj.getString("path"),
                         displayName = obj.getString("displayName"),
-                        enabled = obj.optBoolean("enabled", true)
+                        enabled = obj.optBoolean("enabled", true),
+                        includeSubfolders = obj.optBoolean("includeSubfolders", false)
                     )
                 )
             }
@@ -77,6 +81,7 @@ class SettingsRepository(context: Context) {
             saveLogsEnabled = saveLogs,
             developerModeUnlocked = devMode,
             hasCompletedOnboarding = hasCompletedOnboarding,
+            hasAcknowledgedAccountRisk = hasAcknowledgedRisk,
             unlockedPrismTheme = unlockedPrism,
             unlockedMatrixTheme = unlockedMatrix,
             unlockedSpookyTheme = unlockedSpooky,
@@ -315,6 +320,15 @@ class SettingsRepository(context: Context) {
         saveFolders(updated)
     }
 
+    fun setIncludeSubfolders(path: String, includeSubfolders: Boolean) {
+        val old = _settings.value.folders.firstOrNull { it.path == path }?.includeSubfolders
+        val updated = _settings.value.folders.map {
+            if (it.path == path) it.copy(includeSubfolders = includeSubfolders) else it
+        }
+        LumenLogger.i("Settings") { "setIncludeSubfolders: path='$path' old=$old -> new=$includeSubfolders" }
+        saveFolders(updated)
+    }
+
     private fun saveFolders(folders: List<BackupFolder>) {
         val array = JSONArray()
         for (f in folders) {
@@ -322,6 +336,7 @@ class SettingsRepository(context: Context) {
             obj.put("path", f.path)
             obj.put("displayName", f.displayName)
             obj.put("enabled", f.enabled)
+            obj.put("includeSubfolders", f.includeSubfolders)
             array.put(obj)
         }
         prefs.edit().putString(KEY_FOLDERS, array.toString()).apply()
@@ -356,6 +371,60 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    fun updateHasAcknowledgedAccountRisk(acknowledged: Boolean) {
+        prefs.edit().putBoolean(KEY_HAS_ACKNOWLEDGED_ACCOUNT_RISK, acknowledged).apply()
+        LumenLogger.i("Settings") { "hasAcknowledgedAccountRisk changed: $acknowledged" }
+        _settings.value = _settings.value.copy(hasAcknowledgedAccountRisk = acknowledged)
+    }
+
+    fun getAccountBlock(email: String): AccountBlock? {
+        val key = "account_block_${email.lowercase()}"
+        val jsonStr = prefs.getString(key, null) ?: return null
+        return try {
+            val obj = JSONObject(jsonStr)
+            val kindStr = obj.getString("kind")
+            val kind = AuthFailureKind.valueOf(kindStr)
+            val ts = obj.getLong("timestamp")
+            val retryAfterTs = if (obj.has("retryAfterTimestamp")) obj.getLong("retryAfterTimestamp") else null
+            val rawDetail = if (obj.has("rawDetail")) obj.getString("rawDetail") else null
+
+            // Auto-expire RATE_LIMITED block if retryAfterTimestamp has passed
+            if (kind == AuthFailureKind.RATE_LIMITED && retryAfterTs != null && System.currentTimeMillis() >= retryAfterTs) {
+                clearAccountBlock(email)
+                null
+            } else {
+                AccountBlock(
+                    kind = kind,
+                    timestamp = ts,
+                    accountEmail = email,
+                    retryAfterTimestamp = retryAfterTs,
+                    rawDetail = rawDetail
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun setAccountBlock(block: AccountBlock) {
+        val key = "account_block_${block.accountEmail.lowercase()}"
+        val obj = JSONObject().apply {
+            put("kind", block.kind.name)
+            put("timestamp", block.timestamp)
+            put("accountEmail", block.accountEmail)
+            block.retryAfterTimestamp?.let { put("retryAfterTimestamp", it) }
+            block.rawDetail?.let { put("rawDetail", it) }
+        }
+        prefs.edit().putString(key, obj.toString()).apply()
+        LumenLogger.w("Auth") { "Persisted account block for ${block.accountEmail}: ${block.kind}" }
+    }
+
+    fun clearAccountBlock(email: String) {
+        val key = "account_block_${email.lowercase()}"
+        prefs.edit().remove(key).apply()
+        LumenLogger.i("Auth") { "Cleared account block for $email" }
+    }
+
     companion object {
         private const val KEY_AUTO_BACKUP = "auto_backup"
         private const val KEY_WIFI_ONLY = "wifi_only"
@@ -368,6 +437,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_SAVE_LOGS = "save_logs"
         private const val KEY_DEV_MODE = "developer_mode_unlocked"
         private const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
+        private const val KEY_HAS_ACKNOWLEDGED_ACCOUNT_RISK = "has_acknowledged_account_risk"
         private const val KEY_UNLOCKED_PRISM = "unlocked_prism_theme"
         private const val KEY_UNLOCKED_MATRIX = "unlocked_matrix_theme"
         private const val KEY_UNLOCKED_SPOOKY = "unlocked_spooky_theme"

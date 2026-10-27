@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import com.reiux.lumen.ui.ScanState
 import com.reiux.lumen.util.EasterEggsManager
 import com.reiux.lumen.util.Season
 import com.reiux.lumen.util.rememberShakeDetector
+import java.util.Locale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -94,6 +96,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.reiux.lumen.data.model.AccountBlock
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
@@ -119,7 +123,7 @@ fun BackupScreen(
     useQuota: Boolean = false,
     uploadSpeed: String? = null,
     conditionNotice: String? = null,
-    isScanningFolders: Boolean = false,
+    scanState: ScanState = ScanState.Idle,
     developerModeUnlocked: Boolean = false,
     isMockMode: Boolean = false,
     hyperdriveAuraEnabled: Boolean = false,
@@ -132,12 +136,92 @@ fun BackupScreen(
     onUploadFiles: (List<Uri>) -> Unit,
     onPauseBackup: () -> Unit = {},
     onCancelBackup: () -> Unit = {},
+    onCancelScan: () -> Unit = {},
     onClearCompleted: () -> Unit,
+    addAccountError: String? = null,
+    onAddAccountToken: (String) -> Unit = {},
+    onAddAccountCredential: (String) -> Unit = {},
+    onRemoveAccount: (String) -> Unit = {},
+    onClearAddAccountError: () -> Unit = {},
     onNavigateToAccounts: () -> Unit,
+    accountBlock: AccountBlock? = null,
     onUnlockPrismTheme: () -> Unit = {},
     onTriggerLightsOff: () -> Unit = {},
+    onSimulateLargeScan: () -> Unit = {},
+    onSimulateUpdateAvailable: () -> Unit = {},
+    onSimulateBlock: (AuthFailureKind) -> Unit = {},
+    onClearBlock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var showSignInDialog by remember { mutableStateOf(false) }
+    var showRestrictedRemoveDialog by remember { mutableStateOf(false) }
+
+    if (showSignInDialog) {
+        com.reiux.lumen.ui.components.GoogleSignInWebViewDialog(
+            onDismiss = {
+                showSignInDialog = false
+                onClearAddAccountError()
+            },
+            onTokenCaptured = {
+                onAddAccountToken(it)
+                showSignInDialog = false
+            },
+            disclaimerText = "Sign in to ${accountBlock?.accountEmail} to restore access and resume uploads."
+        )
+    }
+
+    if (addAccountError != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = onClearAddAccountError,
+            title = { Text("Authentication Error", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            text = { Text(addAccountError) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onClearAddAccountError()
+                    showSignInDialog = true
+                }) {
+                    Text("Try Again")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = onClearAddAccountError) { Text("Cancel") }
+            },
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    }
+
+    if (showRestrictedRemoveDialog && accountBlock != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRestrictedRemoveDialog = false },
+            title = { Text("Remove Restricted Account", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = "This account has been restricted by Google. Removing it will clear the block in Lumen, but you must check the account's status directly with Google before trying to use it again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                ExpressiveButton(
+                    onClick = {
+                        onRemoveAccount(accountBlock.accountEmail)
+                        showRestrictedRemoveDialog = false
+                        onClearBlock()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showRestrictedRemoveDialog = false }) { Text("Cancel") }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    }
+
     val context = LocalContext.current
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -247,7 +331,11 @@ fun BackupScreen(
                         },
                         onTriggerShakeFlicker = { triggerShakeFlicker = true },
                         onSelectMockSeason = { s -> mockSelectedSeason = s },
-                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) }
+                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) },
+                        onSimulateLargeScan = onSimulateLargeScan,
+                        onSimulateUpdateAvailable = onSimulateUpdateAvailable,
+                        onSimulateBlock = onSimulateBlock,
+                        onClearBlock = onClearBlock
                     )
                 }
 
@@ -263,13 +351,16 @@ fun BackupScreen(
                     queue = queue,
                     completedCount = completedCount,
                     conditionNotice = conditionNotice,
-                    isScanningFolders = isScanningFolders,
-                    hyperdriveAuraEnabled = hyperdriveAuraEnabled,
+                    scanState = scanState,
+                    accountBlock = accountBlock,
                     showMockCompletionCelebration = showMockCompletionCelebration,
                     mockForcedPunTitle = mockForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
                     onCancelBackup = onCancelBackup,
+                    onCancelScan = onCancelScan,
+                    onSignInAgain = { showSignInDialog = true },
+                    onRemoveRestrictedAccount = { showRestrictedRemoveDialog = true },
                     onPickPhotos = {
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -416,7 +507,11 @@ fun BackupScreen(
                         },
                         onTriggerShakeFlicker = { triggerShakeFlicker = true },
                         onSelectMockSeason = { s -> mockSelectedSeason = s },
-                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) }
+                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) },
+                        onSimulateLargeScan = onSimulateLargeScan,
+                        onSimulateUpdateAvailable = onSimulateUpdateAvailable,
+                        onSimulateBlock = onSimulateBlock,
+                        onClearBlock = onClearBlock
                     )
                 }
             }
@@ -436,13 +531,16 @@ fun BackupScreen(
                     queue = queue,
                     completedCount = completedCount,
                     conditionNotice = conditionNotice,
-                    isScanningFolders = isScanningFolders,
-                    hyperdriveAuraEnabled = hyperdriveAuraEnabled,
+                    scanState = scanState,
+                    accountBlock = accountBlock,
                     showMockCompletionCelebration = showMockCompletionCelebration,
                     mockForcedPunTitle = mockForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
                     onCancelBackup = onCancelBackup,
+                    onCancelScan = onCancelScan,
+                    onSignInAgain = { showSignInDialog = true },
+                    onRemoveRestrictedAccount = { showRestrictedRemoveDialog = true },
                     onPickPhotos = {
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -597,7 +695,7 @@ private fun BackupTopHeader(
             DynamicLumenIcon(
                 size = 40.dp,
                 rotationAngle = if (unlockedPrismTheme) prismSpinAngle else 0f,
-                activeSeason = activeSeason
+                activeSeason = Season.NONE
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
@@ -692,7 +790,11 @@ private fun MockModeCard(
     onCycleEmptyStateVariant: () -> Unit,
     onTriggerShakeFlicker: () -> Unit,
     onSelectMockSeason: (Season) -> Unit,
-    onTriggerSeasonalGreeting: () -> Unit
+    onTriggerSeasonalGreeting: () -> Unit,
+    onSimulateLargeScan: () -> Unit = {},
+    onSimulateUpdateAvailable: () -> Unit = {},
+    onSimulateBlock: (AuthFailureKind) -> Unit = {},
+    onClearBlock: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -896,6 +998,84 @@ private fun MockModeCard(
                 ) {
                     Text("Show Greeting", fontSize = 10.sp)
                 }
+                
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onSimulateUpdateAvailable()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Show Update Dialog", fontSize = 10.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Circuit Breaker & Scan Limits",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onSimulateLargeScan()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Simulate Large Scan", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onSimulateBlock(AuthFailureKind.SIGN_IN_REQUIRED)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Simulate: Sign-In", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onSimulateBlock(AuthFailureKind.ACCOUNT_RESTRICTED)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Simulate: Restricted", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onSimulateBlock(AuthFailureKind.RATE_LIMITED)
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Simulate: Rate Limit (2m)", fontSize = 10.sp)
+                }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onClearBlock()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Clear Block", fontSize = 10.sp)
+                }
             }
         }
     }
@@ -984,16 +1164,29 @@ private fun HeroBackupCard(
     queue: List<UploadItem>,
     completedCount: Int,
     conditionNotice: String?,
-    isScanningFolders: Boolean = false,
-    hyperdriveAuraEnabled: Boolean = false,
+    scanState: ScanState = ScanState.Idle,
+    accountBlock: AccountBlock? = null,
     showMockCompletionCelebration: Boolean = false,
     mockForcedPunTitle: String? = null,
     selectedAccount: GoogleAccount?,
     onStartBackup: () -> Unit,
     onCancelBackup: () -> Unit,
+    onCancelScan: () -> Unit = {},
+    onSignInAgain: () -> Unit = {},
+    onRemoveRestrictedAccount: () -> Unit = {},
+    onNavigateToAccounts: () -> Unit = {},
     onPickPhotos: () -> Unit
 ) {
-    if (isScanningFolders) {
+    if (accountBlock != null) {
+        com.reiux.lumen.ui.components.AccountBlockCard(
+            block = accountBlock,
+            onSignInAgain = onSignInAgain,
+            onRemoveAccount = onRemoveRestrictedAccount
+        )
+        return
+    }
+
+    if (scanState is ScanState.Scanning) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
@@ -1004,7 +1197,7 @@ private fun HeroBackupCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(28.dp),
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 ExpressiveLoadingIndicator(
@@ -1019,11 +1212,25 @@ private fun HeroBackupCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                val countText = if (scanState.filesFound > 0) {
+                    "${String.format(Locale.US, "%,d", scanState.filesFound)} files found — ${scanState.currentFolderName}"
+                } else {
+                    "Scanning enabled folders for photos & videos..."
+                }
                 Text(
-                    text = "Checking Google Photos for duplicates",
+                    text = countText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                ExpressiveTonalButton(
+                    onClick = onCancelScan,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Text("Cancel Indexing", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
         return
@@ -1044,44 +1251,8 @@ private fun HeroBackupCard(
         return
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "hyperdriveAura")
-    val auraRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "auraRotation"
-    )
-
-    val auraModifier = if (hyperdriveAuraEnabled) {
-        Modifier.drawWithContent {
-            drawContent()
-            rotate(degrees = auraRotation, pivot = center) {
-                drawRoundRect(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color(0xFF00F2FE),
-                            Color(0xFF4FACFE),
-                            Color(0xFF00FF66),
-                            Color(0xFFFF007F),
-                            Color(0xFF00F2FE)
-                        ),
-                        center = center
-                    ),
-                    size = size,
-                    cornerRadius = CornerRadius(28.dp.toPx()),
-                    style = Stroke(width = 3.dp.toPx())
-                )
-            }
-        }
-    } else Modifier
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(auraModifier),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {

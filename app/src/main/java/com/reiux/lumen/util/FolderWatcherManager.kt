@@ -7,6 +7,7 @@ import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.repository.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,78 +38,101 @@ class FolderWatcherManager(
 
     fun start() {
         scope.launch {
-            // FIX: Only restart watcher when autoBackupEnabled or the enabled folder list ACTUALLY changes.
-            // Changes to color preset, notifications, storage saver, etc. will not trigger watcher restart.
             settingsRepository.settings
-                .map { Pair(it.autoBackupEnabled, it.folders.filter { f -> f.enabled }.map { f -> f.path }) }
+                .map { Pair(it.autoBackupEnabled, it.folders.filter { f -> f.enabled }) }
                 .distinctUntilChanged()
-                .collectLatest { (autoBackupEnabled, enabledFolderPaths) ->
+                .collectLatest { (autoBackupEnabled, enabledFolders) ->
                     val reason = if (!autoBackupEnabled) {
                         "Auto-backup is disabled in settings"
-                    } else if (enabledFolderPaths.isEmpty()) {
+                    } else if (enabledFolders.isEmpty()) {
                         "No enabled backup folders selected"
                     } else {
-                        "Enabled folder list updated: ${enabledFolderPaths.size} folders"
+                        "Enabled folder list updated: ${enabledFolders.size} folders"
                     }
-                    syncWatchers(autoBackupEnabled, enabledFolderPaths, reason)
+                    syncWatchers(autoBackupEnabled, enabledFolders, reason)
                 }
         }
     }
 
-    private fun syncWatchers(autoBackupEnabled: Boolean, enabledFolderPaths: List<String>, reason: String) {
+    private fun syncWatchers(autoBackupEnabled: Boolean, enabledFolders: List<BackupFolder>, reason: String) {
         stopWatchers()
 
-        if (!autoBackupEnabled || enabledFolderPaths.isEmpty()) {
+        if (!autoBackupEnabled || enabledFolders.isEmpty()) {
             LumenLogger.i(TAG) {
-                "Watcher idle (reason='$reason', autoBackupEnabled=$autoBackupEnabled, enabledFoldersCount=${enabledFolderPaths.size})"
+                "Watcher idle (reason='$reason', autoBackupEnabled=$autoBackupEnabled, enabledFoldersCount=${enabledFolders.size})"
             }
             return
         }
 
         LumenLogger.i(TAG) {
-            "Starting folder watchers (reason='$reason', count=${enabledFolderPaths.size}): $enabledFolderPaths"
+            "Starting folder watchers (reason='$reason', count=${enabledFolders.size})"
         }
 
-        // 1. Setup FileObserver on each enabled directory
         val mask = FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO
-        for (folderPath in enabledFolderPaths) {
-            val dir = File(folderPath)
-            if (!dir.exists() || !dir.isDirectory) {
-                LumenLogger.w(TAG) { "Cannot watch folder (directory does not exist): $folderPath" }
+        val maxObservers = 200
+
+        for (folder in enabledFolders) {
+            val rootDir = File(folder.path)
+            if (!rootDir.exists() || !rootDir.isDirectory) {
+                LumenLogger.w(TAG) { "Cannot watch folder (directory does not exist): ${folder.path}" }
                 continue
             }
 
-            val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                object : FileObserver(dir, mask) {
-                    override fun onEvent(event: Int, path: String?) {
-                        handleFileEvent(dir, path, event)
+            val dirsToWatch = mutableListOf<File>()
+            if (folder.includeSubfolders) {
+                val stack = java.util.ArrayDeque<Pair<File, Int>>()
+                stack.push(rootDir to 0)
+                while (stack.isNotEmpty()) {
+                    val (dir, depth) = stack.pop()
+                    dirsToWatch.add(dir)
+                    if (fileObservers.size + dirsToWatch.size >= maxObservers) {
+                        LumenLogger.w(TAG) { "Reached maximum FileObserver cap ($maxObservers). Relying on MediaStore ContentObserver for remaining subdirectories." }
+                        break
+                    }
+                    if (depth < 8) {
+                        dir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { sub ->
+                            stack.push(sub to (depth + 1))
+                        }
                     }
                 }
             } else {
-                @Suppress("DEPRECATION")
-                object : FileObserver(dir.absolutePath, mask) {
-                    override fun onEvent(event: Int, path: String?) {
-                        handleFileEvent(dir, path, event)
-                    }
-                }
+                dirsToWatch.add(rootDir)
             }
 
-            try {
-                observer.startWatching()
-                fileObservers.add(observer)
-                LumenLogger.d(TAG) { "FileObserver registered on: ${dir.absolutePath}" }
-            } catch (e: Exception) {
-                LumenLogger.w(TAG) { "Failed to start FileObserver on $folderPath: ${e.message}" }
+            for (dir in dirsToWatch) {
+                if (fileObservers.size >= maxObservers) break
+
+                val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    object : FileObserver(dir, mask) {
+                        override fun onEvent(event: Int, path: String?) {
+                            handleFileEvent(dir, path, event)
+                        }
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    object : FileObserver(dir.absolutePath, mask) {
+                        override fun onEvent(event: Int, path: String?) {
+                            handleFileEvent(dir, path, event)
+                        }
+                    }
+                }
+
+                try {
+                    observer.startWatching()
+                    fileObservers.add(observer)
+                    LumenLogger.d(TAG) { "FileObserver registered on: ${dir.absolutePath}" }
+                } catch (e: Exception) {
+                    LumenLogger.w(TAG) { "Failed to start FileObserver on ${dir.absolutePath}: ${e.message}" }
+                }
             }
         }
 
-        // 2. Setup MediaStore ContentObserver for camera & gallery writes
         val handler = Handler(Looper.getMainLooper())
         contentObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
                 super.onChange(selfChange)
                 LumenLogger.d(TAG) { "MediaStore ContentObserver triggered: onChange(selfChange=$selfChange)" }
-                queryRecentMediaStoreItems(enabledFolderPaths)
+                queryRecentMediaStoreItems(enabledFolders)
             }
         }
 
@@ -152,7 +176,6 @@ class FolderWatcherManager(
             "Raw FileObserver event: file='${file.name}' event=$eventName dir='${dir.path}' ext='$ext'"
         }
 
-        // Ignore hidden files and Android trash folders/files
         if (file.name.startsWith(".") || file.name.startsWith(".trash") || dir.name.startsWith(".")) {
             LumenLogger.v(TAG) { "Ignored hidden/trash file: '${file.name}'" }
             return
@@ -166,19 +189,9 @@ class FolderWatcherManager(
         }
     }
 
-    private fun queryRecentMediaStoreItems(enabledFolderPaths: List<String>) {
+    private fun queryRecentMediaStoreItems(enabledFolders: List<BackupFolder>) {
         scope.launch {
             try {
-                val extStorage = try {
-                    android.os.Environment.getExternalStorageDirectory().absolutePath
-                } catch (_: Exception) {
-                    "/storage/emulated/0"
-                }
-                val allNormalizedEnabledPaths = enabledFolderPaths.flatMap { folderPath ->
-                    val canonical = try { File(folderPath).canonicalPath } catch (_: Exception) { folderPath }
-                    listOf(folderPath, canonical, folderPath.replaceFirst("/sdcard", extStorage))
-                }.toSet()
-
                 val projection = arrayOf(
                     MediaStore.MediaColumns.DATA,
                     MediaStore.MediaColumns.DISPLAY_NAME,
@@ -204,11 +217,13 @@ class FolderWatcherManager(
                             checked++
                             if (dataCol >= 0) {
                                 val path = cursor.getString(dataCol)
-                                if (!path.isNullOrEmpty() && allNormalizedEnabledPaths.any { path.startsWith(it) }) {
-                                    val file = File(path)
-                                    if (file.extension.lowercase() in supportedExts && file.exists() && file.length() > 0) {
-                                        matchedCount++
-                                        queueFileForBackup(file)
+                                if (!path.isNullOrEmpty()) {
+                                    if (enabledFolders.any { isPathMatchingFolder(path, it) }) {
+                                        val file = File(path)
+                                        if (file.extension.lowercase() in supportedExts && file.exists() && file.length() > 0) {
+                                            matchedCount++
+                                            queueFileForBackup(file)
+                                        }
                                     }
                                 }
                             }
@@ -230,7 +245,7 @@ class FolderWatcherManager(
         debounceJob?.cancel()
         debounceJob = scope.launch {
             LumenLogger.d(TAG) { "Debounce timer started (2000ms) for ${pendingFiles.size} pending file(s)" }
-            delay(2000L) // Debounce so camera or file writer finishes completely
+            delay(2000L)
 
             val filesToSend: List<File>
             synchronized(pendingFiles) {
@@ -274,5 +289,17 @@ class FolderWatcherManager(
 
     companion object {
         private const val TAG = "FolderWatcher"
+
+        fun isPathMatchingFolder(filePath: String, folder: BackupFolder): Boolean {
+            val folderCanonical = try { File(folder.path).canonicalPath } catch (_: Exception) { folder.path }.trimEnd('/')
+            val fileCanonical = try { File(filePath).canonicalPath } catch (_: Exception) { filePath }
+
+            val fileParent = try { File(fileCanonical).parentFile?.canonicalPath } catch (_: Exception) { File(fileCanonical).parent }?.trimEnd('/')
+
+            if (fileParent == folderCanonical) return true
+            if (folder.includeSubfolders && fileCanonical.startsWith("$folderCanonical/")) return true
+
+            return false
+        }
     }
 }

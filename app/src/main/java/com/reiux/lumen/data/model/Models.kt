@@ -12,7 +12,8 @@ data class GoogleAccount(
 data class BackupFolder(
     val path: String,
     val displayName: String,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val includeSubfolders: Boolean = false
 )
 
 data class BackupSettings(
@@ -27,6 +28,7 @@ data class BackupSettings(
     val saveLogsEnabled: Boolean = false,
     val developerModeUnlocked: Boolean = false,
     val hasCompletedOnboarding: Boolean = false,
+    val hasAcknowledgedAccountRisk: Boolean = false,
     val unlockedPrismTheme: Boolean = false,
     val unlockedMatrixTheme: Boolean = false,
     val unlockedSpookyTheme: Boolean = false,
@@ -61,4 +63,21 @@ data class UploadItem(
     val bytesUploaded: Long = 0L,
     val error: String? = null,
     val mediaKey: String? = null
+)
+
+enum class AuthFailureKind {
+    NONE,
+    TOKEN_EXPIRED,
+    SIGN_IN_REQUIRED,
+    ACCOUNT_RESTRICTED,
+    RATE_LIMITED,
+    TRANSIENT
+}
+
+data class AccountBlock(
+    val kind: AuthFailureKind,
+    val timestamp: Long = System.currentTimeMillis(),
+    val accountEmail: String,
+    val retryAfterTimestamp: Long? = null,
+    val rawDetail: String? = null
 )

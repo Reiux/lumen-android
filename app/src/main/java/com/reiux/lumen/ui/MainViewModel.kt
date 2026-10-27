@@ -7,6 +7,8 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.reiux.lumen.LumenApplication
+import com.reiux.lumen.data.model.AccountBlock
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.data.model.GoogleAccount
@@ -21,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +38,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+
+sealed class ScanState {
+    object Idle : ScanState()
+    data class Scanning(
+        val filesFound: Int,
+        val foldersScanned: Int,
+        val currentFolderName: String
+    ) : ScanState()
+    data class Done(val totalFilesFound: Int) : ScanState()
+}
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as LumenApplication
@@ -98,6 +111,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status = UploadStatus.COMPLETED
         )
     )
+
+    private val _updateInfo = MutableStateFlow<com.reiux.lumen.data.model.UpdateInfo?>(null)
+    val updateInfo: StateFlow<com.reiux.lumen.data.model.UpdateInfo?> = _updateInfo.asStateFlow()
+
+    private val _updateDownloadProgress = MutableStateFlow(-1)
+    val updateDownloadProgress: StateFlow<Int> = _updateDownloadProgress.asStateFlow()
+
+    private val _showUpdateSheet = MutableStateFlow(false)
+    val showUpdateSheet: StateFlow<Boolean> = _showUpdateSheet.asStateFlow()
 
     // Original Frontend Mock Simulation Dataset & State
     private val _mockAccounts = MutableStateFlow(
@@ -318,17 +340,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _addAccountError = MutableStateFlow<String?>(null)
     val addAccountError: StateFlow<String?> = _addAccountError.asStateFlow()
 
-    private val _isScanningFolders = MutableStateFlow(false)
-    val isScanningFolders: StateFlow<Boolean> = _isScanningFolders.asStateFlow()
+    private val _scanState = MutableStateFlow<ScanState>(ScanState.Idle)
+    val scanState: StateFlow<ScanState> = _scanState.asStateFlow()
+
+    private val _mockAccountBlock = MutableStateFlow<AccountBlock?>(null)
+
+    val accountBlock: StateFlow<AccountBlock?> = combine(_isMockMode, _mockAccountBlock, uploadRepo.accountBlock) { isMock, mockBlock, realBlock ->
+        if (isMock) mockBlock else realBlock
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private var scanJob: Job? = null
 
     override fun onCleared() {
         super.onCleared()
         mockSimJob?.cancel()
+        scanJob?.cancel()
     }
 
     fun selectDestination(dest: NavDestination) {
         LumenLogger.i("Navigation", "Navigated to tab: ${dest.title}")
         _selectedDestination.value = dest
+    }
+
+    fun checkAndShowUpdate(context: Context, forceShow: Boolean = false, onUpToDate: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            val repo = com.reiux.lumen.data.repository.UpdateRepository()
+            val currentVersion = try {
+                context.packageManager.getPackageInfo(context.packageName, 0)?.versionName ?: "1.0.0"
+            } catch (_: Exception) { "1.0.0" }
+            
+            val info = repo.checkForUpdates(currentVersion)
+            if (info != null) {
+                if (info.isUpdateAvailable || forceShow) {
+                    _updateInfo.value = info
+                    _updateDownloadProgress.value = -1
+                    _showUpdateSheet.value = true
+                } else {
+                    withContext(Dispatchers.Main) { onUpToDate?.invoke() }
+                }
+            } else {
+                withContext(Dispatchers.Main) { onUpToDate?.invoke() }
+            }
+        }
+    }
+
+    fun dismissUpdateSheet() {
+        _showUpdateSheet.value = false
+        _updateDownloadProgress.value = -1
+    }
+
+    fun startUpdateDownload(context: Context) {
+        val info = _updateInfo.value ?: return
+        viewModelScope.launch {
+            _updateDownloadProgress.value = 0
+            val destFile = File(context.cacheDir, "lumen_update_${info.versionName}.apk")
+            try {
+                com.reiux.lumen.data.repository.UpdateRepository().downloadUpdate(info.downloadUrl, destFile).collect { p ->
+                    _updateDownloadProgress.value = p
+                }
+                _showUpdateSheet.value = false
+                com.reiux.lumen.ui.components.launchApkInstall(context, destFile)
+            } catch (e: Exception) {
+                LumenLogger.e("Updater", tr = e) { "Failed to download update" }
+                _updateDownloadProgress.value = -1
+            }
+        }
     }
 
     fun setShowcaseMode(enabled: Boolean) {
@@ -538,6 +614,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun cancelScan() {
+        scanJob?.cancel()
+        scanJob = null
+        _scanState.value = ScanState.Idle
+        LumenLogger.i("BackupUI") { "User cancelled folder indexing" }
+    }
+
+    fun simulateUpdateAvailable() {
+        val mockInfo = com.reiux.lumen.data.model.UpdateInfo(
+            versionName = "1.0.3-mock",
+            releaseNotes = """
+                ### What's New
+                - **Simulated Update**: This is a mock update changelog triggered from developer tools.
+                - **Markdown Support**: Fixed the parser to actually show bold text, bullets, and properly scaled headers.
+                
+                ### Fixes
+                - Tested the update sheet UI scaling on tablets.
+                - Re-wired the download simulation.
+            """.trimIndent(),
+            downloadUrl = "mock://update",
+            isUpdateAvailable = true
+        )
+        _updateInfo.value = mockInfo
+        _showUpdateSheet.value = true
+        LumenLogger.i("MockMode") { "Simulated update available notification" }
+    }
+
+    fun simulateMockLargeScan() {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch {
+            val totalFakeFiles = 50_000
+            val mockFolders = listOf("DCIM/Camera", "Pictures/Screenshots", "Download", "WhatsApp/Media", "Telegram")
+            var currentFiles = 0
+
+            while (currentFiles < totalFakeFiles && isActive) {
+                delay(150L)
+                currentFiles += (1200..3500).random()
+                if (currentFiles > totalFakeFiles) currentFiles = totalFakeFiles
+                val folder = mockFolders.random()
+                _scanState.value = ScanState.Scanning(
+                    filesFound = currentFiles,
+                    foldersScanned = (currentFiles / 1000) + 1,
+                    currentFolderName = folder
+                )
+            }
+
+            _scanState.value = ScanState.Done(totalFakeFiles)
+            delay(1200L)
+            _scanState.value = ScanState.Idle
+            LumenLogger.i("MockMode") { "Simulated mock scan completed: 50,000 files" }
+        }
+    }
+
+    fun simulateMockBlock(kind: AuthFailureKind) {
+        val email = selectedAccount.value?.email ?: "photos.vault@gmail.com"
+        val retryAfterTs = if (kind == AuthFailureKind.RATE_LIMITED) System.currentTimeMillis() + 120_000L else null
+        _mockAccountBlock.value = AccountBlock(
+            kind = kind,
+            timestamp = System.currentTimeMillis(),
+            accountEmail = email,
+            retryAfterTimestamp = retryAfterTs,
+            rawDetail = "Simulated mock circuit breaker block: $kind"
+        )
+        LumenLogger.w("MockMode") { "Simulated mock circuit breaker block: $kind" }
+    }
+
+    fun clearMockBlock() {
+        _mockAccountBlock.value = null
+        val email = selectedAccount.value?.email
+        if (email != null) {
+            uploadRepo.clearAccountBlock(email)
+        }
+        LumenLogger.i("MockMode") { "Cleared circuit breaker block" }
+    }
+
     // --- Backup Operations ---
     fun startBackup() {
         if (_isMockMode.value) {
@@ -546,7 +697,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startMockSimulation()
             return
         }
-        if (_isScanningFolders.value || uploadRepo.isUploading.value) {
+        if (_scanState.value is ScanState.Scanning || uploadRepo.isUploading.value) {
             LumenLogger.d("BackupUI", "Backup or scan already in progress, ignoring start request")
             return
         }
@@ -555,27 +706,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             LumenLogger.w("BackupUI", "Cannot start backup: No account selected")
             return
         }
-        val enabledFolders = settings.value.folders.filter { it.enabled }.map { File(it.path) }
+
+        val currentSettings = settings.value
+        val enabledFolders = currentSettings.folders.filter { it.enabled }
+        if (enabledFolders.isEmpty()) {
+            LumenLogger.w("BackupUI", "Cannot start backup: No folders enabled")
+            return
+        }
+
         LumenLogger.i("BackupUI") { "User initiated backup with ${enabledFolders.size} active folders" }
 
-        viewModelScope.launch {
-            _isScanningFolders.value = true
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
+            _scanState.value = ScanState.Scanning(0, 0, "")
+            val scanStart = System.currentTimeMillis()
+
             try {
-                withContext(Dispatchers.IO) {
-                    val mediaFiles = mutableListOf<File>()
-                    for (folder in enabledFolders) {
-                        if (folder.exists() && folder.isDirectory) {
-                            val found = MediaFileReader.scanMediaFiles(folder)
-                            mediaFiles.addAll(found)
+                var lastProgress = com.reiux.lumen.util.ScanProgress(0, 0, "")
+                com.reiux.lumen.util.MediaFileReader.scanMediaFilesIncremental(getApplication(), enabledFolders)
+                    .collect { progress ->
+                        lastProgress = progress
+                        if (!progress.isComplete) {
+                            _scanState.value = ScanState.Scanning(
+                                filesFound = progress.filesFound,
+                                foldersScanned = progress.foldersScanned,
+                                currentFolderName = progress.currentFolderName
+                            )
                         }
                     }
-                    LumenLogger.i("BackupUI") { "Scanned ${mediaFiles.size} media files from active folders" }
-                    if (mediaFiles.isNotEmpty()) {
-                        uploadRepo.enqueueFiles(mediaFiles, account, settings.value.storageSaverQuality, settings.value.useQuota)
-                    }
+
+                val durationMs = System.currentTimeMillis() - scanStart
+                LumenLogger.i("BackupUI") { "Indexing complete: ${lastProgress.filesFound} files found in ${durationMs}ms" }
+
+                _scanState.value = ScanState.Done(lastProgress.filesFound)
+
+                if (lastProgress.scannedFiles.isNotEmpty()) {
+                    uploadRepo.enqueueScannedFiles(
+                        scannedFiles = lastProgress.scannedFiles,
+                        account = account,
+                        storageSaver = currentSettings.storageSaverQuality,
+                        useQuota = currentSettings.useQuota
+                    )
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    LumenLogger.i("BackupUI") { "Folder scan job cancelled by user" }
+                } else {
+                    LumenLogger.e("BackupUI", tr = e) { "Folder scan error: ${e.message}" }
                 }
             } finally {
-                _isScanningFolders.value = false
+                _scanState.value = ScanState.Idle
             }
         }
     }
@@ -676,6 +856,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setIncludeSubfolders(path: String, includeSubfolders: Boolean) {
+        if (_isMockMode.value) {
+            val updated = _mockSettings.value.folders.map {
+                if (it.path == path) it.copy(includeSubfolders = includeSubfolders) else it
+            }
+            _mockSettings.value = _mockSettings.value.copy(folders = updated)
+        } else {
+            settingsRepo.setIncludeSubfolders(path, includeSubfolders)
+        }
+    }
+
     fun pauseBackup() {
         LumenLogger.i("BackupUI", "pauseBackup called")
         if (_isMockMode.value) {
@@ -701,6 +892,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         uploadRepo.cancelQueue()
+    }
+
+    fun acknowledgeAccountRisk() {
+        LumenLogger.i("Settings", "User acknowledged account risk disclosure")
+        settingsRepo.updateHasAcknowledgedAccountRisk(true)
     }
 
     fun clearCompleted() {

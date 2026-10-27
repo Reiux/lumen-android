@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +47,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun AddAccountDialog(
@@ -56,17 +56,20 @@ fun AddAccountDialog(
     onSubmitCredential: (String) -> Unit,
     onClearError: () -> Unit = {},
     isLoading: Boolean,
-    errorMessage: String?
+    errorMessage: String?,
+    hasAcknowledgedAccountRisk: Boolean = false,
+    onAcknowledgeRisk: () -> Unit = {},
+    isManualOnly: Boolean = false
 ) {
     var showWebView by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var isRawCredential by remember { mutableStateOf(false) }
-    var showManualInput by remember { mutableStateOf(false) }
+    var showManualInput by remember { mutableStateOf(isManualOnly) }
+    var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
-    // Dynamic M3E Bouncy Scale Animation for Dialog Entrance
     val dialogScale = remember { Animatable(0.88f) }
     LaunchedEffect(Unit) {
         dialogScale.animateTo(
@@ -106,206 +109,74 @@ fun AddAccountDialog(
         text = {
             val scrollState = rememberScrollState()
 
-            if (isWideLayout) {
-                // Split 2-Column Wide Landscape / Tablet Mode
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Left Column: Primary Sign In Button & Prominent Error Card
-                    Column(modifier = Modifier.weight(0.48f)) {
-                        if (errorMessage != null) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 14.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Error,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Authentication Error",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    Text(
-                                        text = errorMessage,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        ExpressiveTonalButton(
-                                            onClick = onClearError,
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Try Again")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                onClearError()
-                                showWebView = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            enabled = !isLoading
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AccountCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Sign In with Google",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+            ) {
+                AccountRiskCard(
+                    hasAcknowledged = localAcknowledged,
+                    onAcknowledge = {
+                        localAcknowledged = true
+                        onAcknowledgeRisk()
                     }
+                )
 
-                    // Right Column: Manual Token/Credential Input
-                    Column(modifier = Modifier.weight(0.52f)) {
-                        if (!showManualInput) {
-                            FilledTonalButton(
-                                onClick = { showManualInput = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(Icons.Rounded.Key, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Paste Token Manually")
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (errorMessage != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Error,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Authentication Error",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             }
-                        } else {
-                            Text(
-                                text = if (isRawCredential)
-                                    "Paste credential string (androidId=...&Token=...)."
-                                else
-                                    "Enter oauth_token cookie from Google Embedded Setup.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            OutlinedTextField(
-                                value = input,
-                                onValueChange = {
-                                    input = it
-                                    if (it.contains("androidId=") && it.contains("Email=")) {
-                                        isRawCredential = true
-                                    }
-                                },
-                                label = { Text(if (isRawCredential) "Credential string" else "OAuth Token") },
-                                placeholder = {
-                                    Text(if (isRawCredential) "androidId=...&Email=..." else "oauth_token=...")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                isError = errorMessage != null
+                            Text(
+                                text = errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
                             )
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                            TextButton(
-                                onClick = { isRawCredential = !isRawCredential },
-                                modifier = Modifier.align(Alignment.End)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
                             ) {
-                                Text(
-                                    text = if (isRawCredential) "Switch to OAuth Token" else "Switch to Credential",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                                ExpressiveTonalButton(
+                                    onClick = onClearError,
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Try Again")
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                // Single Column Portrait Layout
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState)
-                ) {
-                    if (errorMessage != null) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Error,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = "Authentication Error",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
 
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                Text(
-                                    text = errorMessage,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    ExpressiveTonalButton(
-                                        onClick = onClearError,
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Try Again")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
+                if (!isManualOnly) {
                     Button(
                         onClick = {
                             onClearError()
@@ -315,7 +186,7 @@ fun AddAccountDialog(
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = !isLoading
+                        enabled = !isLoading && localAcknowledged
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.AccountCircle,
@@ -349,6 +220,7 @@ fun AddAccountDialog(
                     if (!showManualInput) {
                         FilledTonalButton(
                             onClick = { showManualInput = true },
+                            enabled = !isLoading && localAcknowledged,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp)
                         ) {
@@ -356,46 +228,49 @@ fun AddAccountDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Paste Token or Credential Manually")
                         }
-                    } else {
+                    }
+                }
+
+                if (showManualInput) {
+                    Text(
+                        text = if (isRawCredential)
+                            "Paste a full Lumen credential string (androidId=...&Token=...)."
+                        else
+                            "Enter the oauth_token cookie obtained from Google Embedded Setup.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = {
+                            input = it
+                            if (it.contains("androidId=") && it.contains("Email=")) {
+                                isRawCredential = true
+                            }
+                        },
+                        label = { Text(if (isRawCredential) "Credential string" else "OAuth Token") },
+                        placeholder = {
+                            Text(if (isRawCredential) "androidId=...&Email=..." else "oauth_token=...")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        isError = errorMessage != null,
+                        enabled = localAcknowledged
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    TextButton(
+                        onClick = { isRawCredential = !isRawCredential },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
                         Text(
-                            text = if (isRawCredential)
-                                "Paste a full Lumen or microG credential string (androidId=...&Token=...)."
-                            else
-                                "Enter the oauth_token cookie obtained from Google Embedded Setup.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = if (isRawCredential) "Switch to OAuth Token" else "Switch to Credential String",
+                            style = MaterialTheme.typography.labelSmall
                         )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = input,
-                            onValueChange = {
-                                input = it
-                                if (it.contains("androidId=") && it.contains("Email=")) {
-                                    isRawCredential = true
-                                }
-                            },
-                            label = { Text(if (isRawCredential) "Credential string" else "OAuth Token") },
-                            placeholder = {
-                                Text(if (isRawCredential) "androidId=...&Email=..." else "oauth_token=...")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            isError = errorMessage != null
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        TextButton(
-                            onClick = { isRawCredential = !isRawCredential },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(
-                                text = if (isRawCredential) "Switch to OAuth Token" else "Switch to Credential String",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
                     }
                 }
             }
@@ -410,7 +285,7 @@ fun AddAccountDialog(
                             onSubmitToken(input.trim())
                         }
                     },
-                    enabled = input.isNotBlank() && !isLoading,
+                    enabled = input.isNotBlank() && !isLoading && localAcknowledged,
                     shape = ButtonDefaults.shape
                 ) {
                     if (isLoading) {

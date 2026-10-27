@@ -2,6 +2,8 @@ package com.reiux.lumen.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.reiux.lumen.data.model.AccountBlock
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
@@ -11,6 +13,7 @@ import com.reiux.lumen.util.DeviceConditions
 import com.reiux.lumen.util.FileHasher
 import com.reiux.lumen.util.LumenLogger
 import com.reiux.lumen.util.MediaFileReader
+import com.reiux.lumen.util.ScannedFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,6 +114,112 @@ class UploadRepository(
     private val _completedCount = MutableStateFlow(0)
     val completedCount: StateFlow<Int> = _completedCount.asStateFlow()
 
+    private val _accountBlock = MutableStateFlow<AccountBlock?>(null)
+    val accountBlock: StateFlow<AccountBlock?> = _accountBlock.asStateFlow()
+
+    fun getAccountBlock(email: String): AccountBlock? {
+        val current = _accountBlock.value
+        if (current != null && current.accountEmail.equals(email, ignoreCase = true)) {
+            if (current.kind == AuthFailureKind.RATE_LIMITED && current.retryAfterTimestamp != null && System.currentTimeMillis() >= current.retryAfterTimestamp) {
+                clearAccountBlock(email)
+                return null
+            }
+            return current
+        }
+        val persisted = settingsRepository.getAccountBlock(email)
+        if (persisted != null) {
+            _accountBlock.value = persisted
+        }
+        return persisted
+    }
+
+    fun triggerAccountBlock(email: String, kind: AuthFailureKind, rawDetail: String? = null, retryAfterSec: Long? = null) {
+        val retryAfterTs = if (retryAfterSec != null) System.currentTimeMillis() + (retryAfterSec * 1000L) else if (kind == AuthFailureKind.RATE_LIMITED) System.currentTimeMillis() + (900 * 1000L) else null
+        val block = AccountBlock(
+            kind = kind,
+            timestamp = System.currentTimeMillis(),
+            accountEmail = email,
+            retryAfterTimestamp = retryAfterTs,
+            rawDetail = rawDetail
+        )
+
+        uploadJob?.cancel()
+        uploadJob = null
+        speedTickerJob?.cancel()
+        speedTracker.reset()
+        _uploadSpeed.value = null
+        _isUploading.value = false
+        _currentUploadingItem.value = null
+        _conditionNotice.value = null
+
+        synchronized(_queue) {
+            _queue.value = _queue.value.map { item ->
+                if (item.status == UploadStatus.HASHING ||
+                    item.status == UploadStatus.CHECKING ||
+                    item.status == UploadStatus.UPLOADING ||
+                    item.status == UploadStatus.COMMITTING
+                ) {
+                    item.copy(status = UploadStatus.QUEUED, bytesUploaded = 0L)
+                } else item
+            }
+        }
+
+        settingsRepository.setAccountBlock(block)
+        _accountBlock.value = block
+
+        LumenLogger.logBlocked(
+            runId = "CircuitBreaker",
+            reasonCode = kind.name,
+            userMessage = when (kind) {
+                AuthFailureKind.SIGN_IN_REQUIRED -> "Google is asking you to sign in again. Uploads are paused."
+                AuthFailureKind.ACCOUNT_RESTRICTED -> "Google has restricted this account. Uploads are stopped."
+                AuthFailureKind.RATE_LIMITED -> "Google upload rate limit reached. Uploads paused."
+                else -> "Upload paused due to account protection."
+            },
+            suggestedAction = when (kind) {
+                AuthFailureKind.SIGN_IN_REQUIRED -> "Sign in again in Accounts tab."
+                AuthFailureKind.ACCOUNT_RESTRICTED -> "Check your Google account directly; do not keep retrying."
+                AuthFailureKind.RATE_LIMITED -> "Uploads will resume automatically when rate limit expires."
+                else -> "Check account status."
+            }
+        )
+
+        postBlockNotification(block)
+    }
+
+    fun clearAccountBlock(email: String) {
+        settingsRepository.clearAccountBlock(email)
+        if (_accountBlock.value?.accountEmail.equals(email, ignoreCase = true)) {
+            _accountBlock.value = null
+        }
+    }
+
+    private fun postBlockNotification(block: AccountBlock) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            val title = when (block.kind) {
+                AuthFailureKind.SIGN_IN_REQUIRED -> "Lumen: Sign-in Required"
+                AuthFailureKind.ACCOUNT_RESTRICTED -> "Lumen: Account Restricted"
+                AuthFailureKind.RATE_LIMITED -> "Lumen: Rate Limited"
+                else -> "Lumen: Account Action Required"
+            }
+            val text = when (block.kind) {
+                AuthFailureKind.SIGN_IN_REQUIRED -> "Google asked you to sign in again. Uploads paused."
+                AuthFailureKind.ACCOUNT_RESTRICTED -> "Google restricted this account. Uploads stopped."
+                AuthFailureKind.RATE_LIMITED -> "Rate limit reached. Will resume automatically."
+                else -> "Uploads paused."
+            }
+            val notif = androidx.core.app.NotificationCompat.Builder(context, "lumen_backup_channel")
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(9001, notif)
+        } catch (_: Exception) {}
+    }
+
     private fun getActiveUploadingItem(): UploadItem? {
         val q = _queue.value
         return q.firstOrNull { it.status == UploadStatus.UPLOADING }
@@ -120,40 +229,51 @@ class UploadRepository(
     }
 
     fun enqueueFiles(files: List<File>, account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
-        synchronized(_queue) {
-            val activePaths = _queue.value
-                .filter {
-                    it.status == UploadStatus.QUEUED ||
-                    it.status == UploadStatus.HASHING ||
-                    it.status == UploadStatus.CHECKING ||
-                    it.status == UploadStatus.UPLOADING ||
-                    it.status == UploadStatus.COMMITTING
-                }
-                .map { it.filePath }
-                .toSet()
+        val scanned = files.map { ScannedFile(it, it.length()) }
+        enqueueScannedFiles(scanned, account, storageSaver, useQuota)
+    }
 
-            val filesToEnqueue = files.filter { it.absolutePath !in activePaths }
-            if (filesToEnqueue.isNotEmpty()) {
-                val pathsToEnqueue = filesToEnqueue.map { it.absolutePath }.toSet()
-                // Clear any stale completed, skipped, or failed items for these exact paths so they get re-evaluated fresh
+    fun enqueueScannedFiles(scannedFiles: List<ScannedFile>, account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+        if (scannedFiles.isEmpty()) return
+
+        val activePaths = _queue.value
+            .filter {
+                it.status == UploadStatus.QUEUED ||
+                it.status == UploadStatus.HASHING ||
+                it.status == UploadStatus.CHECKING ||
+                it.status == UploadStatus.UPLOADING ||
+                it.status == UploadStatus.COMMITTING
+            }
+            .map { it.filePath }
+            .toSet()
+
+        val uniqueFiles = scannedFiles.filter { it.file.absolutePath !in activePaths }
+        if (uniqueFiles.isNotEmpty()) {
+            val pathsToEnqueue = uniqueFiles.map { it.file.absolutePath }.toSet()
+
+            val newItems = uniqueFiles.map { sf ->
+                UploadItem(
+                    id = UUID.randomUUID().toString(),
+                    filePath = sf.file.absolutePath,
+                    fileName = sf.file.name,
+                    fileSize = sf.size,
+                    status = UploadStatus.QUEUED
+                )
+            }
+
+            val totalBytes = newItems.sumOf { it.fileSize }
+            LumenLogger.i("UploadEngine") {
+                "Enqueued ${newItems.size} files (${totalBytes / (1024 * 1024)}MB total). Total queue size: ${_queue.value.size + newItems.size}"
+            }
+
+            synchronized(_queue) {
                 val remainingQueue = _queue.value.filter { it.filePath !in pathsToEnqueue }
-                val newItems = filesToEnqueue.map { file ->
-                    val id = UUID.randomUUID().toString()
-                    val opId = "upl_${id.take(8)}"
-                    LumenLogger.d("UploadEngine", opId = opId) {
-                        "File enqueued: path=${file.absolutePath} name=${file.name} size=${file.length()}bytes"
-                    }
-                    UploadItem(
-                        id = id,
-                        filePath = file.absolutePath,
-                        fileName = file.name,
-                        fileSize = file.length(),
-                        status = UploadStatus.QUEUED
-                    )
-                }
-                _queue.value = remainingQueue + newItems
-                LumenLogger.i("UploadEngine") {
-                    "Enqueued ${newItems.size} files for upload. Total queue size: ${_queue.value.size}"
+                val updatedQueue = remainingQueue.toMutableList()
+
+                // Chunk enqueue in batches of 500 for UI responsiveness
+                newItems.chunked(500).forEach { chunk ->
+                    updatedQueue.addAll(chunk)
+                    _queue.value = updatedQueue.toList()
                 }
             }
         }
@@ -161,6 +281,12 @@ class UploadRepository(
     }
 
     fun startQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+        val block = getAccountBlock(account.email)
+        if (block != null) {
+            LumenLogger.i("UploadEngine") { "Skipped: account blocked (${block.kind})" }
+            return
+        }
+
         if (_isUploading.value) return
 
         _completedCount.value = 0
@@ -321,8 +447,10 @@ class UploadRepository(
 
                         if (!isActive) break
 
+                        val tokenProvider: suspend () -> String = { authClient.getBearerToken(account) }
+
                         try {
-                            uploadSingleItem(nextItem, bearerToken, storageSaver, useQuota, account.email, opId, workerIndex)
+                            uploadSingleItem(nextItem, tokenProvider, storageSaver, useQuota, account.email, opId, workerIndex)
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
                             LumenLogger.e("UploadEngine", opId = opId, tr = e) {
@@ -339,7 +467,7 @@ class UploadRepository(
 
     private suspend fun uploadSingleItem(
         item: UploadItem,
-        bearerToken: String,
+        tokenProvider: suspend () -> String,
         storageSaver: Boolean,
         useQuota: Boolean,
         accountEmail: String,
@@ -410,9 +538,25 @@ class UploadRepository(
             updateItemStatus(item.id, UploadStatus.CHECKING)
             LumenLogger.d("UploadEngine", opId = opId) { "Remote dedup check START sha1=${sha1Result.base64}" }
 
+            val bearerToken = try {
+                tokenProvider()
+            } catch (e: com.reiux.lumen.util.AuthFailureException) {
+                triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
+                throw e
+            }
+
             val remoteCheckStart = System.currentTimeMillis()
             val existingMediaKey = try {
                 photosClient.findRemoteMediaByHash(bearerToken, sha1Result.bytes, opId)
+            } catch (e: com.reiux.lumen.util.AuthFailureException) {
+                if (e.kind == AuthFailureKind.TOKEN_EXPIRED) {
+                    authClient.invalidateCache(accountEmail)
+                    val freshToken = tokenProvider()
+                    photosClient.findRemoteMediaByHash(freshToken, sha1Result.bytes, opId)
+                } else if (e.kind == AuthFailureKind.SIGN_IN_REQUIRED || e.kind == AuthFailureKind.ACCOUNT_RESTRICTED || e.kind == AuthFailureKind.RATE_LIMITED) {
+                    triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
+                    throw e
+                } else null
             } catch (e: Exception) {
                 val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
                 LumenLogger.w("UploadEngine", opId = opId, tr = e) {
@@ -447,16 +591,18 @@ class UploadRepository(
             while (currentAttempt < maxAttempts) {
                 currentAttempt++
                 try {
+                    val activeToken = tokenProvider()
+
                     // Stage 4a: Acquire upload token
                     updateItemStatus(item.id, UploadStatus.UPLOADING)
                     LumenLogger.d("UploadEngine", opId = opId) {
                         "Requesting upload token attempt=$currentAttempt/$maxAttempts size=${file.length()}B"
                     }
 
-                    val uploadToken = photosClient.getUploadToken(bearerToken, sha1Result.base64, file.length(), opId)
+                    val uploadToken = photosClient.getUploadToken(activeToken, sha1Result.base64, file.length(), opId)
                     LumenLogger.d("UploadEngine", opId = opId) { "Upload token acquired successfully" }
 
-                    // Stage 4b: Stream file bytes with 10% progress milestones
+                    // Stage 4b: Stream file bytes
                     LumenLogger.i("UploadEngine", opId = opId) {
                         "Streaming binary bytes (${file.length()} bytes)..."
                     }
@@ -465,7 +611,7 @@ class UploadRepository(
                     var lastLoggedPercent = 0
                     val streamStartTime = System.currentTimeMillis()
 
-                    val commitToken = photosClient.uploadFile(uploadToken, file, bearerToken, opId) { bytesSent, total ->
+                    val commitToken = photosClient.uploadFile(uploadToken, file, activeToken, opId) { bytesSent, total ->
                         val delta = bytesSent - lastSentBytes
                         if (delta > 0) {
                             speedTracker.addBytes(delta)
@@ -489,7 +635,7 @@ class UploadRepository(
                         }
                     }
 
-                    // Stage 5: Commit upload to Google Photos library
+                    // Stage 5: Commit upload
                     updateItemStatus(item.id, UploadStatus.COMMITTING)
                     LumenLogger.d("UploadEngine", opId = opId) {
                         "Commit request START fileName='${item.fileName}' storageSaver=$storageSaver useQuota=$useQuota"
@@ -498,7 +644,7 @@ class UploadRepository(
                     val commitStart = System.currentTimeMillis()
                     val timestampSec = file.lastModified() / 1000
                     val mediaKey = photosClient.commitUpload(
-                        bearerToken,
+                        activeToken,
                         commitToken,
                         item.fileName,
                         sha1Result.bytes,
@@ -539,6 +685,39 @@ class UploadRepository(
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     lastError = e
+
+                    if (e is com.reiux.lumen.util.AuthFailureException) {
+                        when (e.kind) {
+                            AuthFailureKind.TOKEN_EXPIRED -> {
+                                LumenLogger.w("UploadEngine", opId = opId) { "Token expired. Invalidating cache and retrying once..." }
+                                authClient.invalidateCache(accountEmail)
+                                try {
+                                    val freshToken = tokenProvider()
+                                    val uploadToken = photosClient.getUploadToken(freshToken, sha1Result.base64, file.length(), opId)
+                                    val commitToken = photosClient.uploadFile(uploadToken, file, freshToken, opId)
+                                    val mediaKey = photosClient.commitUpload(freshToken, commitToken, item.fileName, sha1Result.bytes, file.lastModified() / 1000, storageSaver, useQuota, opId)
+
+                                    updateItemCompleted(item.id, mediaKey, isSkipped = false)
+                                    _completedCount.value += 1
+                                    return
+                                } catch (retryErr: Exception) {
+                                    LumenLogger.e("UploadEngine", opId = opId, tr = retryErr) { "Token refresh retry failed: ${retryErr.message}" }
+                                    triggerAccountBlock(accountEmail, AuthFailureKind.SIGN_IN_REQUIRED, retryErr.message)
+                                    throw retryErr
+                                }
+                            }
+                            AuthFailureKind.SIGN_IN_REQUIRED,
+                            AuthFailureKind.ACCOUNT_RESTRICTED,
+                            AuthFailureKind.RATE_LIMITED -> {
+                                triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
+                                throw e
+                            }
+                            else -> {
+                                // TRANSIENT
+                            }
+                        }
+                    }
+
                     if (currentAttempt < maxAttempts) {
                         val backoffDelayMs = (currentAttempt * 2000L).coerceAtMost(6000L)
                         LumenLogger.w("UploadEngine", opId = opId, tr = e) {
