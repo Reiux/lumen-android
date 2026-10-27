@@ -41,6 +41,10 @@ class LumenApplication : Application() {
         accountRepository = AccountRepository(this)
         uploadRepository = UploadRepository(this, settingsRepository)
 
+        // Clean stale account blocks for accounts that no longer exist
+        val validAccountEmails = accountRepository.accounts.value.map { it.email }.toSet()
+        settingsRepository.cleanStaleAccountBlocks(validAccountEmails)
+
         // Continuous in-process folder watcher
         folderWatcher = FolderWatcherManager(
             context = this,

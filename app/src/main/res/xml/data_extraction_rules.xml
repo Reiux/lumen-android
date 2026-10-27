@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="lumen_accounts.xml" />
+        <exclude domain="database" path="lumen_hash_cache.db" />
+        <exclude domain="database" path="lumen_hash_cache.db-journal" />
+        <exclude domain="database" path="lumen_hash_cache.db-wal" />
+        <exclude domain="database" path="lumen_hash_cache.db-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="lumen_accounts.xml" />
+        <exclude domain="database" path="lumen_hash_cache.db" />
+        <exclude domain="database" path="lumen_hash_cache.db-journal" />
+        <exclude domain="database" path="lumen_hash_cache.db-wal" />
+        <exclude domain="database" path="lumen_hash_cache.db-shm" />
+    </device-transfer>
+</data-extraction-rules>
