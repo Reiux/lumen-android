@@ -80,6 +80,8 @@ Get the latest APK on the [Releases](https://github.com/Reiux/lumen-android/rele
 
 ## Building from Source
 
+Official releases are signed with a private key. Local release builds use the debug key and cannot update over official installs.
+
 ```bash
 git clone https://github.com/Reiux/lumen-android.git
 cd lumen-android

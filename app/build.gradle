@@ -13,10 +13,39 @@ android {
         applicationId "com.reiux.lumen"
         minSdk 26
         targetSdk 36
-        versionCode 4
-        versionName "1.1.0"
+        versionCode 5
+        versionName "1.1.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        release {
+            def ksPropFile = rootProject.file("keystore.properties")
+            def ksProps = new Properties()
+            if (ksPropFile.exists()) {
+                ksPropFile.withInputStream { ksProps.load(it) }
+            }
+
+            def sf = ksProps.getProperty("storeFile") ?: System.getenv("LUMEN_KEYSTORE_FILE")
+            def sp = ksProps.getProperty("storePassword") ?: System.getenv("LUMEN_KEYSTORE_PASSWORD")
+            def ka = ksProps.getProperty("keyAlias") ?: System.getenv("LUMEN_KEY_ALIAS")
+            def kp = ksProps.getProperty("keyPassword") ?: System.getenv("LUMEN_KEY_PASSWORD")
+
+            def sfFile = sf ? file(sf) : null
+            if (sfFile && sfFile.exists() && sp && ka && kp) {
+                storeFile sfFile
+                storePassword sp
+                keyAlias ka
+                keyPassword kp
+            } else {
+                logger.warn("WARNING: Release is signed with the debug key; updates from official releases will not install over it")
+                storeFile signingConfigs.debug.storeFile
+                storePassword signingConfigs.debug.storePassword
+                keyAlias signingConfigs.debug.keyAlias
+                keyPassword signingConfigs.debug.keyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -29,7 +58,7 @@ android {
             manifestPlaceholders = [appName: "Lumen"]
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
         }
     }
 

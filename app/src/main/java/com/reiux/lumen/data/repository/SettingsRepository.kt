@@ -388,21 +388,43 @@ class SettingsRepository(context: Context) {
             val retryAfterTs = if (obj.has("retryAfterTimestamp")) obj.getLong("retryAfterTimestamp") else null
             val rawDetail = if (obj.has("rawDetail")) obj.getString("rawDetail") else null
 
+            val block = AccountBlock(
+                kind = kind,
+                timestamp = ts,
+                accountEmail = email,
+                retryAfterTimestamp = retryAfterTs,
+                rawDetail = rawDetail
+            )
+
             // Auto-expire RATE_LIMITED block if retryAfterTimestamp has passed
-            if (kind == AuthFailureKind.RATE_LIMITED && retryAfterTs != null && System.currentTimeMillis() >= retryAfterTs) {
+            if (isBlockExpired(block, System.currentTimeMillis())) {
                 clearAccountBlock(email)
                 null
             } else {
-                AccountBlock(
-                    kind = kind,
-                    timestamp = ts,
-                    accountEmail = email,
-                    retryAfterTimestamp = retryAfterTs,
-                    rawDetail = rawDetail
-                )
+                block
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    fun cleanStaleAccountBlocks(validAccountEmails: Set<String>) {
+        val validNormalized = validAccountEmails.map { it.lowercase() }.toSet()
+        val allKeys = prefs.all.keys
+        val editor = prefs.edit()
+        var changed = false
+        for (key in allKeys) {
+            if (key.startsWith("account_block_")) {
+                val emailInKey = key.removePrefix("account_block_")
+                if (emailInKey !in validNormalized) {
+                    editor.remove(key)
+                    changed = true
+                    LumenLogger.i("Settings") { "Removed stale account block for $emailInKey" }
+                }
+            }
+        }
+        if (changed) {
+            editor.apply()
         }
     }
 
@@ -426,6 +448,13 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
+        fun isBlockExpired(block: AccountBlock, nowMillis: Long = System.currentTimeMillis()): Boolean {
+            if (block.kind == AuthFailureKind.RATE_LIMITED && block.retryAfterTimestamp != null) {
+                return nowMillis >= block.retryAfterTimestamp
+            }
+            return false
+        }
+
         private const val KEY_AUTO_BACKUP = "auto_backup"
         private const val KEY_WIFI_ONLY = "wifi_only"
         private const val KEY_CHARGING_ONLY = "charging_only"
