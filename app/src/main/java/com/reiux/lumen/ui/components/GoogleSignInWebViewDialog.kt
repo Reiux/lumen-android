@@ -50,7 +50,8 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun GoogleSignInWebViewDialog(
     onDismiss: () -> Unit,
-    onTokenCaptured: (String) -> Unit
+    onTokenCaptured: (String) -> Unit,
+    disclaimerText: String? = null
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var captured by remember { mutableStateOf(false) }
@@ -94,6 +95,23 @@ fun GoogleSignInWebViewDialog(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 )
+
+                if (disclaimerText != null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Text(
+                            text = disclaimerText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
 
                 Box(
                     modifier = Modifier

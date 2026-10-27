@@ -69,6 +69,24 @@ class LumenApplication : Application() {
                 }
         }
 
+        // Schedule periodic update checks (Once every 24 hours)
+        appScope.launch {
+            val workManager = androidx.work.WorkManager.getInstance(this@LumenApplication)
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                .build()
+            
+            val updateCheckWork = androidx.work.PeriodicWorkRequestBuilder<com.reiux.lumen.service.UpdateCheckWorker>(
+                24, java.util.concurrent.TimeUnit.HOURS
+            ).setConstraints(constraints).build()
+            
+            workManager.enqueueUniquePeriodicWork(
+                "LumenUpdateCheck",
+                androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                updateCheckWork
+            )
+        }
+
         // Foreground notification ONLY runs while files are actively uploading, and dismisses when finished
         appScope.launch {
             uploadRepository.isUploading.collect { isUploading ->

@@ -7,24 +7,242 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.reiux.lumen.data.model.BackupFolder
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.util.ArrayDeque
+
+data class ScannedFile(
+    val file: File,
+    val size: Long
+)
+
+data class ScanProgress(
+    val filesFound: Int,
+    val foldersScanned: Int,
+    val currentFolderName: String,
+    val isComplete: Boolean = false,
+    val scannedFiles: List<ScannedFile> = emptyList()
+)
 
 object MediaFileReader {
     private const val TAG = "MediaFileReader"
 
-    /**
-     * Resolves and provides a readable File.
-     * 1. Checks if targetFile can be read directly.
-     * 2. Checks canonical file (resolves symlinks like /sdcard -> /storage/emulated/0).
-     * 3. If direct read fails due to Scoped Storage, stages a copy in cacheDir from MediaStore.
-     */
+    private val supportedExts = setOf(
+        "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
+        "mp4", "mov", "mkv", "avi", "3gp", "webm"
+    )
+
+    fun scanMediaFilesIncremental(
+        context: Context,
+        folders: List<BackupFolder>
+    ): Flow<ScanProgress> = flow {
+        var totalFilesFound = 0
+        var totalFoldersScanned = 0
+        val visitedCanonicalPaths = mutableSetOf<String>()
+        val processedFilePaths = mutableSetOf<String>()
+        val allScannedFiles = mutableListOf<ScannedFile>()
+
+        var lastEmitTime = System.currentTimeMillis()
+
+        for (folder in folders.filter { it.enabled }) {
+            currentCoroutineContext().ensureActive()
+
+            // 1. Fast Path: MediaStore Query
+            val mediaStoreResults = queryMediaStoreForFolder(context, folder)
+            if (mediaStoreResults != null && mediaStoreResults.isNotEmpty()) {
+                LumenLogger.d(TAG) { "Fast path MediaStore query HIT for '${folder.displayName}': ${mediaStoreResults.size} files" }
+                totalFoldersScanned++
+                for (scanned in mediaStoreResults) {
+                    currentCoroutineContext().ensureActive()
+                    val canonical = try { scanned.file.canonicalPath } catch (_: Exception) { scanned.file.absolutePath }
+                    if (processedFilePaths.add(canonical)) {
+                        allScannedFiles.add(scanned)
+                        totalFilesFound++
+
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmitTime >= 200L) {
+                            lastEmitTime = now
+                            emit(
+                                ScanProgress(
+                                    filesFound = totalFilesFound,
+                                    foldersScanned = totalFoldersScanned,
+                                    currentFolderName = folder.displayName,
+                                    scannedFiles = allScannedFiles.toList()
+                                )
+                            )
+                        }
+                    }
+                }
+                continue
+            }
+
+            // 2. Iterative Filesystem Walk (Fallback)
+            LumenLogger.d(TAG) { "Filesystem walk for '${folder.displayName}' (includeSubfolders=${folder.includeSubfolders})" }
+            val rootDir = File(folder.path)
+            if (!rootDir.exists() || !rootDir.isDirectory) continue
+
+            val stack = ArrayDeque<Pair<File, Int>>()
+            stack.push(rootDir to 0)
+
+            var itemCountSinceCancelCheck = 0
+
+            while (stack.isNotEmpty()) {
+                currentCoroutineContext().ensureActive()
+                val (currentDir, depth) = stack.pop()
+
+                val canonicalDir = try { currentDir.canonicalPath } catch (_: Exception) { currentDir.absolutePath }
+                if (!visitedCanonicalPaths.add(canonicalDir)) continue
+
+                totalFoldersScanned++
+
+                val files = currentDir.listFiles() ?: continue
+                if (files.any { it.name.equals(".nomedia", ignoreCase = true) }) continue
+
+                for (f in files) {
+                    itemCountSinceCancelCheck++
+                    if (itemCountSinceCancelCheck >= 200) {
+                        itemCountSinceCancelCheck = 0
+                        currentCoroutineContext().ensureActive()
+                    }
+
+                    if (f.isDirectory) {
+                        val name = f.name
+                        if (!name.startsWith(".") && folder.includeSubfolders && depth < 8) {
+                            stack.push(f to (depth + 1))
+                        }
+                    } else if (f.isFile) {
+                        val name = f.name
+                        val ext = f.extension.lowercase()
+
+                        if (!name.startsWith(".") &&
+                            !name.startsWith(".trash") &&
+                            !name.startsWith(".pending") &&
+                            ext in supportedExts
+                        ) {
+                            val size = f.length()
+                            if (size > 0L) {
+                                val canonical = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
+                                if (processedFilePaths.add(canonical)) {
+                                    val scanned = ScannedFile(f, size)
+                                    allScannedFiles.add(scanned)
+                                    totalFilesFound++
+
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastEmitTime >= 200L) {
+                                        lastEmitTime = now
+                                        emit(
+                                            ScanProgress(
+                                                filesFound = totalFilesFound,
+                                                foldersScanned = totalFoldersScanned,
+                                                currentFolderName = currentDir.name,
+                                                scannedFiles = allScannedFiles.toList()
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        emit(
+            ScanProgress(
+                filesFound = totalFilesFound,
+                foldersScanned = totalFoldersScanned,
+                currentFolderName = "",
+                isComplete = true,
+                scannedFiles = allScannedFiles.toList()
+            )
+        )
+    }
+
+    private fun queryMediaStoreForFolder(context: Context, folder: BackupFolder): List<ScannedFile>? {
+        val folderFile = File(folder.path)
+        val folderPath = try { folderFile.canonicalPath } catch (_: Exception) { folder.path }
+
+        val projection = arrayOf(
+            MediaStore.MediaColumns.DATA,
+            MediaStore.MediaColumns.SIZE
+        )
+
+        val pendingFilter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            " AND (${MediaStore.MediaColumns.IS_PENDING} = 0 AND ${MediaStore.MediaColumns.IS_TRASHED} = 0)"
+        } else ""
+
+        val pathEscaped = folderPath.replace("'", "''").trimEnd('/')
+
+        val selection = if (folder.includeSubfolders) {
+            "(${MediaStore.MediaColumns.DATA} LIKE '$pathEscaped/%')$pendingFilter"
+        } else {
+            "(${MediaStore.MediaColumns.DATA} LIKE '$pathEscaped/%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '$pathEscaped/%/%')$pendingFilter"
+        }
+
+        val list = mutableListOf<ScannedFile>()
+
+        try {
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                null
+            )?.use { cursor ->
+                val dataIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataIdx) ?: continue
+                    val size = cursor.getLong(sizeIdx)
+                    if (size > 0L) {
+                        val file = File(path)
+                        val name = file.name
+                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending")) {
+                            list.add(ScannedFile(file, size))
+                        }
+                    }
+                }
+            }
+
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                null
+            )?.use { cursor ->
+                val dataIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataIdx) ?: continue
+                    val size = cursor.getLong(sizeIdx)
+                    if (size > 0L) {
+                        val file = File(path)
+                        val name = file.name
+                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending")) {
+                            list.add(ScannedFile(file, size))
+                        }
+                    }
+                }
+            }
+
+            return list
+        } catch (e: Exception) {
+            LumenLogger.w(TAG) { "MediaStore fast path query failed for '${folder.displayName}': ${e.message}" }
+            return null
+        }
+    }
+
     fun getReadableFile(context: Context, filePath: String, preferredFileName: String? = null): File? {
         val targetFile = File(filePath)
 
-        // 1. Direct file test
         try {
             if (targetFile.exists() && targetFile.isFile) {
                 FileInputStream(targetFile).use {
@@ -33,7 +251,6 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        // 2. Canonical file test
         try {
             val canonical = targetFile.canonicalFile
             if (canonical.exists() && canonical.isFile) {
@@ -43,7 +260,6 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        // 3. Fallback: Stage via ContentResolver / MediaStore into app cache
         val resolvedName = preferredFileName ?: targetFile.name
         val staged = stageFromMediaStoreOrUri(context, filePath, resolvedName)
         if (staged != null && staged.exists() && staged.length() > 0) {
@@ -54,7 +270,6 @@ object MediaFileReader {
     }
 
     fun openInputStream(context: Context, filePath: String): InputStream? {
-        // 1. Direct file
         val file = File(filePath)
         try {
             if (file.exists() && file.isFile) {
@@ -62,7 +277,6 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        // 2. Canonical file
         try {
             val canonical = file.canonicalFile
             if (canonical.exists() && canonical.isFile) {
@@ -70,14 +284,12 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        // 3. Content URI
         if (filePath.startsWith("content://")) {
             try {
                 return context.contentResolver.openInputStream(Uri.parse(filePath))
             } catch (_: Exception) {}
         }
 
-        // 4. Resolve path through MediaStore
         val contentUri = resolveToMediaStoreUri(context, filePath)
         if (contentUri != null) {
             try {
@@ -153,7 +365,6 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        // Fallback: case-insensitive match by DISPLAY_NAME (handles .HEIC vs .heic)
         val nameSelection = "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE)$pendingFilter"
         val nameArgs = arrayOf(name)
         try {
@@ -198,21 +409,14 @@ object MediaFileReader {
         }
     }
 
-    private val supportedExts = setOf(
-        "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
-        "mp4", "mov", "mkv", "avi", "3gp", "webm"
-    )
-
     fun scanMediaFiles(dir: File): List<File> {
         val result = mutableListOf<File>()
         if (!dir.exists() || !dir.isDirectory) return result
-        
-        // Skip hidden folders (folders starting with '.')
         if (dir.name.startsWith(".")) return result
-        
+
         val files = dir.listFiles() ?: return result
+        if (files.any { it.name.equals(".nomedia", ignoreCase = true) }) return result
         for (f in files) {
-            // Traverse into subdirectories (if they are not hidden)
             if (f.isDirectory) {
                 if (!f.name.startsWith(".")) {
                     result.addAll(scanMediaFiles(f))
@@ -220,9 +424,6 @@ object MediaFileReader {
             } else if (f.isFile && f.length() > 0) {
                 val name = f.name
                 val ext = f.extension.lowercase()
-                
-                // Skip files specifically marked as Android trash (.trash-xxx...)
-                // Skip any file that starts with a dot (hidden file)
                 if (!name.startsWith(".trash") && !name.startsWith(".") && ext in supportedExts) {
                     result.add(f)
                 }

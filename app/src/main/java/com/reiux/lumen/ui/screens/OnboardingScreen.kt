@@ -173,7 +173,10 @@ fun OnboardingScreen(
                 showManualTokenDialog = false
             },
             isLoading = isAddingAccount,
-            errorMessage = addAccountError
+            errorMessage = addAccountError,
+            isManualOnly = true,
+            hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+            onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() }
         )
     }
 
@@ -247,6 +250,8 @@ fun OnboardingScreen(
                     )
                     2 -> OnboardingAccountPage(
                         selectedAccount = selectedAccount,
+                        hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                        onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                         onOpenSignIn = { showSignInWebView = true },
                         onOpenManual = { showManualTokenDialog = true }
                     )
@@ -646,9 +651,13 @@ private fun OnboardingPermissionsPage(
 @Composable
 private fun OnboardingAccountPage(
     selectedAccount: com.reiux.lumen.data.model.GoogleAccount?,
+    hasAcknowledgedAccountRisk: Boolean,
+    onAcknowledgeRisk: () -> Unit,
     onOpenSignIn: () -> Unit,
     onOpenManual: () -> Unit
 ) {
+    var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -691,7 +700,17 @@ private fun OnboardingAccountPage(
             modifier = Modifier.padding(horizontal = 16.dp)
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        com.reiux.lumen.ui.components.AccountRiskCard(
+            hasAcknowledged = localAcknowledged,
+            onAcknowledge = {
+                localAcknowledged = true
+                onAcknowledgeRisk()
+            }
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         if (selectedAccount != null) {
             Surface(
@@ -768,6 +787,7 @@ private fun OnboardingAccountPage(
         } else {
             ExpressiveButton(
                 onClick = onOpenSignIn,
+                enabled = localAcknowledged,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -781,6 +801,7 @@ private fun OnboardingAccountPage(
 
             ExpressiveTonalButton(
                 onClick = onOpenManual,
+                enabled = localAcknowledged,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),

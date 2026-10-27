@@ -1,8 +1,16 @@
 package com.reiux.lumen.util
 
+import com.reiux.lumen.data.model.AuthFailureKind
 import java.io.FileNotFoundException
+import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+
+class AuthFailureException(
+    val kind: AuthFailureKind,
+    val retryAfterSec: Long? = null,
+    val rawDetail: String? = null
+) : IOException("Auth failure ($kind): ${rawDetail ?: "-"}")
 
 data class ClassifiedError(
     val reasonCode: String,

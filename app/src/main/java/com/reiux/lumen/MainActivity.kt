@@ -104,6 +104,12 @@ class MainActivity : ComponentActivity() {
             val activeSeason = remember(settings.forcedSeason) {
                 com.reiux.lumen.util.EasterEggsManager.resolveActiveSeason(settings.forcedSeason)
             }
+            
+            LaunchedEffect(Unit) {
+                if (intent?.getStringExtra("action") == "show_update") {
+                    viewModel.checkAndShowUpdate(this@MainActivity)
+                }
+            }
 
             LumenTheme(
                 colorPreset = settings.colorPreset,
@@ -130,7 +136,8 @@ class MainActivity : ComponentActivity() {
                 val isAddingAccount by viewModel.isAddingAccount.collectAsState()
                 val addAccountError by viewModel.addAccountError.collectAsState()
                 val uploadSpeed by viewModel.uploadSpeed.collectAsState()
-                val isScanningFolders by viewModel.isScanningFolders.collectAsState()
+                val scanState by viewModel.scanState.collectAsState()
+                val accountBlock by viewModel.accountBlock.collectAsState()
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -179,7 +186,8 @@ class MainActivity : ComponentActivity() {
                             storageSaverQuality = settings.storageSaverQuality,
                             useQuota = settings.useQuota,
                             conditionNotice = conditionNotice,
-                            isScanningFolders = isScanningFolders,
+                            scanState = scanState,
+                            accountBlock = accountBlock,
                             developerModeUnlocked = settings.developerModeUnlocked,
                             isMockMode = isMockMode,
                             forcedSeason = settings.forcedSeason,
@@ -189,16 +197,32 @@ class MainActivity : ComponentActivity() {
                             onStartBackup = { viewModel.startBackup() },
                             onUploadFiles = { uris -> viewModel.uploadSelectedUris(uris, this@MainActivity) },
                             onCancelBackup = { viewModel.cancelBackup() },
+                            onCancelScan = { viewModel.cancelScan() },
                             onClearCompleted = { viewModel.clearCompleted() },
-                            onNavigateToAccounts = { viewModel.selectDestination(NavDestination.ACCOUNTS) },
+                            onNavigateToAccounts = { 
+                                if (isMockMode && accountBlock != null) {
+                                    viewModel.clearMockBlock()
+                                }
+                                viewModel.selectDestination(NavDestination.ACCOUNTS) 
+                            },
+                            addAccountError = addAccountError,
+                            onAddAccountToken = { viewModel.addAccountWithToken(it) },
+                            onAddAccountCredential = { viewModel.addAccountWithCredential(it) },
+                            onRemoveAccount = { viewModel.removeAccount(it) },
+                            onClearAddAccountError = { viewModel.clearAddAccountError() },
                             onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
                             onTriggerLightsOff = { playLightsOffAnim = true },
+                            onSimulateLargeScan = { viewModel.simulateMockLargeScan() },
+                            onSimulateUpdateAvailable = { viewModel.simulateUpdateAvailable() },
+                            onSimulateBlock = { kind -> viewModel.simulateMockBlock(kind) },
+                            onClearBlock = { viewModel.clearMockBlock() },
                             modifier = screenModifier
                         )
 
                         NavDestination.FOLDERS -> FoldersScreen(
                             folders = settings.folders,
                             onToggleFolder = { path, enabled -> viewModel.toggleFolder(path, enabled) },
+                            onSetIncludeSubfolders = { path, inc -> viewModel.setIncludeSubfolders(path, inc) },
                             onAddFolder = { viewModel.addFolder(it) },
                             onRemoveFolder = { viewModel.removeFolder(it) },
                             modifier = screenModifier
@@ -216,6 +240,8 @@ class MainActivity : ComponentActivity() {
                             onClearError = { viewModel.clearAddAccountError() },
                             isAddingAccount = isAddingAccount,
                             addAccountError = addAccountError,
+                            hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                            onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                             modifier = screenModifier
                         )
 
@@ -247,6 +273,20 @@ class MainActivity : ComponentActivity() {
                             modifier = screenModifier
                         )
                     }
+                }
+
+                val showUpdateSheet by viewModel.showUpdateSheet.collectAsState()
+                val updateInfo by viewModel.updateInfo.collectAsState()
+                val updateDownloadProgress by viewModel.updateDownloadProgress.collectAsState()
+
+                if (showUpdateSheet && updateInfo != null) {
+                    com.reiux.lumen.ui.components.UpdateBottomSheet(
+                        updateInfo = updateInfo!!,
+                        isDownloading = updateDownloadProgress >= 0,
+                        downloadProgress = updateDownloadProgress,
+                        onDismiss = { viewModel.dismissUpdateSheet() },
+                        onUpdateClick = { viewModel.startUpdateDownload(this@MainActivity) }
+                    )
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -381,6 +421,14 @@ class MainActivity : ComponentActivity() {
                             onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
                             onUnlockMatrixTheme = { viewModel.unlockMatrixTheme() },
                             forcedSeason = settings.forcedSeason,
+                            onCheckForUpdates = {
+                                viewModel.checkAndShowUpdate(this@MainActivity, forceShow = false) {
+                                    android.widget.Toast.makeText(this@MainActivity, "Lumen is up to date", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onForceUpdateDialog = {
+                                viewModel.checkAndShowUpdate(this@MainActivity, forceShow = true) {}
+                            },
                             onNavigateBack = {
                                 com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting About screen" }
                                 showAboutScreen = false

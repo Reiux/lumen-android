@@ -95,6 +95,8 @@ fun AboutScreen(
     onUnlockPrismTheme: () -> Unit = {},
     onUnlockMatrixTheme: () -> Unit = {},
     forcedSeason: String = "NONE",
+    onCheckForUpdates: () -> Unit = {},
+    onForceUpdateDialog: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -299,9 +301,10 @@ fun AboutScreen(
                                     AboutActionRow(
                                         icon = Icons.Rounded.SystemUpdate,
                                         title = "Check for updates",
-                                        subtitle = "View releases on GitHub",
+                                        subtitle = "Check GitHub for latest release",
                                         onClick = {
-                                            openWebUrl(context, "https://github.com/Reiux/lumen-android/releases")
+                                            android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                            onCheckForUpdates()
                                         }
                                     )
                                 }
@@ -469,9 +472,10 @@ fun AboutScreen(
                                 AboutActionRow(
                                     icon = Icons.Rounded.SystemUpdate,
                                     title = "Check for updates",
-                                    subtitle = "View releases on GitHub",
+                                    subtitle = "Check GitHub for latest release",
                                     onClick = {
-                                        openWebUrl(context, "https://github.com/Reiux/lumen-android/releases")
+                                        android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                        onCheckForUpdates()
                                     }
                                 )
                             }
@@ -563,6 +567,21 @@ fun AboutScreen(
                                             }
                                         }
                                     )
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+
+                                    AboutActionRow(
+                                        icon = Icons.Rounded.SystemUpdate,
+                                        title = "Force Update",
+                                        subtitle = "Reinstall or force update to the latest release",
+                                        onClick = {
+                                            android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                            onForceUpdateDialog()
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -634,7 +653,7 @@ private fun BrandHeaderSection(
             DynamicLumenIcon(
                 size = 100.dp,
                 rotationAngle = animatedRotation,
-                activeSeason = activeSeason
+                activeSeason = com.reiux.lumen.util.Season.NONE
             )
         }
 

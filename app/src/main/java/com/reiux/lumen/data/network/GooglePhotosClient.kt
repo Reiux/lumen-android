@@ -1,6 +1,7 @@
 package com.reiux.lumen.data.network
 
 import com.google.protobuf.ByteString
+import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.proto.CommitTokenOuterClass.CommitToken
 import com.reiux.lumen.proto.CommitUploadOuterClass.CommitUpload
 import com.reiux.lumen.proto.CommitUploadResponseOuterClass.CommitUploadResponse
@@ -8,6 +9,7 @@ import com.reiux.lumen.proto.CreateMediaItems.CreateMediaItemsResponse
 import com.reiux.lumen.proto.GetUploadTokenOuterClass.GetUploadToken
 import com.reiux.lumen.proto.HashCheckOuterClass.HashCheck
 import com.reiux.lumen.proto.RemoteMatchesOuterClass.RemoteMatches
+import com.reiux.lumen.util.AuthFailureException
 import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,7 +22,9 @@ import okio.BufferedSink
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
 class GooglePhotosClient(
@@ -29,11 +33,7 @@ class GooglePhotosClient(
     private fun uncompressIfNeeded(bytes: ByteArray): ByteArray {
         if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
             return try {
-                ByteArrayInputStream(bytes).use { bais ->
-                    GZIPInputStream(bais).use { gzis ->
-                        gzis.readBytes()
-                    }
-                }
+                GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
             } catch (e: Exception) {
                 LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
                 bytes
@@ -49,19 +49,34 @@ class GooglePhotosClient(
         code: Int,
         respSize: Long,
         durationMs: Long,
-        opId: String?,
+        opId: String? = null,
         errBody: String? = null
     ) {
-        val sanitizedUrl = LumenLogger.redact(url)
-        if (code in 200..299) {
-            LumenLogger.d("Network", opId = opId) {
-                "[$method $code] $sanitizedUrl reqSize=${reqSize}B respSize=${respSize}B duration=${durationMs}ms"
-            }
+        val redactedUrl = LumenLogger.redact(url)
+        val levelStr = if (code in 200..299) "INFO" else "WARN"
+        val msg = if (errBody != null) {
+            "[$method $code ERROR] $redactedUrl reqSize=${reqSize}B respSize=${respSize}B duration=${durationMs}ms errBody='${LumenLogger.redact(errBody.take(200))}'"
         } else {
-            val trimmed = errBody?.take(500)?.replace("\n", " ") ?: ""
-            LumenLogger.w("Network", opId = opId) {
-                "[$method $code ERROR] $sanitizedUrl reqSize=${reqSize}B respSize=${respSize}B duration=${durationMs}ms errBody='$trimmed'"
+            "[$method $code] $redactedUrl reqSize=${reqSize}B respSize=${respSize}B duration=${durationMs}ms"
+        }
+        if (code in 200..299) {
+            LumenLogger.d("Network", opId = opId) { msg }
+        } else {
+            LumenLogger.w("Network", opId = opId) { msg }
+        }
+    }
+
+    private fun handleResponseError(response: okhttp3.Response, respBytes: ByteArray, endpointName: String) {
+        val code = response.code
+        val errBody = respBytes.decodeToString().take(400)
+        when (code) {
+            401, 403 -> throw AuthFailureException(kind = AuthFailureKind.TOKEN_EXPIRED, rawDetail = "$endpointName HTTP $code: $errBody")
+            429 -> {
+                val retryHeader = response.header("Retry-After")?.toLongOrNull() ?: 900L
+                throw AuthFailureException(kind = AuthFailureKind.RATE_LIMITED, retryAfterSec = retryHeader, rawDetail = "$endpointName HTTP 429: $errBody")
             }
+            in 500..599 -> throw AuthFailureException(kind = AuthFailureKind.TRANSIENT, rawDetail = "$endpointName HTTP $code: $errBody")
+            else -> throw IOException("$endpointName failed HTTP $code: $errBody")
         }
     }
 
@@ -109,12 +124,12 @@ class GooglePhotosClient(
         )
 
         if (!response.isSuccessful) {
-            val errBody = respBytes.decodeToString()
-            throw IOException("GetUploadToken failed HTTP ${response.code}: $errBody")
+            handleResponseError(response, respBytes, "GetUploadToken")
         }
 
         val uploadId = response.header("X-GUploader-UploadID")
-            ?: throw IOException("Missing X-GUploader-UploadID in upload token response")
+            ?: throw IOException("Upload ID missing in response headers")
+        LumenLogger.d(TAG, opId = opId) { "Acquired Scotty uploadId=$uploadId" }
         uploadId
     }
 
@@ -238,8 +253,7 @@ class GooglePhotosClient(
         )
 
         if (!response.isSuccessful) {
-            val errBody = respBytes.decodeToString()
-            throw IOException("Upload chunk failed HTTP ${response.code}: $errBody")
+            handleResponseError(response, respBytes, "UploadChunk")
         }
 
         if (respBytes.isEmpty()) throw IOException("Empty Scotty finalize response")
@@ -324,13 +338,11 @@ class GooglePhotosClient(
         )
 
         if (!response.isSuccessful) {
-            val errBody = respBytes.decodeToString()
-            throw IOException("Commit upload failed HTTP ${response.code}: $errBody")
+            handleResponseError(response, respBytes, "CommitUpload")
         }
 
         if (respBytes.isEmpty()) throw IOException("Empty commit upload response")
 
-        // Try CreateMediaItemsResponse first
         try {
             val cmResp = CreateMediaItemsResponse.parseFrom(respBytes)
             for (item in cmResp.itemList) {
@@ -342,7 +354,6 @@ class GooglePhotosClient(
             }
         } catch (_: Exception) {}
 
-        // Fallback to CommitUploadResponse
         try {
             val cuResp = CommitUploadResponse.parseFrom(respBytes)
             val mk = cuResp.field1?.field3?.mediaKey
@@ -365,4 +376,3 @@ class GooglePhotosClient(
         const val COMMIT_UPLOAD_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/16538846908252377752"
     }
 }
-

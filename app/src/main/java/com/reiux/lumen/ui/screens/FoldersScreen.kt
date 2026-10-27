@@ -1,6 +1,12 @@
 package com.reiux.lumen.ui.screens
 
 import android.content.res.Configuration
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,14 +23,17 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,9 +42,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.ui.components.AddFolderDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
@@ -48,18 +60,50 @@ import com.reiux.lumen.ui.components.groupedCardShape
 fun FoldersScreen(
     folders: List<BackupFolder>,
     onToggleFolder: (path: String, enabled: Boolean) -> Unit,
+    onSetIncludeSubfolders: (path: String, includeSubfolders: Boolean) -> Unit,
     onAddFolder: (BackupFolder) -> Unit,
     onRemoveFolder: (path: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var showAddDialog by remember { mutableStateOf(false) }
+    var showAllFilesDialog by remember { mutableStateOf(false) }
+    var pendingFolderToAdd by remember { mutableStateOf<BackupFolder?>(null) }
+    var pendingFolderToToggle by remember { mutableStateOf<String?>(null) }
+
+    if (showAllFilesDialog) {
+        com.reiux.lumen.ui.components.AllFilesPermissionDialog(
+            onConfirm = {
+                pendingFolderToAdd?.let { onAddFolder(it) }
+                pendingFolderToToggle?.let { onToggleFolder(it, true) }
+                pendingFolderToAdd = null
+                pendingFolderToToggle = null
+            },
+            onDismiss = {
+                showAllFilesDialog = false
+                pendingFolderToAdd = null
+                pendingFolderToToggle = null
+                Toast.makeText(context, context.getString(R.string.toast_all_files_permission_denied), Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     if (showAddDialog) {
         AddFolderDialog(
             onDismiss = { showAddDialog = false },
-            onAddFolder = {
-                onAddFolder(it)
-                showAddDialog = false
+            onAddFolder = { folder ->
+                if (folder.path.contains("com.whatsapp") || !folder.path.startsWith("/sdcard/Android")) {
+                    if (com.reiux.lumen.ui.components.requiresAllFilesPermission(context, folder.path)) {
+                        pendingFolderToAdd = folder
+                        showAllFilesDialog = true
+                        showAddDialog = false
+                    } else {
+                        onAddFolder(folder)
+                        showAddDialog = false
+                    }
+                } else {
+                    Toast.makeText(context, context.getString(R.string.toast_forbidden_folder), Toast.LENGTH_SHORT).show()
+                }
             }
         )
     }
@@ -121,6 +165,11 @@ fun FoldersScreen(
                         folder = folder,
                         position = groupPositionOf(index, folders.size),
                         onToggleFolder = onToggleFolder,
+                        onRequestAllFilesToggle = { path ->
+                            pendingFolderToToggle = path
+                            showAllFilesDialog = true
+                        },
+                        onSetIncludeSubfolders = onSetIncludeSubfolders,
                         onRemoveFolder = onRemoveFolder
                     )
                 }
@@ -159,6 +208,11 @@ fun FoldersScreen(
                     folder = folder,
                     position = groupPositionOf(index, folders.size),
                     onToggleFolder = onToggleFolder,
+                    onRequestAllFilesToggle = { path ->
+                        pendingFolderToToggle = path
+                        showAllFilesDialog = true
+                    },
+                    onSetIncludeSubfolders = onSetIncludeSubfolders,
                     onRemoveFolder = onRemoveFolder
                 )
             }
@@ -184,63 +238,173 @@ private fun FolderRowItem(
     folder: BackupFolder,
     position: com.reiux.lumen.ui.components.GroupPosition,
     onToggleFolder: (path: String, enabled: Boolean) -> Unit,
+    onRequestAllFilesToggle: (path: String) -> Unit,
+    onSetIncludeSubfolders: (path: String, includeSubfolders: Boolean) -> Unit,
     onRemoveFolder: (path: String) -> Unit
 ) {
+    val context = LocalContext.current
+    var showBroadWarningDialog by remember { mutableStateOf(false) }
+
+    val isBroadFolder = remember(folder.path) {
+        val p = folder.path.trimEnd('/')
+        p == "/sdcard" || p == "/storage/emulated/0" || p == "" || p == "/sdcard/DCIM"
+    }
+
+    if (showBroadWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showBroadWarningDialog = false },
+            title = { Text(context.getString(R.string.broad_folder_dialog_title), fontWeight = FontWeight.Bold) },
+            text = { Text(context.getString(R.string.broad_folder_dialog_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSetIncludeSubfolders(folder.path, true)
+                        showBroadWarningDialog = false
+                    }
+                ) {
+                    Text("Enable Subfolders", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBroadWarningDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = groupedCardShape(position),
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Folder,
-                contentDescription = null,
-                tint = if (folder.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(32.dp)
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = folder.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = folder.path,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            ExpressiveSwitch(
-                checked = folder.enabled,
-                onCheckedChange = { onToggleFolder(folder.path, it) }
-            )
-
-            Spacer(modifier = Modifier.width(4.dp))
-
-            ExpressiveIconButton(
-                onClick = { onRemoveFolder(folder.path) },
-                modifier = Modifier.size(36.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "Remove folder",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    tint = if (folder.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(32.dp)
                 )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = folder.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (folder.includeSubfolders && folder.enabled) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "subfolders",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = folder.path,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                ExpressiveSwitch(
+                    checked = folder.enabled,
+                    onCheckedChange = { nextEnabled ->
+                        if (nextEnabled && com.reiux.lumen.ui.components.requiresAllFilesPermission(context, folder.path)) {
+                            onRequestAllFilesToggle(folder.path)
+                        } else {
+                            onToggleFolder(folder.path, nextEnabled)
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                ExpressiveIconButton(
+                    onClick = { onRemoveFolder(folder.path) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = "Remove folder",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = folder.enabled,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f)
+                ) + fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
+                ) + fadeOut()
+            ) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = "Include subfolders",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Also back up photos and videos in folders inside this one",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            ExpressiveSwitch(
+                                checked = folder.includeSubfolders,
+                                onCheckedChange = { nextChecked ->
+                                    if (nextChecked && isBroadFolder) {
+                                        showBroadWarningDialog = true
+                                    } else {
+                                        onSetIncludeSubfolders(folder.path, nextChecked)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }

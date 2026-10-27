@@ -32,7 +32,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -104,8 +107,15 @@ fun SettingsScreen(
     val listState = rememberLazyListState()
 
     var showOemGuideDialog by remember { mutableStateOf(false) }
+    var showAccountSafetyDialog by remember { mutableStateOf(false) }
     var isBatteryOptimizedExempt by remember {
         mutableStateOf(DeviceConditions.isIgnoringBatteryOptimizations(context))
+    }
+
+    if (showAccountSafetyDialog) {
+        com.reiux.lumen.ui.components.AccountSafetyDialog(
+            onDismiss = { showAccountSafetyDialog = false }
+        )
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -560,6 +570,16 @@ fun SettingsScreen(
                             subtitle = "Show upload progress in the notification shade",
                             checked = settings.notificationsEnabled,
                             onCheckedChange = onUpdateNotifications
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        SettingActionRow(
+                            title = stringResource(R.string.account_safety_title),
+                            subtitle = stringResource(R.string.account_safety_subtitle),
+                            actionLabel = "View",
+                            onClick = { showAccountSafetyDialog = true }
                         )
                     }
                 }

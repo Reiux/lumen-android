@@ -5,6 +5,49 @@
     <string name="package_name">com.reiux.lumen</string>
     <string name="custom_url_scheme">com.reiux.lumen</string>
 
+    <!-- Scan & Folder Indexing Strings -->
+    <string name="toast_scan_cancelled">Folder indexing cancelled</string>
+    <string name="toast_no_files_found">No new media files found in enabled folders</string>
+    <string name="toast_forbidden_folder">Android system directory cannot be selected for backup</string>
+    <string name="toast_all_files_permission_denied">All files access is required to back up folders outside media directories</string>
+
+    <string name="all_files_dialog_title">All Files Access Needed</string>
+    <string name="all_files_dialog_message">To scan and back up files in folders outside standard media directories (like Downloads), Lumen requires All Files Access permission.</string>
+    <string name="all_files_dialog_button">Grant Permission</string>
+
+    <string name="broad_folder_dialog_title">Broad Folder Warning</string>
+    <string name="broad_folder_dialog_message">Enabling subfolders for a broad directory like root storage may scan thousands of files and consume high memory. Are you sure?</string>
+
+    <string name="label_include_subfolders">Include subfolders</string>
+    <string name="helper_include_subfolders">Also back up photos and videos in folders inside this one</string>
+    <string name="tag_subfolders">+ subfolders</string>
+
+    <!-- Account Risk & Safety Strings -->
+    <string name="account_risk_title">Heads up</string>
+    <string name="account_risk_body">Lumen is unofficial and may violate Google\'s Terms of Service. Google can restrict or disable an account, which can also lock you out of Gmail and Drive. Use an account you can afford to lose, and keep your original photos.</string>
+    <string name="account_risk_learn_more">Learn more</string>
+    <string name="account_risk_understand">I understand</string>
+    <string name="account_risk_acknowledged">Risks acknowledged — Learn more</string>
+
+    <string name="account_safety_title">Account Safety &amp; Risks</string>
+    <string name="account_safety_subtitle">Important disclosures regarding Google account restrictions</string>
+
+    <!-- Circuit Breaker Cards & Toasts -->
+    <string name="breaker_sign_in_required_title">Sign-in Required</string>
+    <string name="breaker_sign_in_required_msg">Google is asking you to sign in again. Uploads are paused to protect your account.</string>
+    <string name="breaker_sign_in_required_button">Sign in again</string>
+
+    <string name="breaker_restricted_title">Account Restricted</string>
+    <string name="breaker_restricted_msg">Google has restricted this account. Uploads are stopped. Check your Google account directly; do not keep retrying.</string>
+    <string name="breaker_restricted_button">Remove account</string>
+
+    <string name="breaker_rate_limited_title">Rate Limited</string>
+    <string name="breaker_rate_limited_msg">Google asked Lumen to slow down. Uploads will resume automatically at %1$s.</string>
+
+    <string name="account_safety_button">Account safety</string>
+
+    <string name="remove_account_device_warning">Removing and re-adding an account signs in again, which registers another device on your Google account. Only do this if needed.</string>
+
     <!-- Light Puns -->
     <string name="toast_bold_choice">Bold choice.</string>
     <string name="completion_pun_1">Let there be Lumen.</string>

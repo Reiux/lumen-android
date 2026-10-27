@@ -58,9 +58,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import coil.compose.AsyncImage
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.ui.components.AddAccountDialog
@@ -85,6 +88,8 @@ fun AccountsScreen(
     onClearError: () -> Unit = {},
     isAddingAccount: Boolean,
     addAccountError: String?,
+    hasAcknowledgedAccountRisk: Boolean = false,
+    onAcknowledgeRisk: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
@@ -120,7 +125,9 @@ fun AccountsScreen(
             },
             onClearError = onClearError,
             isLoading = isAddingAccount,
-            errorMessage = addAccountError
+            errorMessage = addAccountError,
+            hasAcknowledgedAccountRisk = hasAcknowledgedAccountRisk,
+            onAcknowledgeRisk = onAcknowledgeRisk
         )
     }
 
@@ -146,11 +153,19 @@ fun AccountsScreen(
                 )
             },
             text = {
-                Text(
-                    text = "Are you sure you want to remove ${accountToRemove?.displayName ?: accountToRemove?.email} from Lumen?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Are you sure you want to remove ${accountToRemove?.displayName ?: accountToRemove?.email} from Lumen?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.remove_account_device_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        lineHeight = 16.sp
+                    )
+                }
             },
             confirmButton = {
                 ExpressiveButton(
