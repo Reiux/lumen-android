@@ -47,26 +47,34 @@ jobs:
             echo "keyPassword=android" >> keystore.properties
           fi
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease
+      - name: Build Release and Debug APKs
+        run: ./gradlew assembleRelease assembleDebug
 
-      - name: Prepare APK Asset
+      - name: Prepare APK Assets
         run: |
-          TAG_NAME="${{ github.ref_name }}"
-          if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "main" ] || [ "$TAG_NAME" = "dev" ]; then
-            TAG_NAME="v1.1.2"
-          fi
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk "Lumen-${TAG_NAME}.apk"
+            cp app/build/outputs/apk/release/app-release.apk lumen-release.apk
           elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk "Lumen-${TAG_NAME}.apk"
+            cp app/build/outputs/apk/release/app-release-unsigned.apk lumen-release.apk
+          fi
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk lumen-dev-debug.apk
           fi
 
       - name: Upload or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Lumen-*.apk
+          files: |
+            lumen-release.apk
+            lumen-dev-debug.apk
           prerelease: true
           overwrite: true
+          body: |
+            ## Lumen v1.1.2 Release Notes
+
+            ### 🐛 Bug Fixes & UI Enhancements
+            - **Queue Empty State in Portrait**: Fixed an issue where the "Queue is empty" card and Recent Activity section were hidden in portrait mode.
+            - **Adaptive Split Onboarding Layout**: Refactored onboarding screen for landscape, foldables, and tablets to use a responsive 2-pane split layout.
+            - **CI & Release Signing**: Updated release workflow to generate both standard (`lumen-release.apk`) and developer (`lumen-dev-debug.apk`) builds with automatic asset updates.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
