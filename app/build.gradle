@@ -38,12 +38,6 @@ android {
                 storePassword sp
                 keyAlias ka
                 keyPassword kp
-            } else {
-                logger.warn("WARNING: Release is signed with the debug key; updates from official releases will not install over it")
-                storeFile signingConfigs.debug.storeFile
-                storePassword signingConfigs.debug.storePassword
-                keyAlias signingConfigs.debug.keyAlias
-                keyPassword signingConfigs.debug.keyPassword
             }
         }
     }
@@ -58,7 +52,11 @@ android {
             manifestPlaceholders = [appName: "Lumen"]
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 

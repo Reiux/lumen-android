@@ -29,14 +29,22 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Decode Release Keystore
+      - name: Setup Keystore
         run: |
           if [ -n "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding repository release keystore..."
             echo "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
             echo "storeFile=../release.keystore" > keystore.properties
             echo "storePassword=${{ secrets.LUMEN_KEYSTORE_PASSWORD }}" >> keystore.properties
             echo "keyAlias=${{ secrets.LUMEN_KEY_ALIAS }}" >> keystore.properties
             echo "keyPassword=${{ secrets.LUMEN_KEY_PASSWORD }}" >> keystore.properties
+          else
+            echo "Generating fallback keystore for CI build..."
+            keytool -genkeypair -alias androiddebugkey -keypass android -keystore release.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+            echo "storeFile=../release.keystore" > keystore.properties
+            echo "storePassword=android" >> keystore.properties
+            echo "keyAlias=androiddebugkey" >> keystore.properties
+            echo "keyPassword=android" >> keystore.properties
           fi
 
       - name: Build Release APK
@@ -50,7 +58,7 @@ jobs:
           fi
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk "Lumen-${TAG_NAME}.apk"
-          else
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
             cp app/build/outputs/apk/release/app-release-unsigned.apk "Lumen-${TAG_NAME}.apk"
           fi
 
