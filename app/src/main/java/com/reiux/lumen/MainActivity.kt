@@ -120,6 +120,8 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 if (intent?.getStringExtra("action") == "show_update") {
                     viewModel.checkAndShowUpdate(this@MainActivity)
+                } else if (settings.autoCheckUpdates) {
+                    viewModel.checkAndShowUpdate(this@MainActivity)
                 }
             }
 
