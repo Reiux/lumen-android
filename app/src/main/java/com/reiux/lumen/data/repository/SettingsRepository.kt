@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-class SettingsRepository(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("lumen_settings", Context.MODE_PRIVATE)
+class SettingsRepository(
+    context: Context,
+    sharedPreferencesOverride: SharedPreferences? = null
+) {
+    private val prefs: SharedPreferences = sharedPreferencesOverride ?: context.getSharedPreferences("lumen_settings", Context.MODE_PRIVATE)
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<BackupSettings> = _settings.asStateFlow()
@@ -39,6 +42,7 @@ class SettingsRepository(context: Context) {
         val unlockedXmas = prefs.getBoolean(KEY_UNLOCKED_XMAS, false)
         val unlockedNewYr = prefs.getBoolean(KEY_UNLOCKED_NEWYR, false)
         val forcedSeason = prefs.getString(KEY_FORCED_SEASON, "NONE") ?: "NONE"
+        val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
 
         val foldersJson = prefs.getString(KEY_FOLDERS, null)
         val folders = if (!foldersJson.isNullOrEmpty()) {
@@ -88,8 +92,17 @@ class SettingsRepository(context: Context) {
             unlockedXmasTheme = unlockedXmas,
             unlockedNewYrTheme = unlockedNewYr,
             forcedSeason = forcedSeason,
+            autoCheckUpdates = autoCheckUpdates,
             folders = folders
         )
+    }
+
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        val old = _settings.value.autoCheckUpdates
+        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, enabled).apply()
+        LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_AUTO_CHECK_UPDATES" }
+        LumenLogger.i("Settings") { "autoCheckUpdates changed: old=$old -> new=$enabled" }
+        _settings.value = _settings.value.copy(autoCheckUpdates = enabled)
     }
 
     fun updateDeveloperMode(unlocked: Boolean) {
@@ -379,24 +392,25 @@ class SettingsRepository(context: Context) {
 
     fun getAccountBlock(email: String): AccountBlock? {
         val key = "account_block_${email.lowercase()}"
-        val jsonStr = prefs.getString(key, null) ?: return null
+        val valStr = prefs.getString(key, null) ?: return null
         return try {
-            val obj = JSONObject(jsonStr)
-            val kindStr = obj.getString("kind")
-            val kind = AuthFailureKind.valueOf(kindStr)
-            val ts = obj.getLong("timestamp")
-            val retryAfterTs = if (obj.has("retryAfterTimestamp")) obj.getLong("retryAfterTimestamp") else null
-            val rawDetail = if (obj.has("rawDetail")) obj.getString("rawDetail") else null
+            val block = if (valStr.startsWith("{")) {
+                val obj = JSONObject(valStr)
+                val kindStr = obj.optString("kind", "NONE")
+                val kind = AuthFailureKind.valueOf(kindStr)
+                val ts = obj.optLong("timestamp", System.currentTimeMillis())
+                val retryAfterTs = if (obj.has("retryAfterTimestamp")) obj.getLong("retryAfterTimestamp") else null
+                val rawDetail = if (obj.has("rawDetail")) obj.getString("rawDetail") else null
+                AccountBlock(kind, ts, email, retryAfterTs, rawDetail)
+            } else {
+                val parts = valStr.split("|")
+                val kind = AuthFailureKind.valueOf(parts[0])
+                val ts = parts[1].toLong()
+                val retryAfterTs = parts.getOrNull(2)?.toLongOrNull()?.let { if (it == -1L) null else it }
+                val rawDetail = parts.getOrNull(3)?.ifEmpty { null }
+                AccountBlock(kind, ts, email, retryAfterTs, rawDetail)
+            }
 
-            val block = AccountBlock(
-                kind = kind,
-                timestamp = ts,
-                accountEmail = email,
-                retryAfterTimestamp = retryAfterTs,
-                rawDetail = rawDetail
-            )
-
-            // Auto-expire RATE_LIMITED block if retryAfterTimestamp has passed
             if (isBlockExpired(block, System.currentTimeMillis())) {
                 clearAccountBlock(email)
                 null
@@ -410,34 +424,22 @@ class SettingsRepository(context: Context) {
 
     fun cleanStaleAccountBlocks(validAccountEmails: Set<String>) {
         val validNormalized = validAccountEmails.map { it.lowercase() }.toSet()
-        val allKeys = prefs.all.keys
-        val editor = prefs.edit()
-        var changed = false
+        val allKeys = prefs.all.keys.toSet()
         for (key in allKeys) {
             if (key.startsWith("account_block_")) {
                 val emailInKey = key.removePrefix("account_block_")
                 if (emailInKey !in validNormalized) {
-                    editor.remove(key)
-                    changed = true
+                    clearAccountBlock(emailInKey)
                     LumenLogger.i("Settings") { "Removed stale account block for $emailInKey" }
                 }
             }
-        }
-        if (changed) {
-            editor.apply()
         }
     }
 
     fun setAccountBlock(block: AccountBlock) {
         val key = "account_block_${block.accountEmail.lowercase()}"
-        val obj = JSONObject().apply {
-            put("kind", block.kind.name)
-            put("timestamp", block.timestamp)
-            put("accountEmail", block.accountEmail)
-            block.retryAfterTimestamp?.let { put("retryAfterTimestamp", it) }
-            block.rawDetail?.let { put("rawDetail", it) }
-        }
-        prefs.edit().putString(key, obj.toString()).apply()
+        val valStr = "${block.kind.name}|${block.timestamp}|${block.retryAfterTimestamp ?: -1}|${block.rawDetail ?: ""}"
+        prefs.edit().putString(key, valStr).apply()
         LumenLogger.w("Auth") { "Persisted account block for ${block.accountEmail}: ${block.kind}" }
     }
 
@@ -473,6 +475,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_UNLOCKED_XMAS = "unlocked_xmas_theme"
         private const val KEY_UNLOCKED_NEWYR = "unlocked_newyr_theme"
         private const val KEY_FORCED_SEASON = "forced_season"
+        private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         private const val KEY_LAST_SEEN_DARK = "last_seen_dark"
         private const val KEY_BOLD_CHOICE_DATE = "last_bold_choice_date"
         private const val KEY_LIFETIME_UPLOADS = "lifetime_uploads"

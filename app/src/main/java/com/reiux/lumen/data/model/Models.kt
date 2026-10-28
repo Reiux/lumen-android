@@ -35,6 +35,7 @@ data class BackupSettings(
     val unlockedXmasTheme: Boolean = false,
     val unlockedNewYrTheme: Boolean = false,
     val forcedSeason: String = "NONE",
+    val autoCheckUpdates: Boolean = true,
     val folders: List<BackupFolder> = listOf(
         BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", true),
         BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),

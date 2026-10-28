@@ -259,6 +259,7 @@ class MainActivity : ComponentActivity() {
                             onUpdateUploadThreads = { viewModel.updateUploadThreads(it) },
                             onUpdateColorPreset = { viewModel.updateColorPreset(it) },
                             onUpdateNotifications = { viewModel.updateNotifications(it) },
+                            onUpdateAutoCheckUpdates = { viewModel.setAutoCheckUpdates(it) },
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
                             onUpdateForcedSeason = { viewModel.updateForcedSeason(it) },
                             onReplayOnboarding = { viewModel.setHasCompletedOnboarding(false) },

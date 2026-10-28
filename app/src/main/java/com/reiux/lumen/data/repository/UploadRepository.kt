@@ -593,6 +593,33 @@ class UploadRepository(
                 try {
                     val activeToken = tokenProvider()
 
+                    // Check if file was already registered by Google Photos before starting a full re-upload
+                    if (currentAttempt > 1) {
+                        LumenLogger.d("UploadEngine", opId = opId) {
+                            "Retrying upload attempt $currentAttempt/$maxAttempts. Checking if file was registered by server during previous commit..."
+                        }
+                        val retryCheckKey = try {
+                            photosClient.findRemoteMediaByHash(activeToken, sha1Result.bytes, opId)
+                        } catch (_: Exception) { null }
+
+                        if (!retryCheckKey.isNullOrEmpty()) {
+                            val totalMs = System.currentTimeMillis() - overallStartTime
+                            LumenLogger.i("UploadEngine", opId = opId) {
+                                "Ambiguous commit recovery HIT: File was registered by server mediaKey=$retryCheckKey. Skipping re-upload."
+                            }
+                            hashCache.put(
+                                accountEmail = accountEmail,
+                                sha1B64 = sha1Result.base64,
+                                mediaKey = retryCheckKey,
+                                fileSize = file.length(),
+                                mtime = file.lastModified() / 1000
+                            )
+                            updateItemCompleted(item.id, retryCheckKey, isSkipped = false)
+                            _completedCount.value += 1
+                            return
+                        }
+                    }
+
                     // Stage 4a: Acquire upload token
                     updateItemStatus(item.id, UploadStatus.UPLOADING)
                     LumenLogger.d("UploadEngine", opId = opId) {
@@ -686,6 +713,33 @@ class UploadRepository(
                     if (e is CancellationException) throw e
                     lastError = e
 
+                    if (getItemStatus(item.id) == UploadStatus.COMMITTING) {
+                        LumenLogger.w("UploadEngine", opId = opId) {
+                            "Commit failed (${e.message}). Checking if Google Photos server committed the media..."
+                        }
+                        val postCommitKey = try {
+                            val freshToken = tokenProvider()
+                            photosClient.findRemoteMediaByHash(freshToken, sha1Result.bytes, opId)
+                        } catch (_: Exception) { null }
+
+                        if (!postCommitKey.isNullOrEmpty()) {
+                            val totalMs = System.currentTimeMillis() - overallStartTime
+                            LumenLogger.i("UploadEngine", opId = opId) {
+                                "Ambiguous commit recovery SUCCESS: Server registered mediaKey=$postCommitKey despite network drop. Duration: ${totalMs}ms."
+                            }
+                            hashCache.put(
+                                accountEmail = accountEmail,
+                                sha1B64 = sha1Result.base64,
+                                mediaKey = postCommitKey,
+                                fileSize = file.length(),
+                                mtime = file.lastModified() / 1000
+                            )
+                            updateItemCompleted(item.id, postCommitKey, isSkipped = false)
+                            _completedCount.value += 1
+                            return
+                        }
+                    }
+
                     if (e is com.reiux.lumen.util.AuthFailureException) {
                         when (e.kind) {
                             AuthFailureKind.TOKEN_EXPIRED -> {
@@ -719,7 +773,7 @@ class UploadRepository(
                     }
 
                     if (currentAttempt < maxAttempts) {
-                        val backoffDelayMs = (currentAttempt * 2000L).coerceAtMost(6000L)
+                        val backoffDelayMs = computeRetryDelayMs(currentAttempt)
                         LumenLogger.w("UploadEngine", opId = opId, tr = e) {
                             "Upload attempt $currentAttempt/$maxAttempts failed: ${e.message}. Retrying in ${backoffDelayMs}ms..."
                         }
@@ -739,6 +793,10 @@ class UploadRepository(
         } finally {
             MediaFileReader.cleanupStagedFile(context, file)
         }
+    }
+
+    private fun getItemStatus(id: String): UploadStatus? {
+        return _queue.value.firstOrNull { it.id == id }?.status
     }
 
     private fun updateItemStatus(id: String, status: UploadStatus) {
@@ -775,6 +833,14 @@ class UploadRepository(
                 if (it.id == id) it.copy(status = UploadStatus.FAILED, error = error) else it
             }
             _currentUploadingItem.value = getActiveUploadingItem()
+        }
+    }
+
+    companion object {
+        internal fun computeRetryDelayMs(attempt: Int): Long {
+            val base = (attempt * 2000L).coerceAtMost(6000L)
+            val jitter = kotlin.random.Random.nextLong(250L, 1000L)
+            return base + jitter
         }
     }
 }

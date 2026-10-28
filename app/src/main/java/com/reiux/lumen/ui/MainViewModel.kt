@@ -418,6 +418,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isShowcaseMode.value = enabled
     }
 
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        settingsRepo.setAutoCheckUpdates(enabled)
+    }
+
     fun toggleShowcaseMode() {
         setShowcaseMode(!_isShowcaseMode.value)
     }

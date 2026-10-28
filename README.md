@@ -31,6 +31,7 @@ When you sign in, Google gives the app an **OAuth token**.
 - It works like a temporary key card that only lets Lumen put photos into your Google Photos library.
 - It cannot read your emails, open your Google Drive files, or change your account details.
 - Uploads go straight from your phone to Google (`photos.googleapis.com`). No outside server ever touches your data.
+- The app makes zero analytics or telemetry calls. It only contacts `api.github.com` to check for app updates when automatic update checks are enabled (which can be turned off in Settings).
 
 ---
 

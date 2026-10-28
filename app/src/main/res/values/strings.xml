@@ -48,6 +48,9 @@
 
     <string name="remove_account_device_warning">Removing and re-adding an account signs in again, which registers another device on your Google account. Only do this if needed.</string>
 
+    <string name="pref_auto_check_updates_title">Check for updates automatically</string>
+    <string name="pref_auto_check_updates_subtitle">Periodically check GitHub Releases for new versions</string>
+
     <!-- Light Puns -->
     <string name="toast_bold_choice">Bold choice.</string>
     <string name="completion_pun_1">Let there be Lumen.</string>

@@ -20,6 +20,12 @@ class UpdateCheckWorker(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
+        val settingsRepo = com.reiux.lumen.LumenApplication.instance.settingsRepository
+        if (!settingsRepo.settings.value.autoCheckUpdates) {
+            LumenLogger.d("Updater") { "Auto-update checks are disabled in settings. Skipping background check." }
+            return Result.success()
+        }
+        
         LumenLogger.d("Updater") { "Starting background update check..." }
         val repo = UpdateRepository()
         
