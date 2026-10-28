@@ -3,6 +3,7 @@ package com.reiux.lumen.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -75,6 +77,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -180,168 +183,173 @@ fun OnboardingScreen(
         )
     }
 
-    // Outer Surface covers entire screen edge-to-edge behind transparent status and nav bars
+    val configuration = LocalConfiguration.current
+    val isTwoPane = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-        ) {
-            // Top App Bar for Onboarding (Back navigation only, no global skip)
+        if (isTwoPane) {
+            // Split Layout (Landscape / Tablet / Wide Screen)
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                if (pagerState.currentPage > 0) {
-                    ExpressiveIconButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                            }
-                        },
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.size(44.dp))
-                }
-            }
-
-            // Horizontal Pager for the 6 onboarding steps (swiping disabled so users proceed via buttons)
-            HorizontalPager(
-                state = pagerState,
-                userScrollEnabled = false,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) { page ->
-                when (page) {
-                    0 -> OnboardingWelcomePage()
-                    1 -> OnboardingPermissionsPage(
-                        hasMedia = hasMediaPermission,
-                        hasNotifications = hasNotificationPermission,
-                        hasBackground = hasBackgroundPermission,
-                        onRequestPermissions = {
-                            val permissions = mutableListOf<String>()
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-                                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
-                                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                            }
-                            permissionLauncher.launch(permissions.toTypedArray())
-                        },
-                        onRequestBackground = {
-                            DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                        }
-                    )
-                    2 -> OnboardingAccountPage(
-                        selectedAccount = selectedAccount,
-                        hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
-                        onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
-                        onOpenSignIn = { showSignInWebView = true },
-                        onOpenManual = { showManualTokenDialog = true }
-                    )
-                    3 -> OnboardingFoldersPage(
-                        folders = settings.folders,
-                        onToggleFolder = { path, enabled ->
-                            viewModel.toggleFolder(path, enabled)
-                        }
-                    )
-                    4 -> OnboardingPreferencesPage(
-                        wifiOnly = settings.wifiOnly,
-                        onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
-                        storageSaver = settings.storageSaverQuality,
-                        onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
-                        selectedPreset = settings.colorPreset,
-                        onUpdatePreset = { viewModel.updateColorPreset(it) },
-                        unlockedPrismTheme = settings.unlockedPrismTheme,
-                        unlockedMatrixTheme = settings.unlockedMatrixTheme
-                    )
-                    5 -> OnboardingCompletionPage()
-                }
-            }
-
-            // Bottom Navigation Bar with M3E Pill Indicator and Action Button
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // M3E Expressive Spring Pager Indicator (6 pages)
-                Row(
-                    modifier = Modifier.padding(bottom = 20.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                // Left Pane: Step Header, Back Button, Hero Illustration, and Pager Indicator
+                Column(
+                    modifier = Modifier
+                        .weight(0.42f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    for (pageIndex in 0 until 6) {
-                        val isSelected = pagerState.currentPage == pageIndex
-                        val width by animateDpAsState(
-                            targetValue = if (isSelected) 28.dp else 8.dp,
-                            animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
-                            label = "indicatorWidth"
-                        )
-                        val color by animateColorAsState(
-                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f),
-                            label = "indicatorColor"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .height(8.dp)
-                                .width(width)
-                                .clip(CircleShape)
-                                .background(color)
-                        )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (pagerState.currentPage > 0) {
+                                ExpressiveIconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                        }
+                                    },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.size(40.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OnboardingStepLeftHeader(page = pagerState.currentPage)
+                    }
+
+                    // M3E Expressive Spring Pager Indicator
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        for (pageIndex in 0 until 6) {
+                            val isSelected = pagerState.currentPage == pageIndex
+                            val width by animateDpAsState(
+                                targetValue = if (isSelected) 28.dp else 8.dp,
+                                animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
+                                label = "indicatorWidth"
+                            )
+                            val color by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f),
+                                label = "indicatorColor"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(end = 6.dp)
+                                    .height(8.dp)
+                                    .width(width)
+                                    .clip(CircleShape)
+                                    .background(color)
+                            )
+                        }
                     }
                 }
 
-                // Action buttons based on current step
-                when {
-                    // Page 1: Permissions - Hide continue button until permissions are granted
-                    pagerState.currentPage == 1 && !hasMediaPermission -> {
-                        // Continue button removed until access is granted
+                // Right Pane: Content Page & Action Button
+                Column(
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    HorizontalPager(
+                        state = pagerState,
+                        userScrollEnabled = false,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) { page ->
+                        when (page) {
+                            0 -> OnboardingWelcomePage(isTwoPane = true)
+                            1 -> OnboardingPermissionsPage(
+                                hasMedia = hasMediaPermission,
+                                hasNotifications = hasNotificationPermission,
+                                hasBackground = hasBackgroundPermission,
+                                onRequestPermissions = {
+                                    val permissions = mutableListOf<String>()
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                                        permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                                    }
+                                    permissionLauncher.launch(permissions.toTypedArray())
+                                },
+                                onRequestBackground = {
+                                    DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                                },
+                                isTwoPane = true
+                            )
+                            2 -> OnboardingAccountPage(
+                                selectedAccount = selectedAccount,
+                                hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                                onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                                onOpenSignIn = { showSignInWebView = true },
+                                onOpenManual = { showManualTokenDialog = true },
+                                isTwoPane = true
+                            )
+                            3 -> OnboardingFoldersPage(
+                                folders = settings.folders,
+                                onToggleFolder = { path, enabled ->
+                                    viewModel.toggleFolder(path, enabled)
+                                },
+                                isTwoPane = true
+                            )
+                            4 -> OnboardingPreferencesPage(
+                                wifiOnly = settings.wifiOnly,
+                                onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                                storageSaver = settings.storageSaverQuality,
+                                onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                                selectedPreset = settings.colorPreset,
+                                onUpdatePreset = { viewModel.updateColorPreset(it) },
+                                unlockedPrismTheme = settings.unlockedPrismTheme,
+                                unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                                isTwoPane = true
+                            )
+                            5 -> OnboardingCompletionPage(isTwoPane = true)
+                        }
                     }
 
-                    // Page 2: Connect Google Account - Remove continue button; place "Set Up Account Later" here
-                    pagerState.currentPage == 2 && selectedAccount == null -> {
-                        ExpressiveTonalButton(
-                            onClick = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                    ) {
+                        OnboardingActionButton(
+                            currentPage = pagerState.currentPage,
+                            hasMediaPermission = hasMediaPermission,
+                            selectedAccount = selectedAccount,
+                            onSetAccountLater = {
                                 coroutineScope.launch {
                                     pagerState.animateScrollToPage(3)
                                 }
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                        ) {
-                            Text(
-                                text = "Set Up Account Later",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    // Other pages or when account is connected
-                    else -> {
-                        ExpressiveButton(
-                            onClick = {
+                            onNext = {
                                 if (pagerState.currentPage < 5) {
                                     coroutineScope.launch {
                                         pagerState.animateScrollToPage(pagerState.currentPage + 1)
@@ -349,27 +357,426 @@ fun OnboardingScreen(
                                 } else {
                                     onFinish()
                                 }
+                            }
+                        )
+                    }
+                }
+            }
+        } else {
+            // Single-Column Layout (Portrait)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    if (pagerState.currentPage > 0) {
+                        ExpressiveIconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                }
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
+                            modifier = Modifier.size(44.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(44.dp))
+                    }
+                }
+
+                HorizontalPager(
+                    state = pagerState,
+                    userScrollEnabled = false,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) { page ->
+                    when (page) {
+                        0 -> OnboardingWelcomePage(isTwoPane = false)
+                        1 -> OnboardingPermissionsPage(
+                            hasMedia = hasMediaPermission,
+                            hasNotifications = hasNotificationPermission,
+                            hasBackground = hasBackgroundPermission,
+                            onRequestPermissions = {
+                                val permissions = mutableListOf<String>()
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                                    permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                                }
+                                permissionLauncher.launch(permissions.toTypedArray())
+                            },
+                            onRequestBackground = {
+                                DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                            },
+                            isTwoPane = false
+                        )
+                        2 -> OnboardingAccountPage(
+                            selectedAccount = selectedAccount,
+                            hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                            onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                            onOpenSignIn = { showSignInWebView = true },
+                            onOpenManual = { showManualTokenDialog = true },
+                            isTwoPane = false
+                        )
+                        3 -> OnboardingFoldersPage(
+                            folders = settings.folders,
+                            onToggleFolder = { path, enabled ->
+                                viewModel.toggleFolder(path, enabled)
+                            },
+                            isTwoPane = false
+                        )
+                        4 -> OnboardingPreferencesPage(
+                            wifiOnly = settings.wifiOnly,
+                            onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                            storageSaver = settings.storageSaverQuality,
+                            onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                            selectedPreset = settings.colorPreset,
+                            onUpdatePreset = { viewModel.updateColorPreset(it) },
+                            unlockedPrismTheme = settings.unlockedPrismTheme,
+                            unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                            isTwoPane = false
+                        )
+                        5 -> OnboardingCompletionPage(isTwoPane = false)
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.padding(bottom = 20.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        for (pageIndex in 0 until 6) {
+                            val isSelected = pagerState.currentPage == pageIndex
+                            val width by animateDpAsState(
+                                targetValue = if (isSelected) 28.dp else 8.dp,
+                                animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
+                                label = "indicatorWidth"
+                            )
+                            val color by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f),
+                                label = "indicatorColor"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .height(8.dp)
+                                    .width(width)
+                                    .clip(CircleShape)
+                                    .background(color)
+                            )
+                        }
+                    }
+
+                    OnboardingActionButton(
+                        currentPage = pagerState.currentPage,
+                        hasMediaPermission = hasMediaPermission,
+                        selectedAccount = selectedAccount,
+                        onSetAccountLater = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(3)
+                            }
+                        },
+                        onNext = {
+                            if (pagerState.currentPage < 5) {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            } else {
+                                onFinish()
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingActionButton(
+    currentPage: Int,
+    hasMediaPermission: Boolean,
+    selectedAccount: com.reiux.lumen.data.model.GoogleAccount?,
+    onSetAccountLater: () -> Unit,
+    onNext: () -> Unit
+) {
+    when {
+        currentPage == 1 && !hasMediaPermission -> {
+            // Button hidden until permissions granted
+        }
+        currentPage == 2 && selectedAccount == null -> {
+            ExpressiveTonalButton(
+                onClick = onSetAccountLater,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text = "Set Up Account Later",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+        else -> {
+            ExpressiveButton(
+                onClick = onNext,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text(
+                    text = when (currentPage) {
+                        0 -> "Get Started"
+                        5 -> "Start Backing Up"
+                        else -> "Continue"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingStepLeftHeader(page: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(end = 8.dp)
+    ) {
+        when (page) {
+            0 -> {
+                Surface(
+                    modifier = Modifier.size(80.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        com.reiux.lumen.ui.components.DynamicLumenIcon(size = 52.dp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Welcome to Lumen",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Unlimited, private Google Photos backup right from your Android device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = when (pagerState.currentPage) {
-                                    0 -> "Get Started"
-                                    5 -> "Start Backing Up"
-                                    else -> "Continue"
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                text = "Account Privacy & Security",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Lumen never sees or stores your password. It uses a temporary OAuth token that only permits uploading media directly to Google Photos.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 16.sp
                             )
                         }
                     }
                 }
+            }
+            1 -> {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Security,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Allow Access",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "To find your media and run in the background, Lumen needs a few standard permissions.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            2 -> {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.AccountCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp),
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Connect Google Account",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Sign in to the Google account where your unlimited photos will be stored.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            3 -> {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Choose Backup Folders",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Select which local media folders should be automatically backed up.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            4 -> {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Tune,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Preferences & Style",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Choose your backup rules and pick your favorite theme color.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            5 -> {
+                Surface(
+                    modifier = Modifier.size(80.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(44.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "You're all set",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Lumen is ready to back up your photos and videos in full quality.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -379,82 +786,83 @@ fun OnboardingScreen(
 // Page 0: Welcome to Lumen
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingWelcomePage() {
+private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Surface(
-            modifier = Modifier.size(96.dp),
-            shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                com.reiux.lumen.ui.components.DynamicLumenIcon(size = 64.dp)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Welcome to Lumen",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Unlimited, private Google Photos backup right from your Android device.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Reassuring Security & Account Privacy Banner Card
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.Top
+            Surface(
+                modifier = Modifier.size(96.dp),
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Security,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Account Privacy & Security",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Lumen never sees or stores your password and has no access to your Google Account. It uses a temporary OAuth token that only permits uploading media directly to Google Photos (photos.googleapis.com).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
-                    )
+                Box(contentAlignment = Alignment.Center) {
+                    com.reiux.lumen.ui.components.DynamicLumenIcon(size = 64.dp)
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Welcome to Lumen",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Unlimited, private Google Photos backup right from your Android device.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Security,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Account Privacy & Security",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Lumen never sees or stores your password and has no access to your Google Account. It uses a temporary OAuth token that only permits uploading media directly to Google Photos (photos.googleapis.com).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         FeatureHighlightCard(
             icon = Icons.Rounded.AllInclusive,
@@ -483,7 +891,7 @@ private fun OnboardingWelcomePage() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 1: Permissions (Only prompted when tapping Allow)
+// Page 1: Permissions
 // ---------------------------------------------------------------------------
 @Composable
 private fun OnboardingPermissionsPage(
@@ -491,52 +899,55 @@ private fun OnboardingPermissionsPage(
     hasNotifications: Boolean,
     hasBackground: Boolean,
     onRequestPermissions: () -> Unit,
-    onRequestBackground: () -> Unit
+    onRequestBackground: () -> Unit,
+    isTwoPane: Boolean = false
 ) {
     val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Surface(
-            modifier = Modifier.size(88.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Security,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+            Surface(
+                modifier = Modifier.size(88.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Security,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Allow Access",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "To find your media and run in the background, Lumen needs a few standard permissions.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Allow Access",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "To find your media and run in the background, Lumen needs a few standard permissions.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
 
         PermissionItemCard(
             icon = Icons.Rounded.PhotoLibrary,
@@ -646,7 +1057,7 @@ private fun OnboardingPermissionsPage(
 }
 
 // ---------------------------------------------------------------------------
-// Page 2: Connect Account (Supports "Set Up Later")
+// Page 2: Connect Account
 // ---------------------------------------------------------------------------
 @Composable
 private fun OnboardingAccountPage(
@@ -654,7 +1065,8 @@ private fun OnboardingAccountPage(
     hasAcknowledgedAccountRisk: Boolean,
     onAcknowledgeRisk: () -> Unit,
     onOpenSignIn: () -> Unit,
-    onOpenManual: () -> Unit
+    onOpenManual: () -> Unit,
+    isTwoPane: Boolean = false
 ) {
     var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
@@ -662,45 +1074,47 @@ private fun OnboardingAccountPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Surface(
-            modifier = Modifier.size(88.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.tertiaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.AccountCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer
-                )
+            Surface(
+                modifier = Modifier.size(88.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Connect Google Account",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Sign in to the Google account where your unlimited photos will be stored.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Connect Google Account",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Sign in to the Google account where your unlimited photos will be stored.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
 
         com.reiux.lumen.ui.components.AccountRiskCard(
             hasAcknowledged = localAcknowledged,
@@ -820,51 +1234,54 @@ private fun OnboardingAccountPage(
 @Composable
 private fun OnboardingFoldersPage(
     folders: List<com.reiux.lumen.data.model.BackupFolder>,
-    onToggleFolder: (String, Boolean) -> Unit
+    onToggleFolder: (String, Boolean) -> Unit,
+    isTwoPane: Boolean = false
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Surface(
-            modifier = Modifier.size(88.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Folder,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            Surface(
+                modifier = Modifier.size(88.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Choose Backup Folders",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Select which local media folders should be automatically backed up.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Choose Backup Folders",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Select which local media folders should be automatically backed up.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -947,7 +1364,8 @@ private fun OnboardingPreferencesPage(
     selectedPreset: String,
     onUpdatePreset: (String) -> Unit,
     unlockedPrismTheme: Boolean = false,
-    unlockedMatrixTheme: Boolean = false
+    unlockedMatrixTheme: Boolean = false,
+    isTwoPane: Boolean = false
 ) {
     val presetsToDisplay = remember(unlockedPrismTheme, unlockedMatrixTheme) {
         com.reiux.lumen.ui.theme.getAvailablePresets(unlockedPrismTheme, unlockedMatrixTheme)
@@ -956,45 +1374,47 @@ private fun OnboardingPreferencesPage(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Surface(
-            modifier = Modifier.size(88.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Tune,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+            Surface(
+                modifier = Modifier.size(88.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Preferences & Style",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Choose your backup rules and pick your favorite theme color.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Preferences & Style",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Choose your backup rules and pick your favorite theme color.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -1110,53 +1530,55 @@ private fun OnboardingPreferencesPage(
 }
 
 // ---------------------------------------------------------------------------
-// Page 5: All Set / Ready to Go (Creative and natural completion moment)
+// Page 5: All Set / Ready to Go
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingCompletionPage() {
+private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(20.dp))
+        if (!isTwoPane) {
+            Spacer(modifier = Modifier.height(20.dp))
 
-        Surface(
-            modifier = Modifier.size(96.dp),
-            shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(52.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            Surface(
+                modifier = Modifier.size(96.dp),
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "You're all set",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Lumen is ready to back up your photos and videos in full quality.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "You're all set",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Lumen is ready to back up your photos and videos in full quality.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(28.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.AllInclusive,
@@ -1316,35 +1738,29 @@ private fun PermissionItemCard(
             } else {
                 ExpressiveTonalButton(
                     onClick = onRequest,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text("Allow")
+                    Text("Allow", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
 
+
+
 private fun checkMediaPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.READ_MEDIA_IMAGES
-        ) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
     } else {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        ) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
 }
 
 private fun checkNotificationPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     } else {
         true
     }

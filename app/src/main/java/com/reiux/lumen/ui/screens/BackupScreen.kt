@@ -549,75 +549,73 @@ fun BackupScreen(
                 )
             }
 
-            if (queue.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Recent Activity (${queue.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Activity (${queue.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
 
-                        if (queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED || it.status == UploadStatus.FAILED }) {
-                            TextButton(
-                                onClick = onClearCompleted,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text("Clear")
-                            }
-                        }
-                    }
-                }
-
-                if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
-                    item {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                    if (queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED || it.status == UploadStatus.FAILED }) {
+                        TextButton(
+                            onClick = onClearCompleted,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CloudDone,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "Queue is empty",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
-                                    if (mockEmptyStateVariantIndex != null) {
-                                        EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
-                                    } else {
-                                        EasterEggsManager.getEmptyStateSubtitle(context)
-                                    }
-                                }
-                                Text(
-                                    text = emptySubtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text("Clear")
                         }
                     }
                 }
+            }
 
+            if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Queue is empty",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
+                                if (mockEmptyStateVariantIndex != null) {
+                                    EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
+                                } else {
+                                    EasterEggsManager.getEmptyStateSubtitle(context)
+                                }
+                            }
+                            Text(
+                                text = emptySubtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
                 items(queue.takeLast(25).reversed()) { item ->
                     UploadItemRow(item = item)
                 }
@@ -1366,7 +1364,7 @@ private fun HeroBackupCard(
                 }
             } else {
                 Text(
-                    text = if (isDone) "Pick photos and videos to upload, or sync your folders." else "$totalInQueue items in queue.",
+                    text = if (isDone) "Queue is empty — pick photos and videos to upload, or sync your folders." else "$totalInQueue items in queue.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
