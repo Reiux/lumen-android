@@ -55,8 +55,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settingsRepo = app.settingsRepository
     val uploadRepo = app.uploadRepository
 
+    val isSecureStorageAvailable = accountRepo.isSecureStorageAvailable
+
     private val _selectedDestination = MutableStateFlow(NavDestination.BACKUP)
     val selectedDestination: StateFlow<NavDestination> = _selectedDestination.asStateFlow()
+
+    var secureStorageWarningShown = false
 
     // --- Mock Mode & Showcase Mode States ---
     private val _isMockMode = MutableStateFlow(false)

@@ -100,11 +100,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings by viewModel.settings.collectAsState()
             val isMockMode by viewModel.isMockMode.collectAsState()
+            val isSecureStorageAvailable by viewModel.isSecureStorageAvailable.collectAsState()
 
             val activeSeason = remember(settings.forcedSeason) {
                 com.reiux.lumen.util.EasterEggsManager.resolveActiveSeason(settings.forcedSeason)
             }
             
+            LaunchedEffect(isSecureStorageAvailable) {
+                if (!isSecureStorageAvailable && !viewModel.secureStorageWarningShown) {
+                    android.widget.Toast.makeText(
+                        this@MainActivity, 
+                        getString(R.string.secure_storage_unavailable_warning), 
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    viewModel.secureStorageWarningShown = true
+                }
+            }
+
             LaunchedEffect(Unit) {
                 if (intent?.getStringExtra("action") == "show_update") {
                     viewModel.checkAndShowUpdate(this@MainActivity)
