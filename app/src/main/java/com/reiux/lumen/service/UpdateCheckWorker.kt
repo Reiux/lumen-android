@@ -26,6 +26,8 @@ class UpdateCheckWorker(
             return Result.success()
         }
         
+        settingsRepo.setLastUpdateCheckMillis(System.currentTimeMillis())
+        
         LumenLogger.d("Updater") { "Starting background update check..." }
         val repo = UpdateRepository()
         

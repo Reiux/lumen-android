@@ -4,15 +4,23 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_CERT_SHA256: 697c9d2360ae5714a88695e4c9e8bc1c370b1c5bd1a0a0c57b637e16c271fbf3
 
 jobs:
-  release:
-    name: Build & Publish Release
+  test:
+    name: Test and Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -29,63 +37,134 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Setup Keystore
+      - name: Run Tests and Lint
+        run: ./gradlew testDebugUnitTest lintDebug
+
+  release:
+    name: Build & Publish Release
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Check tag matches app version
         run: |
-          if [ -n "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-            echo "storeFile=../release.keystore" > keystore.properties
-            echo "storePassword=${{ secrets.LUMEN_KEYSTORE_PASSWORD }}" >> keystore.properties
-            echo "keyAlias=${{ secrets.LUMEN_KEY_ALIAS }}" >> keystore.properties
-            echo "keyPassword=${{ secrets.LUMEN_KEY_PASSWORD }}" >> keystore.properties
+          VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match app/build.gradle versionName v$VERSION"
+            exit 1
           fi
 
-      - name: Build Release and Debug APKs
+      - name: Setup keystore
+        env:
+          KS_BASE64: ${{ secrets.LUMEN_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.LUMEN_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.LUMEN_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_BASE64" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASS" ]; then
+            echo "::error::Missing signing secrets"
+            exit 1
+          fi
+          echo "$KS_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          cat <<EOF > keystore.properties
+          storeFile=$RUNNER_TEMP/release.keystore
+          storePassword=$KS_PASS
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+
+      - name: Build
         run: ./gradlew assembleRelease assembleDebug
 
-      - name: Prepare APK Assets and Verification Hashes
+      - name: Verify release signature
         run: |
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk lumen-release.apk
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk lumen-release.apk
+          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$RELEASE_APK" ]; then
+            echo "::error::Release APK not found at $RELEASE_APK"
+            exit 1
           fi
-          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk lumen-dev-debug.apk
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner tool not found"
+            exit 1
+          fi
+          CERT_DIGEST=$("$APKSIGNER" verify --print-certs "$RELEASE_APK" | grep -i "certificate SHA-256 digest" | head -n1 | awk '{print $NF}')
+          if [ -z "$CERT_DIGEST" ]; then
+            echo "::error::Failed to extract certificate SHA-256 digest from $RELEASE_APK"
+            exit 1
+          fi
+          LOWER_ACTUAL=$(echo "$CERT_DIGEST" | tr '[:upper:]' '[:lower:]')
+          LOWER_EXPECTED=$(echo "$EXPECTED_CERT_SHA256" | tr '[:upper:]' '[:lower:]')
+          if [ "$LOWER_ACTUAL" != "$LOWER_EXPECTED" ]; then
+            echo "::error::Signature mismatch: expected $LOWER_EXPECTED, got $LOWER_ACTUAL"
+            exit 1
+          fi
+          echo "CERT_SHA256=$CERT_DIGEST" >> "$GITHUB_ENV"
+
+      - name: Stage assets
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/lumen-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/lumen-dev-debug.apk
+
+      - name: Write release notes
+        run: |
+          mkdir -p dist
+          NOTES_FILE=".github/release-notes/$GITHUB_REF_NAME.md"
+          if [ -f "$NOTES_FILE" ]; then
+            cat "$NOTES_FILE" > dist/notes.md
+          else
+            PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+            if [ -n "$PREV_TAG" ]; then
+              RAW_LOG=$(git log "$PREV_TAG..$GITHUB_REF_NAME" --pretty=format:'- %s')
+            else
+              RAW_LOG=$(git log "$GITHUB_REF_NAME" --pretty=format:'- %s')
+            fi
+            FILTERED_LOG=$(echo "$RAW_LOG" | grep -vE '^- (ci|chore|docs)([:\(].*)?$')
+            
+            echo "### Changes" > dist/notes.md
+            if [ -n "$(echo "$FILTERED_LOG" | tr -d '[:space:]')" ]; then
+              echo "$FILTERED_LOG" >> dist/notes.md
+            else
+              echo "- Maintenance release." >> dist/notes.md
+            fi
           fi
 
-          CERT_SHA256=""
-          SP="${{ secrets.LUMEN_KEYSTORE_PASSWORD }}"
-          if [ -f release.keystore ] && [ -n "$SP" ]; then
-            CERT_SHA256=$(keytool -list -v -keystore release.keystore -storepass "$SP" | grep -i "SHA256:" | head -n 1 | awk '{print $2}')
-          fi
-          if [ -z "$CERT_SHA256" ]; then
-            CERT_SHA256="N/A"
-          fi
+          echo "" >> dist/notes.md
+          echo "### Verification" >> dist/notes.md
+          echo "- **Release APK Certificate SHA-256:** \`$CERT_SHA256\`" >> dist/notes.md
+          echo "- \`lumen-dev-debug.apk\` is signed with a CI debug key and is for testing only." >> dist/notes.md
 
-          echo "CERT_SHA256=$CERT_SHA256" >> $GITHUB_ENV
-
-      - name: Upload or Update GitHub Release
+      - name: Publish
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Lumen ${{ github.ref_name }}
+          body_path: dist/notes.md
           files: |
-            lumen-release.apk
-            lumen-dev-debug.apk
-          prerelease: false
-          overwrite: true
-          body: |
-            ### Fixes & Improvements
-            - Restored "Queue is empty" state and recent activity visibility in portrait orientation.
-            - Added 2-pane split view for onboarding on landscape and tablet screens.
-
-            ### Changes in v1.1.2
-            - Added encrypted account storage using Android KeyStore.
-            - Added commit recovery with circuit breaker protection and no plaintext fallback.
-            - Added auto-update toggle in settings.
-            - Added GitHub CI build workflow and release automation.
-            - Fixed settings UI rendering issues.
-            - Updated README privacy documentation.
-
-            ### Verification
-            - **Signing Certificate SHA-256**: `${{ env.CERT_SHA256 }}`
+            dist/lumen-release.apk
+            dist/lumen-dev-debug.apk
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

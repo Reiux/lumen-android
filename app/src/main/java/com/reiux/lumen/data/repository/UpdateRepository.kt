@@ -21,45 +21,22 @@ class UpdateRepository(
 ) {
     suspend fun checkForUpdates(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            var release: JSONObject? = null
-            
-            // Try fetching official latest release first
-            try {
-                val latestUrl = "https://api.github.com/repos/Reiux/lumen-android/releases/latest"
-                val response = httpClient.newCall(Request.Builder().url(latestUrl).build()).execute()
-                if (response.isSuccessful) {
-                    response.body?.string()?.let {
-                        release = JSONObject(it)
-                    }
-                }
-            } catch (e: Exception) {
-                LumenLogger.w("Updater") { "Failed to fetch latest release: ${e.message}" }
+            val url = "https://api.github.com/repos/Reiux/lumen-android/releases/latest"
+            val request = Request.Builder().url(url).build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                LumenLogger.w("Updater") { "Failed to fetch updates: HTTP ${response.code}" }
+                return@withContext null
             }
 
-            // Fallback to releases list if releases/latest returned nothing or 404 (e.g. for pre-releases)
-            if (release == null) {
-                try {
-                    val listUrl = "https://api.github.com/repos/Reiux/lumen-android/releases"
-                    val response = httpClient.newCall(Request.Builder().url(listUrl).build()).execute()
-                    if (response.isSuccessful) {
-                        response.body?.string()?.let {
-                            val array = JSONArray(it)
-                            if (array.length() > 0) {
-                                release = array.getJSONObject(0)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    LumenLogger.w("Updater") { "Failed to fetch releases list: ${e.message}" }
-                }
-            }
+            val body = response.body?.string() ?: return@withContext null
+            val release = JSONObject(body)
 
-            val targetRelease = release ?: return@withContext null
-
-            val latestVersion = targetRelease.optString("tag_name", "").removePrefix("v")
-            val releaseNotes = targetRelease.optString("body", "")
+            val latestVersion = release.optString("tag_name", "").removePrefix("v")
+            val releaseNotes = release.optString("body", "")
             
-            val assets = targetRelease.optJSONArray("assets") ?: JSONArray()
+            val assets = release.optJSONArray("assets") ?: JSONArray()
             var downloadUrl = ""
             
             val expectedApk = if (BuildConfig.DEBUG) "lumen-dev-debug.apk" else "lumen-release.apk"
@@ -152,6 +129,16 @@ class UpdateRepository(
             return false
         } catch (e: Exception) {
             return latest != current
+        }
+    }
+
+    companion object {
+        internal fun shouldAutoCheck(
+            lastCheckMillis: Long,
+            nowMillis: Long,
+            intervalMillis: Long = 12L * 60 * 60 * 1000
+        ): Boolean {
+            return lastCheckMillis <= 0 || lastCheckMillis > nowMillis || (nowMillis - lastCheckMillis) >= intervalMillis
         }
     }
 }

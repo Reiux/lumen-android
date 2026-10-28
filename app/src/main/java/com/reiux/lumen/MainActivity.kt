@@ -121,7 +121,11 @@ class MainActivity : ComponentActivity() {
                 if (intent?.getStringExtra("action") == "show_update") {
                     viewModel.checkAndShowUpdate(this@MainActivity)
                 } else if (settings.autoCheckUpdates) {
-                    viewModel.checkAndShowUpdate(this@MainActivity)
+                    val now = System.currentTimeMillis()
+                    if (com.reiux.lumen.data.repository.UpdateRepository.shouldAutoCheck(viewModel.settingsRepo.getLastUpdateCheckMillis(), now)) {
+                        viewModel.settingsRepo.setLastUpdateCheckMillis(now)
+                        viewModel.checkAndShowUpdate(this@MainActivity)
+                    }
                 }
             }
 
