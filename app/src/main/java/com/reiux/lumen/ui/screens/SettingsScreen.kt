@@ -96,6 +96,7 @@ fun SettingsScreen(
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
     onUpdateAutoBackup: (Boolean) -> Unit = {},
+    onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDevDiagnostics: () -> Unit = {},
     onToggleDeveloperMode: (Boolean) -> Unit = {},
@@ -356,6 +357,28 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
+                    text = "Updates",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingSwitchRow(
+                            title = stringResource(R.string.pref_auto_check_updates_title),
+                            subtitle = stringResource(R.string.pref_auto_check_updates_subtitle),
+                            checked = settings.autoCheckUpdates,
+                            onCheckedChange = onUpdateAutoCheckUpdates
+                        )
+                    }
+                }
+
+                Text(
                     text = "Network & Concurrency",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -580,6 +603,28 @@ fun SettingsScreen(
                             subtitle = stringResource(R.string.account_safety_subtitle),
                             actionLabel = "View",
                             onClick = { showAccountSafetyDialog = true }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Updates",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingSwitchRow(
+                            title = stringResource(R.string.pref_auto_check_updates_title),
+                            subtitle = stringResource(R.string.pref_auto_check_updates_subtitle),
+                            checked = settings.autoCheckUpdates,
+                            onCheckedChange = onUpdateAutoCheckUpdates
                         )
                     }
                 }

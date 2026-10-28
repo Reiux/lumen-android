@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="lumen_accounts.xml" />
+    <exclude domain="sharedpref" path="lumen_accounts_encrypted.xml" />
     <exclude domain="database" path="lumen_hash_cache.db" />
     <exclude domain="database" path="lumen_hash_cache.db-journal" />
     <exclude domain="database" path="lumen_hash_cache.db-wal" />

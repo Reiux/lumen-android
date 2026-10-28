@@ -2,8 +2,11 @@ package com.reiux.lumen.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.network.GoogleAuthClient
+import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,9 +16,10 @@ import java.net.URLDecoder
 
 class AccountRepository(
     context: Context,
-    private val authClient: GoogleAuthClient = GoogleAuthClient()
+    private val authClient: GoogleAuthClient = GoogleAuthClient(),
+    sharedPreferencesOverride: SharedPreferences? = null
 ) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("lumen_accounts", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = sharedPreferencesOverride ?: createEncryptedSharedPreferences(context)
 
     private val _accounts = MutableStateFlow<List<GoogleAccount>>(emptyList())
     val accounts: StateFlow<List<GoogleAccount>> = _accounts.asStateFlow()
@@ -167,5 +171,45 @@ class AccountRepository(
     companion object {
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_SELECTED_ACCOUNT = "selected_account"
+
+        fun createEncryptedSharedPreferences(context: Context): SharedPreferences {
+            val unencryptedPrefs = context.getSharedPreferences("lumen_accounts", Context.MODE_PRIVATE)
+
+            return try {
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+
+                val encryptedPrefs = EncryptedSharedPreferences.create(
+                    "lumen_accounts_encrypted",
+                    masterKeyAlias,
+                    context,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+
+                migrateLegacyAccountsIfNeeded(unencryptedPrefs, encryptedPrefs)
+                encryptedPrefs
+            } catch (e: Exception) {
+                LumenLogger.w("Storage") { "EncryptedSharedPreferences initialization failed (${e.message}), falling back to standard SharedPreferences" }
+                unencryptedPrefs
+            }
+        }
+
+        internal fun migrateLegacyAccountsIfNeeded(unencryptedPrefs: SharedPreferences, encryptedPrefs: SharedPreferences) {
+            val legacyJson = unencryptedPrefs.getString(KEY_ACCOUNTS, null)
+            val legacySelected = unencryptedPrefs.getString(KEY_SELECTED_ACCOUNT, null)
+
+            if (!legacyJson.isNullOrEmpty()) {
+                if (!encryptedPrefs.contains(KEY_ACCOUNTS)) {
+                    val editor = encryptedPrefs.edit()
+                    editor.putString(KEY_ACCOUNTS, legacyJson)
+                    if (legacySelected != null) {
+                        editor.putString(KEY_SELECTED_ACCOUNT, legacySelected)
+                    }
+                    editor.apply()
+                    LumenLogger.i("Storage") { "Successfully migrated lumen_accounts to EncryptedSharedPreferences" }
+                }
+                unencryptedPrefs.edit().clear().apply()
+            }
+        }
     }
 }
