@@ -1,0 +1,64 @@
+name: Lumen Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Decode Release Keystore
+        run: |
+          if [ -n "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            echo "storeFile=../release.keystore" > keystore.properties
+            echo "storePassword=${{ secrets.LUMEN_KEYSTORE_PASSWORD }}" >> keystore.properties
+            echo "keyAlias=${{ secrets.LUMEN_KEY_ALIAS }}" >> keystore.properties
+            echo "keyPassword=${{ secrets.LUMEN_KEY_PASSWORD }}" >> keystore.properties
+          fi
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Prepare APK Asset
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "main" ] || [ "$TAG_NAME" = "dev" ]; then
+            TAG_NAME="v1.1.2"
+          fi
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk "Lumen-${TAG_NAME}.apk"
+          else
+            cp app/build/outputs/apk/release/app-release-unsigned.apk "Lumen-${TAG_NAME}.apk"
+          fi
+
+      - name: Upload or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Lumen-*.apk
+          prerelease: true
+          overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
