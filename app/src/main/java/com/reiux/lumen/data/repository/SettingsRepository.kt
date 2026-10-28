@@ -390,6 +390,14 @@ class SettingsRepository(
         _settings.value = _settings.value.copy(hasAcknowledgedAccountRisk = acknowledged)
     }
 
+    fun getLastUpdateCheckMillis(): Long {
+        return prefs.getLong(KEY_LAST_UPDATE_CHECK_MILLIS, 0L)
+    }
+
+    fun setLastUpdateCheckMillis(millis: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_MILLIS, millis).apply()
+    }
+
     fun getAccountBlock(email: String): AccountBlock? {
         val key = "account_block_${email.lowercase()}"
         val valStr = prefs.getString(key, null) ?: return null
@@ -488,6 +496,7 @@ class SettingsRepository(
         private const val KEY_MILESTONE_1000_SHOWN = "milestone_1000_shown"
         private const val KEY_MILESTONE_10000_SHOWN = "milestone_10000_shown"
         private const val KEY_LATE_NIGHT_DATE = "last_late_night_date"
+        private const val KEY_LAST_UPDATE_CHECK_MILLIS = "last_update_check_millis"
         private const val KEY_FOLDERS = "folders"
     }
 }
