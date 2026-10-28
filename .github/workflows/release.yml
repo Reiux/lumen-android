@@ -67,7 +67,7 @@ jobs:
           files: |
             lumen-release.apk
             lumen-dev-debug.apk
-          prerelease: true
+          prerelease: false
           overwrite: true
           body: |
             ### Fixes & Improvements
