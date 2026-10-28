@@ -70,11 +70,16 @@ jobs:
           prerelease: true
           overwrite: true
           body: |
-            ## Lumen v1.1.2 Release Notes
+            ### Fixes & Improvements
+            - Restored "Queue is empty" state and recent activity visibility in portrait orientation.
+            - Added 2-pane split view for onboarding on landscape and tablet screens.
 
-            ### 🐛 Bug Fixes & UI Enhancements
-            - **Queue Empty State in Portrait**: Fixed an issue where the "Queue is empty" card and Recent Activity section were hidden in portrait mode.
-            - **Adaptive Split Onboarding Layout**: Refactored onboarding screen for landscape, foldables, and tablets to use a responsive 2-pane split layout.
-            - **CI & Release Signing**: Updated release workflow to generate both standard (`lumen-release.apk`) and developer (`lumen-dev-debug.apk`) builds with automatic asset updates.
+            ### Changes in v1.1.2
+            - Added encrypted account storage using Android KeyStore.
+            - Added commit recovery with circuit breaker protection and no plaintext fallback.
+            - Added auto-update toggle in settings.
+            - Added GitHub CI build workflow and release automation.
+            - Fixed settings UI rendering issues.
+            - Updated README privacy documentation.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
