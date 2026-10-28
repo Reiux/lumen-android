@@ -50,7 +50,7 @@ jobs:
       - name: Build Release and Debug APKs
         run: ./gradlew assembleRelease assembleDebug
 
-      - name: Prepare APK Assets
+      - name: Prepare APK Assets and Verification Hashes
         run: |
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk lumen-release.apk
@@ -60,6 +60,15 @@ jobs:
           if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
             cp app/build/outputs/apk/debug/app-debug.apk lumen-dev-debug.apk
           fi
+
+          CERT_SHA256=$(keytool -printcert -jarfile lumen-release.apk | grep "SHA256:" | head -n 1 | awk '{print $2}')
+          if [ -z "$CERT_SHA256" ]; then
+            CERT_SHA256="N/A"
+          fi
+          FILE_SHA256=$(sha256sum lumen-release.apk | awk '{print $1}')
+
+          echo "CERT_SHA256=$CERT_SHA256" >> $GITHUB_ENV
+          echo "FILE_SHA256=$FILE_SHA256" >> $GITHUB_ENV
 
       - name: Upload or Update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -81,5 +90,9 @@ jobs:
             - Added GitHub CI build workflow and release automation.
             - Fixed settings UI rendering issues.
             - Updated README privacy documentation.
+
+            ### Verification
+            - **Certificate SHA-256**: `${{ env.CERT_SHA256 }}`
+            - **APK SHA-256**: `${{ env.FILE_SHA256 }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
