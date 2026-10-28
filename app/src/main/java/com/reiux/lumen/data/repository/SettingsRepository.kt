@@ -438,8 +438,13 @@ class SettingsRepository(
 
     fun setAccountBlock(block: AccountBlock) {
         val key = "account_block_${block.accountEmail.lowercase()}"
-        val valStr = "${block.kind.name}|${block.timestamp}|${block.retryAfterTimestamp ?: -1}|${block.rawDetail ?: ""}"
-        prefs.edit().putString(key, valStr).apply()
+        val obj = JSONObject()
+        obj.put("kind", block.kind.name)
+        obj.put("timestamp", block.timestamp)
+        obj.put("accountEmail", block.accountEmail)
+        if (block.retryAfterTimestamp != null) obj.put("retryAfterTimestamp", block.retryAfterTimestamp)
+        if (block.rawDetail != null) obj.put("rawDetail", block.rawDetail)
+        prefs.edit().putString(key, obj.toString()).apply()
         LumenLogger.w("Auth") { "Persisted account block for ${block.accountEmail}: ${block.kind}" }
     }
 

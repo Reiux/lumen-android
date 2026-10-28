@@ -38,7 +38,7 @@ When you sign in, Google gives the app an **OAuth token**.
 ## Features
 
 - **Unlimited Original Quality**: Upload photos and videos at full resolution without filling up your Google One storage.
-- **Direct & Private**: Connects straight from your phone to Google Photos with zero analytics or third-party servers.
+- **Direct & Private**: Connects straight from your phone to Google Photos with no analytics or telemetry. The only other server it contacts is GitHub, to check for app updates, and you can turn that off in Settings.
 - **Material 3 Expressive UI**: Built with Compose, spring animations, shape-changing buttons, and customizable color themes.
 - **Tablet & Foldable Support**: Adapts into a side-by-side split screen on larger displays or landscape mode.
 - **Live Status Bar Updates**: Shows progress chips in your status bar with live speed and file counters while backing up.

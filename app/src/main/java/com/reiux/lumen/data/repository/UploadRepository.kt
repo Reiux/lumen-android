@@ -713,7 +713,7 @@ class UploadRepository(
                     if (e is CancellationException) throw e
                     lastError = e
 
-                    if (getItemStatus(item.id) == UploadStatus.COMMITTING) {
+                    if (shouldAttemptCommitRecovery(e, getItemStatus(item.id))) {
                         LumenLogger.w("UploadEngine", opId = opId) {
                             "Commit failed (${e.message}). Checking if Google Photos server committed the media..."
                         }
@@ -837,6 +837,21 @@ class UploadRepository(
     }
 
     companion object {
+        internal fun shouldAttemptCommitRecovery(error: Throwable, status: UploadStatus?): Boolean {
+            if (status != UploadStatus.COMMITTING) return false
+            if (error is com.reiux.lumen.util.AuthFailureException) {
+                val kind = error.kind
+                if (kind == AuthFailureKind.ACCOUNT_RESTRICTED ||
+                    kind == AuthFailureKind.SIGN_IN_REQUIRED ||
+                    kind == AuthFailureKind.RATE_LIMITED ||
+                    kind == AuthFailureKind.TOKEN_EXPIRED
+                ) {
+                    return false
+                }
+            }
+            return true
+        }
+
         internal fun computeRetryDelayMs(attempt: Int): Long {
             val base = (attempt * 2000L).coerceAtMost(6000L)
             val jitter = kotlin.random.Random.nextLong(250L, 1000L)
