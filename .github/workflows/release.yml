@@ -32,19 +32,11 @@ jobs:
       - name: Setup Keystore
         run: |
           if [ -n "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" ]; then
-            echo "Decoding repository release keystore..."
             echo "${{ secrets.LUMEN_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
             echo "storeFile=../release.keystore" > keystore.properties
             echo "storePassword=${{ secrets.LUMEN_KEYSTORE_PASSWORD }}" >> keystore.properties
             echo "keyAlias=${{ secrets.LUMEN_KEY_ALIAS }}" >> keystore.properties
             echo "keyPassword=${{ secrets.LUMEN_KEY_PASSWORD }}" >> keystore.properties
-          else
-            echo "Generating fallback keystore for CI build..."
-            keytool -genkeypair -alias androiddebugkey -keypass android -keystore release.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
-            echo "storeFile=../release.keystore" > keystore.properties
-            echo "storePassword=android" >> keystore.properties
-            echo "keyAlias=androiddebugkey" >> keystore.properties
-            echo "keyPassword=android" >> keystore.properties
           fi
 
       - name: Build Release and Debug APKs
@@ -61,14 +53,16 @@ jobs:
             cp app/build/outputs/apk/debug/app-debug.apk lumen-dev-debug.apk
           fi
 
-          CERT_SHA256=$(keytool -printcert -jarfile lumen-release.apk | grep "SHA256:" | head -n 1 | awk '{print $2}')
+          CERT_SHA256=""
+          SP="${{ secrets.LUMEN_KEYSTORE_PASSWORD }}"
+          if [ -f release.keystore ] && [ -n "$SP" ]; then
+            CERT_SHA256=$(keytool -list -v -keystore release.keystore -storepass "$SP" | grep -i "SHA256:" | head -n 1 | awk '{print $2}')
+          fi
           if [ -z "$CERT_SHA256" ]; then
             CERT_SHA256="N/A"
           fi
-          FILE_SHA256=$(sha256sum lumen-release.apk | awk '{print $1}')
 
           echo "CERT_SHA256=$CERT_SHA256" >> $GITHUB_ENV
-          echo "FILE_SHA256=$FILE_SHA256" >> $GITHUB_ENV
 
       - name: Upload or Update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -92,7 +86,6 @@ jobs:
             - Updated README privacy documentation.
 
             ### Verification
-            - **Certificate SHA-256**: `${{ env.CERT_SHA256 }}`
-            - **APK SHA-256**: `${{ env.FILE_SHA256 }}`
+            - **Signing Certificate SHA-256**: `${{ env.CERT_SHA256 }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
