@@ -967,6 +967,16 @@ fun SettingsScreen(
                             checked = settings.notificationsEnabled,
                             onCheckedChange = onUpdateNotifications
                         )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        SettingActionRow(
+                            title = stringResource(R.string.account_safety_title),
+                            subtitle = stringResource(R.string.account_safety_subtitle),
+                            actionLabel = "View",
+                            onClick = { showAccountSafetyDialog = true }
+                        )
                     }
                 }
             }
