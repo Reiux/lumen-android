@@ -77,4 +77,6 @@
     <string name="seasonal_greeting_christmas">Merry Christmas from Lumen!</string>
     <string name="seasonal_greeting_new_year">Happy New Year from Lumen!</string>
     <string name="secure_storage_unavailable_warning">Secure storage is unavailable on this device. You will need to sign in again each time you open Lumen.</string>
+    <string name="pick_files_button">Choose from Files</string>
+    <string name="pick_photos_button">Pick Photos &amp; Videos</string>
 </resources>

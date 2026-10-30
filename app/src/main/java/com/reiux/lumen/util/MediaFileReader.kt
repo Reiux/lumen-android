@@ -339,6 +339,106 @@ object MediaFileReader {
         }
     }
 
+    fun preferRealName(
+        pickerName: String?,
+        mediaStoreName: String?,
+        pickerSize: Long?,
+        mediaStoreSize: Long?
+    ): String? {
+        val cleanMediaStore = sanitizeFileName(mediaStoreName)
+        if (pickerSize != null && pickerSize > 0 &&
+            mediaStoreSize != null && mediaStoreSize > 0 &&
+            pickerSize == mediaStoreSize &&
+            !cleanMediaStore.isNullOrBlank()
+        ) {
+            return cleanMediaStore
+        }
+        return sanitizeFileName(pickerName)
+    }
+
+    data class PickerUriDetails(
+        val mediaStoreName: String?,
+        val pickerSize: Long?,
+        val mediaStoreSize: Long?
+    )
+
+    fun resolveRealNameFromPickerUriDetails(context: Context, uri: Uri): PickerUriDetails? {
+        if (uri.authority != "media" || uri.path?.contains("picker") != true) {
+            return null
+        }
+
+        val id = uri.lastPathSegment?.toLongOrNull() ?: return null
+
+        var pickerSize: Long? = null
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx >= 0 && !cursor.isNull(idx)) {
+                        pickerSize = cursor.getLong(idx)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        var msName: String? = null
+        var msSize: Long? = null
+
+        try {
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE),
+                "${MediaStore.MediaColumns._ID} = ?",
+                arrayOf(id.toString()),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    if (nameIdx >= 0) msName = cursor.getString(nameIdx)
+                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) msSize = cursor.getLong(sizeIdx)
+                }
+            }
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {}
+
+        if (msName.isNullOrBlank()) {
+            try {
+                context.contentResolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE),
+                    "${MediaStore.MediaColumns._ID} = ?",
+                    arrayOf(id.toString()),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                        if (nameIdx >= 0) msName = cursor.getString(nameIdx)
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) msSize = cursor.getLong(sizeIdx)
+                    }
+                }
+            } catch (_: SecurityException) {
+            } catch (_: Exception) {}
+        }
+
+        return PickerUriDetails(msName, pickerSize, msSize)
+    }
+
+    fun resolveRealNameFromPickerUri(context: Context, uri: Uri): String? {
+        val details = resolveRealNameFromPickerUriDetails(context, uri) ?: return null
+        if (details.mediaStoreName != null && details.pickerSize != null && details.pickerSize > 0 && details.pickerSize == details.mediaStoreSize) {
+            return details.mediaStoreName
+        }
+        return null
+    }
+
     fun getFileNameFromUri(context: Context, uri: Uri): String {
         var displayName: String? = null
         var dataPath: String? = null
@@ -361,6 +461,18 @@ object MediaFileReader {
                     }
                 }
             } catch (_: Exception) {}
+
+            // Check if this is a picker URI and attempt to resolve real MediaStore name
+            if (uri.authority == "media" && uri.path?.contains("picker") == true) {
+                val pickerResolved = resolveRealNameFromPickerUriDetails(context, uri)
+                if (pickerResolved != null) {
+                    val msName = pickerResolved.mediaStoreName
+                    val preferred = preferRealName(displayName, msName, pickerResolved.pickerSize, pickerResolved.mediaStoreSize)
+                    if (!preferred.isNullOrBlank()) {
+                        displayName = preferred
+                    }
+                }
+            }
 
             // (2) Query MediaStore DATA ONLY if (1) gave nothing, in its OWN try/catch
             if (displayName.isNullOrBlank()) {

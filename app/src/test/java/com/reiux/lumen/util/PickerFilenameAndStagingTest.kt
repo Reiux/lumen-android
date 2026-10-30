@@ -68,4 +68,48 @@ class PickerFilenameAndStagingTest {
         assertEquals(File(File(stagingDir, "dup_1"), "Screenshot.jpg").absolutePath, file1.absolutePath)
         assertEquals(File(File(stagingDir, "dup_2"), "Screenshot.jpg").absolutePath, file2.absolutePath)
     }
+
+    @Test
+    fun testPreferRealName_sizesMatch_returnsRealMediaStoreName() {
+        val pickerName = "8672.png"
+        val mediaStoreName = "Screenshot 2026-10-30-15-00-05-47.JPG"
+        val pickerSize = 204800L
+        val mediaStoreSize = 204800L
+
+        val result = MediaFileReader.preferRealName(pickerName, mediaStoreName, pickerSize, mediaStoreSize)
+        assertEquals("Screenshot 2026-10-30-15-00-05-47.JPG", result)
+    }
+
+    @Test
+    fun testPreferRealName_sizesDiffer_returnsPickerName() {
+        val pickerName = "8672.png"
+        val mediaStoreName = "Screenshot.jpg"
+        val pickerSize = 204800L
+        val mediaStoreSize = 500000L
+
+        val result = MediaFileReader.preferRealName(pickerName, mediaStoreName, pickerSize, mediaStoreSize)
+        assertEquals("8672.png", result)
+    }
+
+    @Test
+    fun testPreferRealName_mediaStoreNull_returnsPickerName() {
+        val pickerName = "8672.png"
+        val mediaStoreName: String? = null
+        val pickerSize = 204800L
+        val mediaStoreSize = 204800L
+
+        val result = MediaFileReader.preferRealName(pickerName, mediaStoreName, pickerSize, mediaStoreSize)
+        assertEquals("8672.png", result)
+    }
+
+    @Test
+    fun testPreferRealName_sizesNull_returnsPickerName() {
+        val pickerName = "8672.png"
+        val mediaStoreName = "Screenshot.jpg"
+        val pickerSize: Long? = null
+        val mediaStoreSize = 204800L
+
+        val result = MediaFileReader.preferRealName(pickerName, mediaStoreName, pickerSize, mediaStoreSize)
+        assertEquals("8672.png", result)
+    }
 }
