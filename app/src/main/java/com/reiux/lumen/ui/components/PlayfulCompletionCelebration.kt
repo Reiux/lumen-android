@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,6 +52,7 @@ fun PlayfulCompletionCelebration(
     enabledButtons: Boolean,
     onStartBackup: () -> Unit,
     onPickPhotos: () -> Unit,
+    onPickFiles: () -> Unit = {},
     modifier: Modifier = Modifier,
     customTitle: String? = null
 ) {
@@ -202,7 +204,17 @@ fun PlayfulCompletionCelebration(
                 ) {
                     Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Pick Photos & Videos")
+                    Text(androidx.compose.ui.res.stringResource(com.reiux.lumen.R.string.pick_photos_button))
+                }
+                ExpressiveTonalButton(
+                    onClick = onPickFiles,
+                    enabled = enabledButtons,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(androidx.compose.ui.res.stringResource(com.reiux.lumen.R.string.pick_files_button))
                 }
             }
         }
