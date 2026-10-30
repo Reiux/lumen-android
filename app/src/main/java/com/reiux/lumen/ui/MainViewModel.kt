@@ -779,9 +779,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 val files = mutableListOf<File>()
+                val nameCounts = mutableMapOf<String, Int>()
                 for (uri in uris) {
-                    val originalName = getFileNameFromUri(context, uri) ?: "picker_${System.currentTimeMillis()}.jpg"
-                    val file = MediaFileReader.stageUriFile(context, uri, originalName)
+                    val originalName = MediaFileReader.getFileNameFromUri(context, uri)
+                    val occurrenceIndex = nameCounts.getOrDefault(originalName, 0)
+                    nameCounts[originalName] = occurrenceIndex + 1
+
+                    val file = MediaFileReader.stageUriFile(context, uri, originalName, occurrenceIndex)
                     if (file != null) {
                         files.add(file)
                     }
@@ -1229,39 +1233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun getFileNameFromUri(context: Context, uri: Uri): String? {
-        var name: String? = null
-        if (uri.scheme == "content") {
-            try {
-                // Query MediaStore DATA column first to preserve exact original filesystem case (e.g. .HEIC)
-                context.contentResolver.query(
-                    uri,
-                    arrayOf(android.provider.MediaStore.MediaColumns.DATA, OpenableColumns.DISPLAY_NAME),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val dataIdx = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATA)
-                        if (dataIdx >= 0) {
-                            val dataPath = cursor.getString(dataIdx)
-                            if (!dataPath.isNullOrEmpty()) {
-                                name = File(dataPath).name
-                            }
-                        }
-                        if (name == null) {
-                            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                            if (index >= 0) {
-                                name = cursor.getString(index)
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        if (name == null) {
-            name = uri.path?.substringAfterLast('/')
-        }
-        return name
+    private fun getFileNameFromUri(context: Context, uri: Uri): String {
+        return MediaFileReader.getFileNameFromUri(context, uri)
     }
 }
