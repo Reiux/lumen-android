@@ -1,0 +1,34 @@
+name: Bugs
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact error text if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I reproduce it?
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Lumen version
+      placeholder: "1.1.2 (Settings > About)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: "Samsung A54, Android 14"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: "Settings > Save logs, reproduce it, then attach the log. Check it before posting."
