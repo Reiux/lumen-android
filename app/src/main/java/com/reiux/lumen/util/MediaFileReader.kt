@@ -6,7 +6,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.MimeTypeMap
 import com.reiux.lumen.data.model.BackupFolder
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -300,26 +302,221 @@ object MediaFileReader {
         return null
     }
 
-    private fun stageFromMediaStoreOrUri(context: Context, filePath: String, fileName: String): File? {
-        val stream = openInputStream(context, filePath) ?: return null
-        return try {
-            val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
-            val tempFile = File(stagingDir, fileName)
-            stream.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
+    fun sanitizeFileName(candidate: String?): String? {
+        if (candidate.isNullOrBlank()) return null
+        val normalized = candidate.replace('\\', '/')
+        val nameOnly = File(normalized).name
+        if (nameOnly.isBlank() || nameOnly == "." || nameOnly == "..") return null
+        return nameOnly
+    }
+
+    fun chooseDisplayName(
+        displayName: String?,
+        dataPath: String?,
+        lastSegment: String?,
+        mimeExt: String?
+    ): String {
+        val cleanDisplayName = sanitizeFileName(displayName)
+        if (cleanDisplayName != null) {
+            return cleanDisplayName
+        }
+
+        val cleanDataName = sanitizeFileName(dataPath)
+        if (cleanDataName != null) {
+            return cleanDataName
+        }
+
+        val rawSegment = sanitizeFileName(lastSegment) ?: "media_file"
+        val cleanMimeExt = mimeExt?.lowercase()?.removePrefix(".")?.ifBlank { null }
+
+        val hasExtension = rawSegment.contains('.') && rawSegment.substringAfterLast('.').isNotBlank()
+        return if (hasExtension) {
+            rawSegment
+        } else if (cleanMimeExt != null) {
+            "$rawSegment.$cleanMimeExt"
+        } else {
+            "$rawSegment.jpg"
+        }
+    }
+
+    fun preferRealName(
+        pickerName: String?,
+        mediaStoreName: String?,
+        pickerSize: Long?,
+        mediaStoreSize: Long?
+    ): String? {
+        val cleanMediaStore = sanitizeFileName(mediaStoreName)
+        if (pickerSize != null && pickerSize > 0 &&
+            mediaStoreSize != null && mediaStoreSize > 0 &&
+            pickerSize == mediaStoreSize &&
+            !cleanMediaStore.isNullOrBlank()
+        ) {
+            return cleanMediaStore
+        }
+        return sanitizeFileName(pickerName)
+    }
+
+    data class PickerUriDetails(
+        val mediaStoreName: String?,
+        val pickerSize: Long?,
+        val mediaStoreSize: Long?
+    )
+
+    fun resolveRealNameFromPickerUriDetails(context: Context, uri: Uri): PickerUriDetails? {
+        if (uri.authority != "media" || uri.path?.contains("picker") != true) {
+            return null
+        }
+
+        val id = uri.lastPathSegment?.toLongOrNull() ?: return null
+
+        var pickerSize: Long? = null
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx >= 0 && !cursor.isNull(idx)) {
+                        pickerSize = cursor.getLong(idx)
+                    }
                 }
             }
-            if (tempFile.exists() && tempFile.length() > 0) {
-                Log.d(TAG, "Staged unreadable media into cache: ${tempFile.absolutePath} (${tempFile.length()} bytes)")
-                tempFile
-            } else {
+        } catch (_: Exception) {}
+
+        var msName: String? = null
+        var msSize: Long? = null
+
+        try {
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE),
+                "${MediaStore.MediaColumns._ID} = ?",
+                arrayOf(id.toString()),
                 null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    if (nameIdx >= 0) msName = cursor.getString(nameIdx)
+                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) msSize = cursor.getLong(sizeIdx)
+                }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed staging media $filePath: ${e.message}")
-            null
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {}
+
+        if (msName.isNullOrBlank()) {
+            try {
+                context.contentResolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE),
+                    "${MediaStore.MediaColumns._ID} = ?",
+                    arrayOf(id.toString()),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                        if (nameIdx >= 0) msName = cursor.getString(nameIdx)
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) msSize = cursor.getLong(sizeIdx)
+                    }
+                }
+            } catch (_: SecurityException) {
+            } catch (_: Exception) {}
         }
+
+        return PickerUriDetails(msName, pickerSize, msSize)
+    }
+
+    fun resolveRealNameFromPickerUri(context: Context, uri: Uri): String? {
+        val details = resolveRealNameFromPickerUriDetails(context, uri) ?: return null
+        if (details.mediaStoreName != null && details.pickerSize != null && details.pickerSize > 0 && details.pickerSize == details.mediaStoreSize) {
+            return details.mediaStoreName
+        }
+        return null
+    }
+
+    fun getFileNameFromUri(context: Context, uri: Uri): String {
+        var displayName: String? = null
+        var dataPath: String? = null
+
+        if (uri.scheme == "content") {
+            // (1) Query ONLY OpenableColumns.DISPLAY_NAME in its OWN try/catch
+            try {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            displayName = cursor.getString(idx)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Check if this is a picker URI and attempt to resolve real MediaStore name
+            if (uri.authority == "media" && uri.path?.contains("picker") == true) {
+                val pickerResolved = resolveRealNameFromPickerUriDetails(context, uri)
+                if (pickerResolved != null) {
+                    val msName = pickerResolved.mediaStoreName
+                    val preferred = preferRealName(displayName, msName, pickerResolved.pickerSize, pickerResolved.mediaStoreSize)
+                    if (!preferred.isNullOrBlank()) {
+                        displayName = preferred
+                    }
+                }
+            }
+
+            // (2) Query MediaStore DATA ONLY if (1) gave nothing, in its OWN try/catch
+            if (displayName.isNullOrBlank()) {
+                try {
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(MediaStore.MediaColumns.DATA),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                            if (idx >= 0) {
+                                dataPath = cursor.getString(idx)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        // (3) Fallback: uri.lastPathSegment + MimeTypeMap extension
+        var lastSegment: String? = null
+        try {
+            lastSegment = uri.lastPathSegment
+        } catch (_: Exception) {}
+
+        var mimeExt: String? = null
+        try {
+            val mimeType = context.contentResolver.getType(uri)
+            if (!mimeType.isNullOrBlank()) {
+                mimeExt = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+            }
+        } catch (_: Exception) {}
+
+        return chooseDisplayName(displayName, dataPath, lastSegment, mimeExt)
+    }
+
+    fun createDistinctStagingFile(stagingDir: File, fileName: String, occurrenceIndex: Int = 0): File {
+        val cleanName = sanitizeFileName(fileName) ?: "media_file.jpg"
+        val targetDir = if (occurrenceIndex <= 0) stagingDir else File(stagingDir, "dup_$occurrenceIndex")
+        targetDir.mkdirs()
+        return File(targetDir, cleanName)
     }
 
     fun resolveToMediaStoreUri(context: Context, filePath: String): Uri? {
@@ -400,11 +597,42 @@ object MediaFileReader {
         return null
     }
 
+    private fun stageFromMediaStoreOrUri(
+        context: Context,
+        filePath: String,
+        fileName: String,
+        occurrenceIndex: Int = 0
+    ): File? {
+        val stream = openInputStream(context, filePath) ?: return null
+        return try {
+            val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
+            val tempFile = createDistinctStagingFile(stagingDir, fileName, occurrenceIndex)
+            stream.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (tempFile.exists() && tempFile.length() > 0) {
+                Log.d(TAG, "Staged unreadable media into cache: ${tempFile.absolutePath} (${tempFile.length()} bytes)")
+                tempFile
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed staging media $filePath: ${e.message}")
+            null
+        }
+    }
+
     fun cleanupStagedFile(context: Context, file: File) {
         val stagingDir = File(context.cacheDir, "staging")
-        if (file.parentFile?.absolutePath == stagingDir.absolutePath) {
+        val parent = file.parentFile
+        if (parent?.absolutePath == stagingDir.absolutePath || parent?.parentFile?.absolutePath == stagingDir.absolutePath) {
             try {
                 file.delete()
+                if (parent != null && parent != stagingDir && parent.isDirectory && parent.listFiles()?.isEmpty() == true) {
+                    parent.delete()
+                }
             } catch (_: Exception) {}
         }
     }
@@ -432,10 +660,10 @@ object MediaFileReader {
         return result
     }
 
-    fun stageUriFile(context: Context, uri: Uri, fileName: String): File? {
+    fun stageUriFile(context: Context, uri: Uri, fileName: String, occurrenceIndex: Int = 0): File? {
         return try {
             val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
-            val tempFile = File(stagingDir, fileName)
+            val tempFile = createDistinctStagingFile(stagingDir, fileName, occurrenceIndex)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)

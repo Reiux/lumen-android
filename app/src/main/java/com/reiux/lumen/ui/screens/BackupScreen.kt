@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import com.reiux.lumen.R
 import com.reiux.lumen.ui.ScanState
 import com.reiux.lumen.util.EasterEggsManager
 import com.reiux.lumen.util.Season
@@ -63,8 +64,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -232,6 +235,14 @@ fun BackupScreen(
         }
     }
 
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onUploadFiles(uris)
+        }
+    }
+
     var showDevDiagnostics by remember { mutableStateOf(false) }
 
     var triggerShakeFlicker by remember { mutableStateOf(false) }
@@ -365,6 +376,9 @@ fun BackupScreen(
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
+                    },
+                    onPickFiles = {
+                        documentPickerLauncher.launch(arrayOf("image/*", "video/*"))
                     }
                 )
 
@@ -545,6 +559,9 @@ fun BackupScreen(
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
+                    },
+                    onPickFiles = {
+                        documentPickerLauncher.launch(arrayOf("image/*", "video/*"))
                     }
                 )
             }
@@ -1173,7 +1190,8 @@ private fun HeroBackupCard(
     onSignInAgain: () -> Unit = {},
     onRemoveRestrictedAccount: () -> Unit = {},
     onNavigateToAccounts: () -> Unit = {},
-    onPickPhotos: () -> Unit
+    onPickPhotos: () -> Unit,
+    onPickFiles: () -> Unit = {}
 ) {
     if (accountBlock != null) {
         com.reiux.lumen.ui.components.AccountBlockCard(
@@ -1244,6 +1262,7 @@ private fun HeroBackupCard(
             enabledButtons = selectedAccount != null,
             onStartBackup = onStartBackup,
             onPickPhotos = onPickPhotos,
+            onPickFiles = onPickFiles,
             customTitle = mockForcedPunTitle
         )
         return
@@ -1400,11 +1419,22 @@ private fun HeroBackupCard(
                     ) {
                         Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pick Photos & Videos")
+                        Text(stringResource(R.string.pick_photos_button))
+                    }
+
+                    ExpressiveTonalButton(
+                        onClick = onPickFiles,
+                        enabled = selectedAccount != null,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.pick_files_button))
                     }
                 }
             } else {
-                // Idle state: Sync Folders and Pick Photos & Videos
+                // Idle state: Sync Folders, Pick Photos & Videos, and Choose from Files
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1427,7 +1457,17 @@ private fun HeroBackupCard(
                     ) {
                         Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pick Photos & Videos")
+                        Text(stringResource(R.string.pick_photos_button))
+                    }
+                    ExpressiveTonalButton(
+                        onClick = onPickFiles,
+                        enabled = selectedAccount != null,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.pick_files_button))
                     }
                 }
             }
