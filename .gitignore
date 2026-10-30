@@ -9,3 +9,4 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+!app/debug.keystore
