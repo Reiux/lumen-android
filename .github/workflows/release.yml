@@ -66,6 +66,16 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Determine Release Tag
+        run: |
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
+            TAG="v$VERSION"
+          fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
       - name: Check tag matches app version
         run: |
           if [[ "$GITHUB_REF_NAME" == v* ]]; then
@@ -132,15 +142,15 @@ jobs:
       - name: Write release notes
         run: |
           mkdir -p dist
-          NOTES_FILE=".github/release-notes/$GITHUB_REF_NAME.md"
+          NOTES_FILE=".github/release-notes/$RELEASE_TAG.md"
           if [ -f "$NOTES_FILE" ]; then
             cat "$NOTES_FILE" > dist/notes.md
           else
-            PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+            PREV_TAG=$(git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)
             if [ -n "$PREV_TAG" ]; then
-              RAW_LOG=$(git log "$PREV_TAG..$GITHUB_REF_NAME" --pretty=format:'- %s')
+              RAW_LOG=$(git log "$PREV_TAG..$RELEASE_TAG" --pretty=format:'- %s')
             else
-              RAW_LOG=$(git log "$GITHUB_REF_NAME" --pretty=format:'- %s')
+              RAW_LOG=$(git log "$RELEASE_TAG" 2>/dev/null || git log -n 10 --pretty=format:'- %s')
             fi
             FILTERED_LOG=$(echo "$RAW_LOG" | grep -vE '^- (ci|chore|docs)([:\(].*)?$')
             
@@ -160,8 +170,8 @@ jobs:
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Lumen ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Lumen ${{ env.RELEASE_TAG }}
           body_path: dist/notes.md
           files: |
             dist/lumen-release.apk
