@@ -1,6 +1,7 @@
 name: Lumen Release Build
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -67,10 +68,12 @@ jobs:
 
       - name: Check tag matches app version
         run: |
-          VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
-          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match app/build.gradle versionName v$VERSION"
-            exit 1
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
+            if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match app/build.gradle versionName v$VERSION"
+              exit 1
+            fi
           fi
 
       - name: Setup keystore
@@ -163,8 +166,8 @@ jobs:
           files: |
             dist/lumen-release.apk
             dist/lumen-dev-debug.apk
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
