@@ -576,7 +576,7 @@ private fun FolderRowItem(
                 }
             }
 
-            if (folder.accountEmail.isNullOrBlank()) {
+            if (folder.accountEmail.isNullOrBlank() && accountsCount > 1) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
                     shape = RoundedCornerShape(8.dp),
