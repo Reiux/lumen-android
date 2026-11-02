@@ -9,11 +9,22 @@ data class GoogleAccount(
     val masterToken: String = ""
 )
 
+enum class AlbumTargetMode {
+    NONE,
+    AUTO_FOLDER_NAME,
+    CUSTOM_NAME
+}
+
 data class BackupFolder(
     val path: String,
     val displayName: String,
     val enabled: Boolean = true,
-    val includeSubfolders: Boolean = false
+    val includeSubfolders: Boolean = false,
+    val targetAlbumMode: AlbumTargetMode = AlbumTargetMode.NONE,
+    val customAlbumName: String? = null,
+    val customAlbumNickname: String? = null,
+    val accountEmail: String? = null,
+    val isMissingAlbum: Boolean = false
 )
 
 data class BackupSettings(
@@ -52,7 +63,8 @@ enum class UploadStatus {
     COMMITTING,
     COMPLETED,
     FAILED,
-    SKIPPED
+    SKIPPED,
+    STOPPED
 }
 
 data class UploadItem(
@@ -63,7 +75,11 @@ data class UploadItem(
     val status: UploadStatus = UploadStatus.QUEUED,
     val bytesUploaded: Long = 0L,
     val error: String? = null,
-    val mediaKey: String? = null
+    val mediaKey: String? = null,
+    val targetAlbumMode: AlbumTargetMode = AlbumTargetMode.NONE,
+    val customAlbumName: String? = null,
+    val customAlbumNickname: String? = null,
+    val accountEmail: String? = null
 )
 
 enum class AuthFailureKind {

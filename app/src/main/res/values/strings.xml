@@ -42,7 +42,7 @@
     <string name="breaker_restricted_button">Remove account</string>
 
     <string name="breaker_rate_limited_title">Rate Limited</string>
-    <string name="breaker_rate_limited_msg">Google asked Lumen to slow down. Uploads will resume automatically at %1$s.</string>
+    <string name="breaker_rate_limited_msg">Google asked Lumen to slow down. Rate limit expires in %1$s.</string>
 
     <string name="account_safety_button">Account safety</string>
 

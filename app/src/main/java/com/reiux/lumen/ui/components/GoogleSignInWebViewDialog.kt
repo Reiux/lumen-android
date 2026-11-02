@@ -172,6 +172,7 @@ fun GoogleSignInWebViewDialog(
                                                 if (!queryToken.isNullOrEmpty()) {
                                                     captured = true
                                                     onTokenCaptured(queryToken)
+                                                    onDismiss()
                                                     return
                                                 }
                                             }
@@ -182,6 +183,7 @@ fun GoogleSignInWebViewDialog(
                                             if (!token.isNullOrEmpty()) {
                                                 captured = true
                                                 onTokenCaptured(token)
+                                                onDismiss()
                                             }
                                         }
                                     }

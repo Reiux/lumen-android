@@ -43,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,7 @@ import com.reiux.lumen.ui.components.ExpressiveNavRail
 import com.reiux.lumen.ui.components.NavDestination
 import com.reiux.lumen.ui.screens.AboutScreen
 import com.reiux.lumen.ui.screens.AccountsScreen
+import com.reiux.lumen.ui.screens.AlbumsScreen
 import com.reiux.lumen.ui.screens.BackupScreen
 import com.reiux.lumen.ui.screens.FoldersScreen
 import com.reiux.lumen.ui.screens.OnboardingScreen
@@ -118,6 +120,7 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
+                viewModel.loadAlbums()
                 if (intent?.getStringExtra("action") == "show_update") {
                     viewModel.checkAndShowUpdate(this@MainActivity)
                 } else if (settings.autoCheckUpdates) {
@@ -131,19 +134,27 @@ class MainActivity : ComponentActivity() {
             ) {
                 var showDevDiagnostics by remember { mutableStateOf(false) }
                 var showAboutScreen by remember { mutableStateOf(false) }
+                var showAlbumsScreen by remember { mutableStateOf(false) }
 
                 BackHandler(enabled = showAboutScreen) {
                     com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back pressed: Exiting About screen" }
                     showAboutScreen = false
                 }
 
+                BackHandler(enabled = showAlbumsScreen) {
+                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back pressed: Exiting Album Manager screen" }
+                    showAlbumsScreen = false
+                }
+
                 val selectedDestination by viewModel.selectedDestination.collectAsState()
                 val selectedAccount by viewModel.selectedAccount.collectAsState()
                 val accounts by viewModel.accounts.collectAsState()
+                val remoteAlbums by viewModel.remoteAlbums.collectAsState()
                 val isUploading by viewModel.isUploading.collectAsState()
                 val currentItem by viewModel.currentUploadingItem.collectAsState()
                 val queue by viewModel.queue.collectAsState()
                 val completedCount by viewModel.completedCount.collectAsState()
+                val skippedCount by viewModel.skippedCount.collectAsState()
                 val conditionNotice by viewModel.conditionNotice.collectAsState()
                 val isMockMode by viewModel.isMockMode.collectAsState()
                 val isShowcaseMode by viewModel.isShowcaseMode.collectAsState()
@@ -152,6 +163,9 @@ class MainActivity : ComponentActivity() {
                 val uploadSpeed by viewModel.uploadSpeed.collectAsState()
                 val scanState by viewModel.scanState.collectAsState()
                 val accountBlock by viewModel.accountBlock.collectAsState()
+                val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+                val simulateMissingAlbum by viewModel.simulateMissingAlbum.collectAsState()
+                val simulateOffline by viewModel.simulateOffline.collectAsState()
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -189,14 +203,22 @@ class MainActivity : ComponentActivity() {
 
                 @Composable
                 fun ScreenContent(destination: NavDestination, screenModifier: Modifier = Modifier) {
+                    val remoteAlbums by viewModel.remoteAlbums.collectAsState()
+                    
                     when (destination) {
                         NavDestination.BACKUP -> BackupScreen(
                             selectedAccount = selectedAccount,
+                            accounts = accounts,
+                            remoteAlbums = remoteAlbums,
                             isUploading = isUploading,
+                            isOnline = isOnline,
+                            simulateOffline = simulateOffline,
+                            simulateMissingAlbum = simulateMissingAlbum,
                             uploadSpeed = uploadSpeed,
                             currentUploadingItem = currentItem,
                             queue = queue,
                             completedCount = completedCount,
+                            skippedCount = skippedCount,
                             storageSaverQuality = settings.storageSaverQuality,
                             useQuota = settings.useQuota,
                             conditionNotice = conditionNotice,
@@ -207,12 +229,19 @@ class MainActivity : ComponentActivity() {
                             forcedSeason = settings.forcedSeason,
                             onToggleMockCondition = { viewModel.toggleMockConditionNotice() },
                             onAddMockFiles = { viewModel.addMockUploadItems() },
+                            onToggleSimulateOffline = { viewModel.toggleSimulateOffline() },
+                            onToggleSimulateMissingAlbum = { viewModel.toggleSimulateMissingAlbum() },
                             onExitMockMode = { viewModel.setMockMode(false) },
                             onStartBackup = { viewModel.startBackup() },
                             onUploadFiles = { uris -> viewModel.uploadSelectedUris(uris, this@MainActivity) },
+                            onUploadFilesWithAlbumTarget = { uris, mode, customName, customNickname -> viewModel.uploadSelectedUris(uris, this@MainActivity, mode, customName, customNickname) },
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onOpenAlbumManager = { showAlbumsScreen = true },
                             onCancelBackup = { viewModel.cancelBackup() },
                             onCancelScan = { viewModel.cancelScan() },
                             onClearCompleted = { viewModel.clearCompleted() },
+                            onRetryFailed = { viewModel.retryFailedUploads() },
+                            onSelectAccount = { viewModel.selectAccount(it.email) },
                             onNavigateToAccounts = { 
                                 if (isMockMode && accountBlock != null) {
                                     viewModel.clearMockBlock()
@@ -235,16 +264,23 @@ class MainActivity : ComponentActivity() {
 
                         NavDestination.FOLDERS -> FoldersScreen(
                             folders = settings.folders,
-                            onToggleFolder = { path, enabled -> viewModel.toggleFolder(path, enabled) },
-                            onSetIncludeSubfolders = { path, inc -> viewModel.setIncludeSubfolders(path, inc) },
+                            accounts = accounts,
+                            activeAccount = selectedAccount,
+                            remoteAlbums = remoteAlbums,
+                            onToggleFolder = { path, email, enabled -> viewModel.toggleFolder(path, email, enabled) },
+                            onSetIncludeSubfolders = { path, email, inc -> viewModel.setIncludeSubfolders(path, email, inc) },
                             onAddFolder = { viewModel.addFolder(it) },
-                            onRemoveFolder = { viewModel.removeFolder(it) },
+                            onRemoveFolder = { path, email -> viewModel.removeFolder(path, email) },
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onOpenAlbumManager = { showAlbumsScreen = true },
                             modifier = screenModifier
                         )
 
                         NavDestination.ACCOUNTS -> AccountsScreen(
                             accounts = accounts,
                             selectedAccount = selectedAccount,
+                            folders = settings.folders,
+                            albums = remoteAlbums,
                             onSelectAccount = { viewModel.selectAccount(it) },
                             onAddAccountToken = { viewModel.addAccountWithToken(it) },
                             onAddAccountCredential = { viewModel.addAccountWithCredential(it) },
@@ -263,8 +299,12 @@ class MainActivity : ComponentActivity() {
                             settings = settings,
                             isMockMode = isMockMode,
                             isShowcaseMode = isShowcaseMode,
+                            simulateOffline = viewModel.simulateOffline.collectAsState().value,
+                            simulateMissingAlbum = remoteAlbums.any { it.isMissing },
                             onToggleMockMode = { viewModel.toggleMockMode() },
                             onToggleShowcaseMode = { viewModel.toggleShowcaseMode() },
+                            onToggleSimulateOffline = { viewModel.toggleSimulateOffline() },
+                            onToggleSimulateMissingAlbum = { viewModel.toggleSimulateMissingAlbum() },
                             onUpdateAutoBackup = { viewModel.updateAutoBackup(it) },
                             onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
                             onUpdateChargingOnly = { viewModel.updateChargingOnly(it) },
@@ -281,6 +321,7 @@ class MainActivity : ComponentActivity() {
                                 com.reiux.lumen.util.LumenLogger.i("UI", "Opening Dev Diagnostics")
                                 showDevDiagnostics = true
                             },
+                            onOpenAlbumManager = { showAlbumsScreen = true },
                             onNavigateToAbout = {
                                 com.reiux.lumen.util.LumenLogger.i("Navigation", "Navigating to About screen")
                                 showAboutScreen = true
@@ -448,6 +489,27 @@ class MainActivity : ComponentActivity() {
                                 com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting About screen" }
                                 showAboutScreen = false
                             }
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = showAlbumsScreen,
+                        enter = slideInHorizontally(
+                            initialOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
+                        ) + fadeIn(animationSpec = tween(200)),
+                        exit = slideOutHorizontally(
+                            targetOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
+                        ) + fadeOut(animationSpec = tween(180))
+                    ) {
+                        AlbumsScreen(
+                            albums = remoteAlbums,
+                            accounts = accounts,
+                            activeAccount = selectedAccount,
+                            onBack = { showAlbumsScreen = false },
+                            onRemoveAlbum = { album -> viewModel.removeAlbum(album) },
+                            onAddAlbum = { keyOrUrl, nickname, targetEmail -> viewModel.addAlbum(keyOrUrl, nickname, targetEmail) }
                         )
                     }
 

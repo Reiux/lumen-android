@@ -30,14 +30,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import com.reiux.lumen.data.model.AlbumTargetMode
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,17 +60,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.BackupFolder
+import com.reiux.lumen.data.model.GoogleAccount
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddFolderDialog(
+    accounts: List<GoogleAccount> = emptyList(),
+    activeAccount: GoogleAccount? = null,
+    remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum>,
+    onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> com.reiux.lumen.data.network.GoogleAlbum = { k, n, e -> com.reiux.lumen.data.network.GoogleAlbum(k, n, e) },
+    onOpenAlbumManager: () -> Unit = {},
     onDismiss: () -> Unit,
     onAddFolder: (BackupFolder) -> Unit
 ) {
     val context = LocalContext.current
     var path by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
+    var assignedAccountEmail by remember { mutableStateOf(activeAccount?.email) }
+    var selectedAccount by remember(assignedAccountEmail, activeAccount, accounts) {
+        mutableStateOf(accounts.firstOrNull { it.email == assignedAccountEmail } ?: activeAccount ?: accounts.firstOrNull())
+    }
+    var albumChoice by remember { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
 
     val presets = remember {
         listOf(
@@ -347,6 +363,41 @@ fun AddFolderDialog(
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
+
+                    if (accounts.size > 1) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        AccountPickerRow(
+                            accounts = accounts,
+                            selectedAccount = selectedAccount,
+                            onSelectAccount = { acc ->
+                                selectedAccount = acc
+                                assignedAccountEmail = acc.email
+                                albumChoice = AlbumChoice.None // Rule: Changing account resets album choice to No album
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val accountAlbums = remember(remoteAlbums, selectedAccount) {
+                        val email = selectedAccount?.email
+                        if (email.isNullOrBlank()) remoteAlbums
+                        else remoteAlbums.filter { it.accountEmail == null || it.accountEmail.equals(email, ignoreCase = true) }
+                    }
+
+                    AlbumPickerRow(
+                        choice = albumChoice,
+                        onChoiceSelected = { albumChoice = it },
+                        savedAlbums = accountAlbums,
+                        accounts = accounts,
+                        activeAccount = selectedAccount,
+                        folderDisplayName = displayName.ifBlank { "Folder" },
+                        onAddAlbum = onAddAlbum,
+                        onOpenAlbumManager = {
+                            onDismiss()
+                            onOpenAlbumManager()
+                        }
+                    )
                 }
             }
         },
@@ -357,7 +408,31 @@ fun AddFolderDialog(
                         val name = displayName.ifBlank {
                             path.trimEnd('/').substringAfterLast('/').ifEmpty { "Folder" }
                         }
-                        onAddFolder(BackupFolder(path = path.trim(), displayName = name, enabled = true))
+                        val selectedEmail = selectedAccount?.email
+                        val (mode, albumName, albumNickname) = when (val c = albumChoice) {
+                            is AlbumChoice.None -> Triple(AlbumTargetMode.NONE, null, null)
+                            is AlbumChoice.AutoFolderName -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
+                            is AlbumChoice.CustomAlbum -> {
+                                if (c.album.accountEmail.isNullOrBlank() || !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
+                                    albumChoice = AlbumChoice.None
+                                    return@ExpressiveButton
+                                }
+                                Triple(AlbumTargetMode.CUSTOM_NAME, c.album.mediaKey, c.album.title)
+                            }
+                            else -> Triple(AlbumTargetMode.NONE, null, null)
+                        }
+                        onAddFolder(
+                            BackupFolder(
+                                path = path.trim(),
+                                displayName = name,
+                                enabled = true,
+                                includeSubfolders = false,
+                                targetAlbumMode = mode,
+                                customAlbumName = albumName,
+                                customAlbumNickname = albumNickname,
+                                accountEmail = selectedAccount?.email
+                            )
+                        )
                     }
                 },
                 enabled = path.isNotBlank(),

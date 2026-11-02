@@ -181,6 +181,12 @@ class FolderWatcherManager(
             return
         }
 
+        val currentEnabledFolders = settingsRepository.getAllFolders().filter { it.enabled }
+        if (!currentEnabledFolders.any { isPathMatchingFolder(file.absolutePath, it) }) {
+            LumenLogger.v(TAG) { "Ignored file outside enabled folders: '${file.name}' (${file.absolutePath})" }
+            return
+        }
+
         if (ext in supportedExts) {
             LumenLogger.d(TAG) { "Candidate media accepted: '${file.name}', scheduling debounce..." }
             queueFileForBackup(file)
@@ -190,54 +196,113 @@ class FolderWatcherManager(
     }
 
     private fun queryRecentMediaStoreItems(enabledFolders: List<BackupFolder>) {
+        if (enabledFolders.isEmpty()) {
+            LumenLogger.d(TAG) { "MediaStore ContentObserver triggered, but zero folders are enabled. Ignoring." }
+            return
+        }
+
         scope.launch {
             try {
-                val projection = arrayOf(
+                val foldersByAccount = enabledFolders.groupBy { it.accountEmail }
+                var totalMatchedCount = 0
+
+                val projection = mutableListOf(
+                    MediaStore.MediaColumns._ID,
                     MediaStore.MediaColumns.DATA,
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    MediaStore.MediaColumns.DATE_MODIFIED
-                )
+                    MediaStore.MediaColumns.DATE_ADDED
+                ).apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        add(MediaStore.MediaColumns.RELATIVE_PATH)
+                    }
+                    add(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                }.toTypedArray()
+
                 val queryUris = listOf(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                 )
 
-                var matchedCount = 0
-                for (uri in queryUris) {
-                    context.contentResolver.query(
-                        uri,
-                        projection,
-                        null,
-                        null,
-                        "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
-                    )?.use { cursor ->
-                        val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                        var checked = 0
-                        while (cursor.moveToNext() && checked < 25) {
-                            checked++
-                            if (dataCol >= 0) {
-                                val path = cursor.getString(dataCol)
-                                if (!path.isNullOrEmpty()) {
-                                    if (enabledFolders.any { isPathMatchingFolder(path, it) }) {
-                                        val file = File(path)
-                                        if (file.extension.lowercase() in supportedExts && file.exists() && file.length() > 0) {
-                                            matchedCount++
-                                            queueFileForBackup(file)
+                for ((accountEmail, accFolders) in foldersByAccount) {
+                    if (accountEmail.isNullOrBlank()) continue
+
+                    for (folder in accFolders) {
+                        val lastWatermarkId = settingsRepository.getFolderWatermarkId(accountEmail, folder.path)
+                        var maxId = lastWatermarkId
+                        var folderMatchedCount = 0
+
+                        var selection = "${MediaStore.MediaColumns._ID} > ?"
+                        var selectionArgs = arrayOf(lastWatermarkId.toString())
+
+                        if (lastWatermarkId == 0L) {
+                            val yesterdaySec = (System.currentTimeMillis() / 1000) - 86400
+                            selection = "${MediaStore.MediaColumns.DATE_ADDED} > ?"
+                            selectionArgs = arrayOf(yesterdaySec.toString())
+                        }
+
+                        for (uri in queryUris) {
+                            try {
+                                context.contentResolver.query(
+                                    uri,
+                                    projection,
+                                    selection,
+                                    selectionArgs,
+                                    "${MediaStore.MediaColumns._ID} ASC"
+                                )?.use { cursor ->
+                                    val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                    val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
+                                    val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+
+                                    while (cursor.moveToNext()) {
+                                        val mediaId = if (idCol >= 0) cursor.getLong(idCol) else 0L
+                                        val path = if (dataCol >= 0) cursor.getString(dataCol) else null
+                                        val relPath = if (relCol >= 0) cursor.getString(relCol) else null
+                                        val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) else null
+
+                                        if (isMediaStoreItemInFolder(path, relPath, bucketName, folder)) {
+                                            if (mediaId > maxId) {
+                                                maxId = mediaId
+                                            }
+                                            if (!path.isNullOrEmpty()) {
+                                                val file = File(path)
+                                                if (file.extension.lowercase() in supportedExts && file.exists() && file.length() > 0) {
+                                                    folderMatchedCount++
+                                                    totalMatchedCount++
+                                                    queueFileForBackup(file)
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                            } catch (e: Exception) {
+                                LumenLogger.w(TAG) { "MediaStore query error for folder ${folder.path}: ${e.message}" }
                             }
+                        }
+
+                        if (maxId > lastWatermarkId) {
+                            settingsRepository.saveFolderWatermarkId(accountEmail, folder.path, maxId)
+                            LumenLogger.d(TAG) { "Updated watermark for folder '${folder.displayName}' (account=$accountEmail) to $maxId (found $folderMatchedCount new item(s))" }
                         }
                     }
                 }
-                LumenLogger.v(TAG) { "MediaStore query finished: matchedCount=$matchedCount in watched folders" }
+
+                if (totalMatchedCount == 0) {
+                    LumenLogger.d(TAG) { "MediaStore ContentObserver triggered: 0 new items in enabled folders since watermark. Worker not triggered." }
+                } else {
+                    LumenLogger.i(TAG) { "MediaStore ContentObserver: matched $totalMatchedCount new file(s) in enabled folders since watermark." }
+                }
             } catch (e: Exception) {
-                LumenLogger.w(TAG) { "MediaStore query error: ${e.message}" }
+                LumenLogger.w(TAG) { "MediaStore query execution error: ${e.message}" }
             }
         }
     }
 
     private fun queueFileForBackup(file: File) {
+        val currentEnabledFolders = settingsRepository.getAllFolders().filter { it.enabled }
+        if (!currentEnabledFolders.any { isPathMatchingFolder(file.absolutePath, it) }) {
+            return
+        }
+
         synchronized(pendingFiles) {
             pendingFiles.add(file)
         }
@@ -298,6 +363,36 @@ class FolderWatcherManager(
 
             if (fileParent == folderCanonical) return true
             if (folder.includeSubfolders && fileCanonical.startsWith("$folderCanonical/")) return true
+
+            return false
+        }
+
+        fun isMediaStoreItemInFolder(
+            filePath: String?,
+            relativePath: String?,
+            bucketDisplayName: String?,
+            folder: BackupFolder
+        ): Boolean {
+            val folderCanonical = try { File(folder.path).canonicalPath } catch (_: Exception) { folder.path }.trimEnd('/')
+
+            if (!relativePath.isNullOrEmpty()) {
+                val relNorm = relativePath.trim('/').lowercase()
+                val folderRel = folderCanonical.substringAfter("/sdcard/").substringAfter("/storage/emulated/0/").trim('/').lowercase()
+                if (relNorm == folderRel || (folder.includeSubfolders && relNorm.startsWith("$folderRel/"))) {
+                    return true
+                }
+            }
+
+            if (!bucketDisplayName.isNullOrEmpty() && bucketDisplayName.equals(folder.displayName, ignoreCase = true)) {
+                if (!filePath.isNullOrEmpty()) {
+                    return isPathMatchingFolder(filePath, folder)
+                }
+                return true
+            }
+
+            if (!filePath.isNullOrEmpty()) {
+                return isPathMatchingFolder(filePath, folder)
+            }
 
             return false
         }
