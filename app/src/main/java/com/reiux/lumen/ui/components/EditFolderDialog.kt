@@ -205,7 +205,7 @@ fun EditFolderDialog(
                             targetAlbumMode = mode,
                             customAlbumName = albumName,
                             customAlbumNickname = albumNickname,
-                            accountEmail = selectedAccount?.email
+                            accountEmail = selectedAccount?.email ?: assignedAccountEmail ?: folder.accountEmail ?: activeAccount?.email ?: accounts.firstOrNull()?.email
                         )
                     )
                 },

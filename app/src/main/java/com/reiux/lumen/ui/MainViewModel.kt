@@ -329,6 +329,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             combine(selectedAccount, accounts) { sel, list -> Pair(sel, list) }.collect { (_, list) ->
                 val emails = list.map { it.email }.toSet()
                 _remoteAlbums.value = settingsRepo.getAllRecentAlbums(emails)
+                if (list.isNotEmpty()) {
+                    val primaryEmail = list.first().email
+                    val currentFolders = settingsRepo.getAllFolders()
+                    var needsMigration = false
+                    val migrated = currentFolders.map { f ->
+                        if (f.accountEmail.isNullOrBlank()) {
+                            needsMigration = true
+                            f.copy(accountEmail = primaryEmail)
+                        } else f
+                    }
+                    if (needsMigration) {
+                        LumenLogger.i("Migration", "Auto-migrated unassigned folders to primary account: $primaryEmail")
+                        settingsRepo.saveFolders(migrated)
+                    }
+                }
             }
         }
         viewModelScope.launch {

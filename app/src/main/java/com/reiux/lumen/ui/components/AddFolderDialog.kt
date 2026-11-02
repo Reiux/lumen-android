@@ -430,7 +430,7 @@ fun AddFolderDialog(
                                 targetAlbumMode = mode,
                                 customAlbumName = albumName,
                                 customAlbumNickname = albumNickname,
-                                accountEmail = selectedAccount?.email
+                                accountEmail = selectedAccount?.email ?: assignedAccountEmail ?: activeAccount?.email ?: accounts.firstOrNull()?.email
                             )
                         )
                     }

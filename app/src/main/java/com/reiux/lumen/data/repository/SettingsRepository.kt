@@ -408,7 +408,7 @@ class SettingsRepository(
         if (email.isNullOrBlank()) {
             return all.filter { it.accountEmail.isNullOrBlank() }
         }
-        return all.filter { !it.accountEmail.isNullOrBlank() && it.accountEmail.equals(email, ignoreCase = true) }
+        return all.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
     }
 
     fun saveFoldersForAccount(email: String?, folders: List<BackupFolder>) {
