@@ -87,6 +87,7 @@ fun AddAccountDialog(
             onTokenCaptured = { token ->
                 showWebView = false
                 onSubmitToken(token)
+                onDismiss()
             }
         )
     }
@@ -277,16 +278,16 @@ fun AddAccountDialog(
         },
         confirmButton = {
             if (showManualInput) {
-                Button(
+                ExpressiveButton(
                     onClick = {
                         if (isRawCredential) {
                             onSubmitCredential(input.trim())
                         } else {
                             onSubmitToken(input.trim())
                         }
+                        onDismiss()
                     },
-                    enabled = input.isNotBlank() && !isLoading && localAcknowledged,
-                    shape = ButtonDefaults.shape
+                    enabled = input.isNotBlank() && !isLoading && localAcknowledged
                 ) {
                     if (isLoading) {
                         ExpressiveLoadingIndicator(

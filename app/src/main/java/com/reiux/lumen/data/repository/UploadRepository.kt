@@ -24,10 +24,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -87,6 +92,7 @@ class UploadSpeedTracker {
 class UploadRepository(
     private val context: Context,
     private val settingsRepository: SettingsRepository,
+    private val accountRepository: AccountRepository? = null,
     private val authClient: GoogleAuthClient = GoogleAuthClient(),
     private val photosClient: GooglePhotosClient = GooglePhotosClient(),
     private val hashCache: UploadHashCache = UploadHashCache(context)
@@ -95,6 +101,48 @@ class UploadRepository(
     private var uploadJob: Job? = null
     private var speedTickerJob: Job? = null
     private val speedTracker = UploadSpeedTracker()
+    private val albumCreationLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    init {
+        scope.launch {
+            settingsRepository.settings
+                .map { it.folders.filter { f -> !f.enabled }.map { f -> f.path } }
+                .distinctUntilChanged()
+                .collect { disabledPaths ->
+                    if (disabledPaths.isNotEmpty()) {
+                        pruneQueuedItemsForDisabledFolders(disabledPaths)
+                    }
+                }
+        }
+    }
+
+    fun pruneQueuedItemsForDisabledFolders(disabledFolderPaths: List<String>) {
+        val current = _queue.value
+        if (current.isEmpty() || disabledFolderPaths.isEmpty()) return
+
+        val (toDrop, toKeep) = current.partition { item ->
+            disabledFolderPaths.any { path ->
+                val folder = com.reiux.lumen.data.model.BackupFolder(path, "", enabled = false)
+                com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(item.filePath, folder)
+            }
+        }
+        if (toDrop.isNotEmpty()) {
+            _queue.value = toKeep
+            for (dropped in toDrop) {
+                LumenLogger.i("UploadEngine") { "Dropped queued item '${dropped.fileName}' (${dropped.filePath}) because folder is disabled." }
+            }
+        }
+    }
+
+    suspend fun fetchRemoteAlbums(account: GoogleAccount): List<com.reiux.lumen.data.network.GoogleAlbum> {
+        return try {
+            val token = authClient.getBearerToken(account)
+            photosClient.listAlbums(token)
+        } catch (e: Exception) {
+            LumenLogger.w("UploadEngine") { "fetchRemoteAlbums failed: ${e.message}" }
+            emptyList()
+        }
+    }
 
     private val _queue = MutableStateFlow<List<UploadItem>>(emptyList())
     val queue: StateFlow<List<UploadItem>> = _queue.asStateFlow()
@@ -113,6 +161,9 @@ class UploadRepository(
 
     private val _completedCount = MutableStateFlow(0)
     val completedCount: StateFlow<Int> = _completedCount.asStateFlow()
+
+    private val _skippedCount = MutableStateFlow(0)
+    val skippedCount: StateFlow<Int> = _skippedCount.asStateFlow()
 
     private val _accountBlock = MutableStateFlow<AccountBlock?>(null)
     val accountBlock: StateFlow<AccountBlock?> = _accountBlock.asStateFlow()
@@ -154,12 +205,19 @@ class UploadRepository(
 
         synchronized(_queue) {
             _queue.value = _queue.value.map { item ->
-                if (item.status == UploadStatus.HASHING ||
+                if (item.status == UploadStatus.QUEUED ||
+                    item.status == UploadStatus.HASHING ||
                     item.status == UploadStatus.CHECKING ||
                     item.status == UploadStatus.UPLOADING ||
                     item.status == UploadStatus.COMMITTING
                 ) {
-                    item.copy(status = UploadStatus.QUEUED, bytesUploaded = 0L)
+                    val err = when (kind) {
+                        AuthFailureKind.RATE_LIMITED -> "Rate limited by Google Photos"
+                        AuthFailureKind.SIGN_IN_REQUIRED -> "Sign in required"
+                        AuthFailureKind.ACCOUNT_RESTRICTED -> "Account restricted by Google"
+                        else -> "Upload paused"
+                    }
+                    item.copy(status = UploadStatus.FAILED, error = err, bytesUploaded = 0L)
                 } else item
             }
         }
@@ -228,12 +286,28 @@ class UploadRepository(
             ?: q.firstOrNull { it.status == UploadStatus.HASHING }
     }
 
-    fun enqueueFiles(files: List<File>, account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+    fun enqueueFiles(
+        files: List<File>,
+        account: GoogleAccount,
+        storageSaver: Boolean,
+        useQuota: Boolean = false,
+        targetAlbumMode: com.reiux.lumen.data.model.AlbumTargetMode = com.reiux.lumen.data.model.AlbumTargetMode.NONE,
+        customAlbumName: String? = null,
+        customAlbumNickname: String? = null
+    ) {
         val scanned = files.map { ScannedFile(it, it.length()) }
-        enqueueScannedFiles(scanned, account, storageSaver, useQuota)
+        enqueueScannedFiles(scanned, account, storageSaver, useQuota, targetAlbumMode, customAlbumName, customAlbumNickname)
     }
 
-    fun enqueueScannedFiles(scannedFiles: List<ScannedFile>, account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+    fun enqueueScannedFiles(
+        scannedFiles: List<ScannedFile>,
+        account: GoogleAccount,
+        storageSaver: Boolean,
+        useQuota: Boolean = false,
+        targetAlbumMode: com.reiux.lumen.data.model.AlbumTargetMode = com.reiux.lumen.data.model.AlbumTargetMode.NONE,
+        customAlbumName: String? = null,
+        customAlbumNickname: String? = null
+    ) {
         if (scannedFiles.isEmpty()) return
 
         val activePaths = _queue.value
@@ -257,7 +331,11 @@ class UploadRepository(
                     filePath = sf.file.absolutePath,
                     fileName = sf.file.name,
                     fileSize = sf.size,
-                    status = UploadStatus.QUEUED
+                    status = UploadStatus.QUEUED,
+                    targetAlbumMode = targetAlbumMode,
+                    customAlbumName = customAlbumName,
+                    customAlbumNickname = customAlbumNickname,
+                    accountEmail = account.email
                 )
             }
 
@@ -290,6 +368,7 @@ class UploadRepository(
         if (_isUploading.value) return
 
         _completedCount.value = 0
+        _skippedCount.value = 0
         
         LumenLogger.i("UploadEngine") {
             "Starting upload queue for ${LumenLogger.redact(account.email)} (StorageSaver: $storageSaver, UseQuota: $useQuota)"
@@ -341,6 +420,19 @@ class UploadRepository(
             _currentUploadingItem.value = getActiveUploadingItem()
             LumenLogger.i("UploadEngine") { "Cleared completed items (removed ${before - _queue.value.size} items)" }
         }
+    }
+
+    fun retryFailedItems(itemIds: Set<String>) {
+        if (itemIds.isEmpty()) return
+        synchronized(_queue) {
+            _queue.value = _queue.value.map { item ->
+                if (item.id in itemIds) {
+                    item.copy(status = UploadStatus.QUEUED, error = null, bytesUploaded = 0L)
+                } else item
+            }
+            _currentUploadingItem.value = getActiveUploadingItem()
+        }
+        LumenLogger.i("UploadEngine") { "Re-queued ${itemIds.size} failed/stopped items for retry" }
     }
 
     fun cancelQueue() {
@@ -447,16 +539,25 @@ class UploadRepository(
 
                         if (!isActive) break
 
-                        val tokenProvider: suspend () -> String = { authClient.getBearerToken(account) }
+                        val itemAccountEmail = nextItem.accountEmail ?: account.email
+                        val itemAccount = accountRepository?.accounts?.value?.find { it.email.equals(itemAccountEmail, ignoreCase = true) }
+                            ?: GoogleAccount(itemAccountEmail, itemAccountEmail)
+
+                        val tokenProvider: suspend () -> String = { authClient.getBearerToken(itemAccount) }
 
                         try {
-                            uploadSingleItem(nextItem, tokenProvider, storageSaver, useQuota, account.email, opId, workerIndex)
+                            uploadSingleItem(nextItem, tokenProvider, storageSaver, useQuota, itemAccountEmail, opId, workerIndex)
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
                             LumenLogger.e("UploadEngine", opId = opId, tr = e) {
-                                "Unhandled error on item [${nextItem.fileName}]: ${e.message}"
+                                "Unhandled error on item [${nextItem.fileName}] for account ${LumenLogger.redact(itemAccountEmail)}: ${e.message}"
                             }
-                            updateItemError(nextItem.id, "Upload failed: ${e.message}")
+                            val errorMsg = if (e is com.reiux.lumen.util.AuthFailureException) {
+                                "Authentication failed for $itemAccountEmail: ${e.message}"
+                            } else {
+                                "Upload failed: ${e.message}"
+                            }
+                            updateItemError(nextItem.id, errorMsg)
                         }
                     }
                 }
@@ -615,7 +716,6 @@ class UploadRepository(
                                 mtime = file.lastModified() / 1000
                             )
                             updateItemCompleted(item.id, retryCheckKey, isSkipped = false)
-                            _completedCount.value += 1
                             return
                         }
                     }
@@ -685,6 +785,8 @@ class UploadRepository(
                         "Commit response SUCCESS mediaKey=$mediaKey durationMs=$commitDuration"
                     }
 
+                    handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, mediaKey, opId)
+
                     // Stage 6: Cache uploaded mediaKey locally
                     hashCache.put(
                         accountEmail = accountEmail,
@@ -699,7 +801,6 @@ class UploadRepository(
                         "Upload SUCCESS mediaKey=$mediaKey totalDurationMs=$totalDuration attempts=$currentAttempt"
                     }
                     updateItemCompleted(item.id, mediaKey, isSkipped = false)
-                    _completedCount.value += 1
 
                     val (_, milestoneTriggered) = settingsRepository.recordRealUploads(1)
                     if (milestoneTriggered != null) {
@@ -735,7 +836,6 @@ class UploadRepository(
                                 mtime = file.lastModified() / 1000
                             )
                             updateItemCompleted(item.id, postCommitKey, isSkipped = false)
-                            _completedCount.value += 1
                             return
                         }
                     }
@@ -752,7 +852,6 @@ class UploadRepository(
                                     val mediaKey = photosClient.commitUpload(freshToken, commitToken, item.fileName, sha1Result.bytes, file.lastModified() / 1000, storageSaver, useQuota, opId)
 
                                     updateItemCompleted(item.id, mediaKey, isSkipped = false)
-                                    _completedCount.value += 1
                                     return
                                 } catch (retryErr: Exception) {
                                     LumenLogger.e("UploadEngine", opId = opId, tr = retryErr) { "Token refresh retry failed: ${retryErr.message}" }
@@ -795,6 +894,121 @@ class UploadRepository(
         }
     }
 
+    private suspend fun handleAlbumAssignment(
+        token: String,
+        accountEmail: String,
+        filePath: String,
+        item: UploadItem,
+        mediaKey: String,
+        opId: String? = null
+    ) {
+        try {
+            val (albumMode, customName, customNickname) = if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
+                Triple(item.targetAlbumMode, item.customAlbumName, item.customAlbumNickname)
+            } else {
+                val folders = settingsRepository.getFoldersForAccount(accountEmail)
+                val matchingFolder = folders.firstOrNull { f ->
+                    f.enabled && f.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE && (
+                        filePath.startsWith(f.path) || File(filePath).parentFile?.absolutePath == File(f.path).absolutePath
+                    )
+                }
+                if (matchingFolder != null) {
+                    Triple(matchingFolder.targetAlbumMode, matchingFolder.customAlbumName, matchingFolder.customAlbumNickname)
+                } else {
+                    Triple(com.reiux.lumen.data.model.AlbumTargetMode.NONE, null, null)
+                }
+            }
+
+            if (albumMode == com.reiux.lumen.data.model.AlbumTargetMode.NONE) return
+
+            val rawTitle = when (albumMode) {
+                com.reiux.lumen.data.model.AlbumTargetMode.AUTO_FOLDER_NAME -> {
+                    if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
+                        val currentMonth = java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(java.util.Date())
+                        "Uploads $currentMonth"
+                    } else {
+                        val folders = settingsRepository.getFoldersForAccount(accountEmail)
+                        val f = folders.firstOrNull { filePath.startsWith(it.path) || File(filePath).parentFile?.absolutePath == File(it.path).absolutePath }
+                        f?.displayName ?: "Uploads"
+                    }
+                }
+                com.reiux.lumen.data.model.AlbumTargetMode.CUSTOM_NAME -> customName?.ifBlank { "Uploads" } ?: "Uploads"
+                else -> return
+            }
+
+            val albumTitleOrKey = photosClient.resolveAlbumInput(rawTitle)
+            if (albumTitleOrKey.isBlank()) return
+
+            val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
+            if (albumTitleOrKey.startsWith("AF1Qip") || keyRegex.matches(albumTitleOrKey)) {
+                LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to direct album key $albumTitleOrKey for account $accountEmail..." }
+                photosClient.addMediaToAlbum(token, albumTitleOrKey, listOf(mediaKey), opId = opId)
+                if (customNickname != null) {
+                    settingsRepository.saveAlbumMediaKey(accountEmail, customNickname, albumTitleOrKey)
+                }
+                return
+            }
+
+            var albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
+            if (albumMediaKey.isNullOrEmpty()) {
+                val lockKey = "$accountEmail:${albumTitleOrKey.lowercase().trim()}"
+                val mutex = albumCreationLocks.computeIfAbsent(lockKey) { Mutex() }
+                
+                mutex.withLock {
+                    albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
+                    if (albumMediaKey.isNullOrEmpty()) {
+                        val existingAlbums = try {
+                            photosClient.listAlbums(token, opId = opId)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+
+                        val matchedAlbum = existingAlbums.firstOrNull { it.title.equals(albumTitleOrKey, ignoreCase = true) }
+                        if (matchedAlbum != null) {
+                            LumenLogger.i("UploadEngine", opId = opId) { "Found existing Google Photos album '${matchedAlbum.title}' (${matchedAlbum.mediaKey}) for account $accountEmail" }
+                            val mKey = matchedAlbum.mediaKey
+                            albumMediaKey = mKey
+                            settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, mKey)
+                        } else {
+                            LumenLogger.i("UploadEngine", opId = opId) { "Creating new Google Photos album '$albumTitleOrKey' with initial mediaKey $mediaKey for account $accountEmail..." }
+                            val createdKey = photosClient.createAlbum(token, albumTitleOrKey, initialMediaKey = mediaKey, opId = opId)
+                            settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, createdKey)
+                            return
+                        }
+                    }
+                }
+            }
+
+            if (!albumMediaKey.isNullOrEmpty()) {
+                LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to existing album '$albumTitleOrKey' ($albumMediaKey)..." }
+                photosClient.addMediaToAlbum(token, albumMediaKey!!, listOf(mediaKey), opId = opId)
+            }
+        } catch (e: Exception) {
+            val msg = e.message ?: ""
+            if (msg.contains("404") || msg.contains("Requested entity was not found") || msg.contains("NOT_FOUND")) {
+                LumenLogger.e("UploadEngine", opId = opId) { "Target album no longer exists in Google Photos!" }
+                val rawTitle = item.customAlbumName ?: ""
+                if (rawTitle.isNotBlank()) {
+                    settingsRepository.markAlbumMissing(accountEmail, rawTitle)
+                }
+                synchronized(_queue) {
+                    _queue.value = _queue.value.map { qItem ->
+                        if (qItem.customAlbumName == rawTitle || qItem.customAlbumNickname == rawTitle) {
+                            qItem.copy(
+                                status = UploadStatus.STOPPED,
+                                error = "Album not found in Google Photos"
+                            )
+                        } else {
+                            qItem
+                        }
+                    }
+                }
+                throw IOException("Target album no longer exists in Google Photos")
+            }
+            LumenLogger.w("UploadEngine", opId = opId) { "Album assignment skipped or failed: ${e.message}" }
+        }
+    }
+
     private fun getItemStatus(id: String): UploadStatus? {
         return _queue.value.firstOrNull { it.id == id }?.status
     }
@@ -824,6 +1038,11 @@ class UploadRepository(
                 if (it.id == id) it.copy(status = status, mediaKey = mediaKey, bytesUploaded = it.fileSize) else it
             }
             _currentUploadingItem.value = getActiveUploadingItem()
+        }
+        if (isSkipped) {
+            _skippedCount.value += 1
+        } else {
+            _completedCount.value += 1
         }
     }
 

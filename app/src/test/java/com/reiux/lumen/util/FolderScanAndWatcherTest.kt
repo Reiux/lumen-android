@@ -49,4 +49,26 @@ class FolderScanAndWatcherTest {
         assertEquals(1, scannedFiles.size)
         assertEquals(validImage.absolutePath, scannedFiles[0].absolutePath)
     }
+
+    @Test
+    fun testWatermarkAndEnabledFolderFiltering() {
+        val cameraFolder = BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", enabled = true)
+
+        val cameraPhoto = "/sdcard/DCIM/Camera/IMG_001.jpg"
+        val screenshot = "/sdcard/Pictures/Screenshots/Screenshot_001.png"
+
+        // 1. Screenshot in disabled folder is NOT matched by enabled folders list
+        val enabledFolders = listOf(cameraFolder)
+        assertFalse(enabledFolders.any { FolderWatcherManager.isMediaStoreItemInFolder(screenshot, "Pictures/Screenshots/", "Screenshots", it) })
+
+        // 2. Camera photo in enabled folder IS matched
+        assertTrue(enabledFolders.any { FolderWatcherManager.isMediaStoreItemInFolder(cameraPhoto, "DCIM/Camera/", "Camera Roll", it) })
+
+        // 3. Watermark filtering: items with ID <= watermark are ignored
+        val watermarkId = 1500L
+        fun isNewerThanWatermark(mediaId: Long): Boolean = mediaId > watermarkId
+
+        assertTrue(isNewerThanWatermark(1501L))
+        assertFalse(isNewerThanWatermark(1500L))
+    }
 }

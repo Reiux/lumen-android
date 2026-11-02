@@ -79,6 +79,8 @@ import java.io.File
 fun AccountsScreen(
     accounts: List<GoogleAccount>,
     selectedAccount: GoogleAccount?,
+    folders: List<com.reiux.lumen.data.model.BackupFolder> = emptyList(),
+    albums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
     onSelectAccount: (email: String) -> Unit,
     onAddAccountToken: (token: String) -> Unit,
     onAddAccountCredential: (credential: String) -> Unit,
@@ -119,9 +121,11 @@ fun AccountsScreen(
             },
             onSubmitToken = {
                 onAddAccountToken(it)
+                showAddDialog = false
             },
             onSubmitCredential = {
                 onAddAccountCredential(it)
+                showAddDialog = false
             },
             onClearError = onClearError,
             isLoading = isAddingAccount,
@@ -143,26 +147,41 @@ fun AccountsScreen(
     }
 
     if (accountToRemove != null) {
+        val targetAcc = accountToRemove!!
+        val attachedFolders = folders.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
+        val attachedAlbums = albums.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
+
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { accountToRemove = null },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = {
                 Text(
                     text = "Remove Account",
                     style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Are you sure you want to remove ${accountToRemove?.displayName ?: accountToRemove?.email} from Lumen?",
+                        text = "Are you sure you want to remove ${targetAcc.displayName ?: targetAcc.email} from Lumen?",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (attachedFolders > 0 || attachedAlbums > 0) {
+                        Text(
+                            text = "This will affect $attachedFolders ${if (attachedFolders == 1) "folder" else "folders"} and $attachedAlbums ${if (attachedAlbums == 1) "album" else "albums"} attached to this account.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.remove_account_device_warning),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 16.sp
                     )
                 }
@@ -170,10 +189,10 @@ fun AccountsScreen(
             confirmButton = {
                 ExpressiveButton(
                     onClick = {
-                        onRemoveAccount(accountToRemove!!.email)
+                        onRemoveAccount(targetAcc.email)
                         accountToRemove = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
                     Text("Remove")
                 }
@@ -182,9 +201,7 @@ fun AccountsScreen(
                 TextButton(onClick = { accountToRemove = null }) {
                     Text("Cancel")
                 }
-            },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            }
         )
     }
 

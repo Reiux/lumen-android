@@ -2,9 +2,12 @@ package com.reiux.lumen.data.network
 
 import com.google.protobuf.ByteString
 import com.reiux.lumen.data.model.AuthFailureKind
+import com.reiux.lumen.proto.AddMediaToAlbumOuterClass.AddMediaToAlbum
 import com.reiux.lumen.proto.CommitTokenOuterClass.CommitToken
 import com.reiux.lumen.proto.CommitUploadOuterClass.CommitUpload
 import com.reiux.lumen.proto.CommitUploadResponseOuterClass.CommitUploadResponse
+import com.reiux.lumen.proto.CreateAlbumOuterClass.CreateAlbum
+import com.reiux.lumen.proto.CreateAlbumResponseOuterClass.CreateAlbumResponse
 import com.reiux.lumen.proto.CreateMediaItems.CreateMediaItemsResponse
 import com.reiux.lumen.proto.GetUploadTokenOuterClass.GetUploadToken
 import com.reiux.lumen.proto.HashCheckOuterClass.HashCheck
@@ -27,8 +30,34 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
+data class GoogleAlbum(
+    val mediaKey: String,
+    val title: String,
+    val accountEmail: String? = null,
+    val isMissing: Boolean = false
+) {
+    fun getSubtitle(): String {
+        if (isMissing) {
+            return "Missing in Google Photos"
+        }
+        val keyRegex = Regex("^AF1Qip[A-Za-z0-9_-]+$")
+        return if (mediaKey.startsWith("AF1Qip") || keyRegex.matches(mediaKey)) {
+            val suffix = if (mediaKey.length >= 6) mediaKey.takeLast(6) else mediaKey
+            "Key ending ...$suffix"
+        } else {
+            "Created on first upload"
+        }
+    }
+}
+
 class GooglePhotosClient(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder().build()
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .dispatcher(okhttp3.Dispatcher().apply {
+            maxRequests = 64
+            maxRequestsPerHost = 20
+        })
+        .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
+        .build()
 ) {
     private fun uncompressIfNeeded(bytes: ByteArray): ByteArray {
         if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
@@ -368,11 +397,184 @@ class GooglePhotosClient(
         fallbackKey
     }
 
+    suspend fun createAlbum(
+        bearerToken: String,
+        albumName: String,
+        initialMediaKey: String,
+        model: String = "Pixel XL",
+        opId: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val mediaKeyItem = CreateAlbum.field4_type.newBuilder()
+            .setField1(
+                CreateAlbum.field4_type.field1_type.newBuilder()
+                    .setMediaKey(initialMediaKey)
+            )
+            .build()
+
+        val proto = CreateAlbum.newBuilder()
+            .setAlbumName(albumName)
+            .setTimestamp(System.currentTimeMillis() / 1000L)
+            .setField3(1L)
+            .addMediaKeys(mediaKeyItem)
+            .setField6(CreateAlbum.field6_type.newBuilder())
+            .setField7(CreateAlbum.field7_type.newBuilder().setField1(3L))
+            .setDeviceInfo(
+                CreateAlbum.field8_type.newBuilder()
+                    .setModel(model)
+                    .setMake("Google")
+                    .setAndroidApiVersion(28L)
+            )
+            .build()
+
+        val protoBytes = proto.toByteArray()
+        val requestBody = protoBytes.toRequestBody("application/x-protobuf".toMediaType())
+
+        val request = Request.Builder()
+            .url(CREATE_ALBUM_ENDPOINT)
+            .post(requestBody)
+            .header("Content-Type", "application/x-protobuf")
+            .header("Authorization", "Bearer $bearerToken")
+            .header("User-Agent", PHOTOS_USER_AGENT)
+            .build()
+
+        val start = System.currentTimeMillis()
+        val response = httpClient.newCall(request).execute()
+        val duration = System.currentTimeMillis() - start
+        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+
+        logNetwork("POST", CREATE_ALBUM_ENDPOINT, protoBytes.size.toLong(), response.code, respBytes.size.toLong(), duration, opId)
+
+        if (!response.isSuccessful) {
+            handleResponseError(response, respBytes, "CreateAlbum")
+        }
+
+        val resp = CreateAlbumResponse.parseFrom(respBytes)
+        val albumMediaKey = resp.field1?.albumMediaKey
+        if (albumMediaKey.isNullOrEmpty()) {
+            throw IOException("Failed to extract albumMediaKey from CreateAlbum response")
+        }
+        LumenLogger.d(TAG, opId = opId) { "createAlbum success: name='$albumName' mediaKey=$albumMediaKey initialMediaKey=$initialMediaKey" }
+        albumMediaKey
+    }
+
+    suspend fun addMediaToAlbum(
+        bearerToken: String,
+        albumMediaKey: String,
+        mediaKeys: List<String>,
+        model: String = "Pixel XL",
+        opId: String? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (mediaKeys.isEmpty()) return@withContext true
+
+        val proto = AddMediaToAlbum.newBuilder()
+            .addAllMediaKeys(mediaKeys)
+            .setAlbumMediaKey(albumMediaKey)
+            .setField5(AddMediaToAlbum.field5_type.newBuilder().setField1(2L))
+            .setDeviceInfo(
+                AddMediaToAlbum.field6_type.newBuilder()
+                    .setModel(model)
+                    .setMake("Google")
+                    .setAndroidApiVersion(28L)
+            )
+            .setTimestamp(System.currentTimeMillis() / 1000L)
+            .build()
+
+        val protoBytes = proto.toByteArray()
+        val requestBody = protoBytes.toRequestBody("application/x-protobuf".toMediaType())
+
+        val request = Request.Builder()
+            .url(ADD_MEDIA_TO_ALBUM_ENDPOINT)
+            .post(requestBody)
+            .header("Content-Type", "application/x-protobuf")
+            .header("Authorization", "Bearer $bearerToken")
+            .header("User-Agent", PHOTOS_USER_AGENT)
+            .build()
+
+        val start = System.currentTimeMillis()
+        val response = httpClient.newCall(request).execute()
+        val duration = System.currentTimeMillis() - start
+        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+
+        logNetwork("POST", ADD_MEDIA_TO_ALBUM_ENDPOINT, protoBytes.size.toLong(), response.code, respBytes.size.toLong(), duration, opId)
+
+        if (!response.isSuccessful) {
+            handleResponseError(response, respBytes, "AddMediaToAlbum")
+        }
+        LumenLogger.d(TAG, opId = opId) { "addMediaToAlbum success: albumMediaKey=$albumMediaKey count=${mediaKeys.size}" }
+        true
+    }
+
+    suspend fun resolveAlbumInput(input: String): String = withContext(Dispatchers.IO) {
+        val trimmed = input.trim()
+        if (trimmed.isBlank()) return@withContext ""
+
+        val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
+        
+        // 1. Direct raw media key check
+        if (trimmed.startsWith("AF1Qip") || keyRegex.matches(trimmed)) {
+            val match = keyRegex.find(trimmed)
+            if (match != null) return@withContext match.value
+        }
+
+        // 2. Extracted from a URL
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains("photos.google.com") || trimmed.contains("goo.gl")) {
+            val match = keyRegex.find(trimmed)
+            if (match != null) {
+                LumenLogger.d(TAG) { "Extracted album key from URL: ${match.value}" }
+                return@withContext match.value
+            }
+        }
+
+        trimmed
+    }
+
+
+
+    suspend fun listAlbums(bearerToken: String, opId: String? = null): List<GoogleAlbum> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("https://photoslibrary.googleapis.com/v1/albums?pageSize=50")
+                .get()
+                .header("Authorization", "Bearer $bearerToken")
+                .header("User-Agent", PHOTOS_USER_AGENT)
+                .build()
+
+            val start = System.currentTimeMillis()
+            val response = httpClient.newCall(request).execute()
+            val duration = System.currentTimeMillis() - start
+            val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+
+            logNetwork("GET", "https://photoslibrary.googleapis.com/v1/albums", 0L, response.code, respBytes.size.toLong(), duration, opId)
+
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val jsonStr = respBytes.decodeToString()
+            val jsonObj = org.json.JSONObject(jsonStr)
+            val albumsArr = jsonObj.optJSONArray("albums") ?: return@withContext emptyList()
+
+            val result = mutableListOf<GoogleAlbum>()
+            for (i in 0 until albumsArr.length()) {
+                val a = albumsArr.getJSONObject(i)
+                val id = a.optString("id")
+                val title = a.optString("title")
+                if (id.isNotEmpty() && title.isNotEmpty()) {
+                    result.add(GoogleAlbum(id, title))
+                }
+            }
+            result
+        } catch (e: Exception) {
+            LumenLogger.w(TAG, opId = opId) { "listAlbums failed: ${e.message}" }
+            emptyList()
+        }
+    }
+
     companion object {
         private const val TAG = "GooglePhotosClient"
         const val PHOTOS_USER_AGENT = "com.google.android.apps.photos/49029607 (Linux; U; Android 9; Pixel XL; en_US; Build/PQ2A.190205.001; Cronet/127.0.6510.5) (gzip)"
         const val INTERACTIVE_UPLOAD_ENDPOINT = "https://photos.googleapis.com/data/upload/uploadmedia/interactive"
         const val REMOTE_HASH_CHECK_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/5084965799730810217"
         const val COMMIT_UPLOAD_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/16538846908252377752"
+        const val CREATE_ALBUM_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/8386163679468898444"
+        const val ADD_MEDIA_TO_ALBUM_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/484917746253879292"
     }
 }

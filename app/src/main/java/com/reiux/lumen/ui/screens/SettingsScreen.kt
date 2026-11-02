@@ -1,5 +1,6 @@
 package com.reiux.lumen.ui.screens
 
+import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -95,10 +96,15 @@ fun SettingsScreen(
     isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
+    onToggleSimulateOffline: () -> Unit = {},
+    onToggleSimulateMissingAlbum: () -> Unit = {},
+    simulateOffline: Boolean = false,
+    simulateMissingAlbum: Boolean = false,
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDevDiagnostics: () -> Unit = {},
+    onOpenAlbumManager: () -> Unit = {},
     onToggleDeveloperMode: (Boolean) -> Unit = {},
     onUpdateForcedSeason: (String) -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
@@ -265,6 +271,26 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
+                            SettingSwitchRow(
+                                title = "Simulate Offline",
+                                subtitle = "Force 'No internet' state on the Backup page",
+                                checked = simulateOffline,
+                                onCheckedChange = { onToggleSimulateOffline() }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingSwitchRow(
+                                title = "Simulate Missing Album",
+                                subtitle = "Force 'Album doesn't exist' card on the Backup page",
+                                checked = simulateMissingAlbum,
+                                onCheckedChange = { onToggleSimulateMissingAlbum() }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                         SettingActionRow(
                             title = "Run Diagnostics",
@@ -357,181 +383,22 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Network & Concurrency",
+                    text = "Network & Upload Speed",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = "Back up new photos and videos",
-                            subtitle = "Automatically back up new files in enabled folders",
-                            checked = settings.autoBackupEnabled,
-                            onCheckedChange = onUpdateAutoBackup
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Allow Background Activity",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Turn off battery optimization so backups keep running in the background",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (isBatteryOptimizedExempt) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Allowed",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            } else {
-                                ExpressiveTonalButton(
-                                    onClick = {
-                                        DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Allow")
-                                }
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showOemGuideDialog = true }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Background Guide for Your Phone",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Steps for Xiaomi, Samsung, and other brands to keep backups alive",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            ExpressiveTonalButton(
-                                onClick = { showOemGuideDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Guide")
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Wi-Fi only",
-                            subtitle = "Only upload when connected to Wi-Fi",
-                            checked = settings.wifiOnly,
-                            onCheckedChange = onUpdateWifiOnly
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "While charging only",
-                            subtitle = "Only upload when plugged in",
-                            checked = settings.chargingOnly,
-                            onCheckedChange = onUpdateChargingOnly
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Concurrent uploads",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "${settings.uploadThreads} threads",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Text(
-                                text = "Number of files to upload at the same time",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Slider(
-                                value = settings.uploadThreads.toFloat(),
-                                onValueChange = { onUpdateUploadThreads(it.toInt()) },
-                                valueRange = 1f..20f,
-                                steps = 18
-                            )
-                        }
-                    }
-                }
+                NetworkAndSpeedCard(
+                    settings = settings,
+                    isBatteryOptimizedExempt = isBatteryOptimizedExempt,
+                    context = context,
+                    onUpdateAutoBackup = onUpdateAutoBackup,
+                    onUpdateWifiOnly = onUpdateWifiOnly,
+                    onUpdateChargingOnly = onUpdateChargingOnly,
+                    onUpdateUploadThreads = onUpdateUploadThreads,
+                    onShowOemGuide = { showOemGuideDialog = true }
+                )
 
                 Text(
                     text = "Storage & Quality",
@@ -745,7 +612,7 @@ fun SettingsScreen(
             // Network & Threads
             item {
                 Text(
-                    text = "Network & Concurrency",
+                    text = "Network & Upload Speed",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -753,175 +620,16 @@ fun SettingsScreen(
             }
 
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = "Back up new photos and videos",
-                            subtitle = "Automatically back up new files in enabled folders",
-                            checked = settings.autoBackupEnabled,
-                            onCheckedChange = onUpdateAutoBackup
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Allow Background Activity",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Turn off battery optimization so backups keep running in the background",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (isBatteryOptimizedExempt) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Allowed",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            } else {
-                                ExpressiveTonalButton(
-                                    onClick = {
-                                        DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Allow")
-                                }
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showOemGuideDialog = true }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Background Guide for Your Phone",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Steps for Xiaomi, Samsung, and other brands to keep backups alive",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            ExpressiveTonalButton(
-                                onClick = { showOemGuideDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Guide")
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Wi-Fi only",
-                            subtitle = "Only upload when connected to Wi-Fi",
-                            checked = settings.wifiOnly,
-                            onCheckedChange = onUpdateWifiOnly
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "While charging only",
-                            subtitle = "Only upload when plugged in",
-                            checked = settings.chargingOnly,
-                            onCheckedChange = onUpdateChargingOnly
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Concurrent uploads",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "${settings.uploadThreads} threads",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Text(
-                                text = "Number of files to upload at the same time",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Slider(
-                                value = settings.uploadThreads.toFloat(),
-                                onValueChange = { onUpdateUploadThreads(it.toInt()) },
-                                valueRange = 1f..20f,
-                                steps = 18
-                            )
-                        }
-                    }
-                }
+                NetworkAndSpeedCard(
+                    settings = settings,
+                    isBatteryOptimizedExempt = isBatteryOptimizedExempt,
+                    context = context,
+                    onUpdateAutoBackup = onUpdateAutoBackup,
+                    onUpdateWifiOnly = onUpdateWifiOnly,
+                    onUpdateChargingOnly = onUpdateChargingOnly,
+                    onUpdateUploadThreads = onUpdateUploadThreads,
+                    onShowOemGuide = { showOemGuideDialog = true }
+                )
             }
 
             // Upload Quality & Quota
@@ -1327,6 +1035,204 @@ fun SettingActionRow(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(actionLabel)
+        }
+    }
+}
+
+@Composable
+private fun NetworkAndSpeedCard(
+    settings: BackupSettings,
+    isBatteryOptimizedExempt: Boolean,
+    context: Context,
+    onUpdateAutoBackup: (Boolean) -> Unit,
+    onUpdateWifiOnly: (Boolean) -> Unit,
+    onUpdateChargingOnly: (Boolean) -> Unit,
+    onUpdateUploadThreads: (Int) -> Unit,
+    onShowOemGuide: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 1. Back up new photos and videos
+            SettingSwitchRow(
+                title = "Back up new photos and videos",
+                subtitle = "Automatically back up new files in enabled folders",
+                checked = settings.autoBackupEnabled,
+                onCheckedChange = onUpdateAutoBackup
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // 2. Wi-Fi only
+            SettingSwitchRow(
+                title = "Wi-Fi only",
+                subtitle = "Only upload when connected to Wi-Fi",
+                checked = settings.wifiOnly,
+                onCheckedChange = onUpdateWifiOnly
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // 3. While charging only
+            SettingSwitchRow(
+                title = "While charging only",
+                subtitle = "Only upload when plugged in",
+                checked = settings.chargingOnly,
+                onCheckedChange = onUpdateChargingOnly
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // 4. Simultaneous Uploads
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Simultaneous Uploads",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${settings.uploadThreads} threads",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    text = "Number of files to upload at the same time",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Slider(
+                    value = settings.uploadThreads.toFloat(),
+                    onValueChange = { onUpdateUploadThreads(it.toInt()) },
+                    valueRange = 1f..20f,
+                    steps = 18
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // 5. Allow Background Activity
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = "Allow Background Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Turn off battery optimization so backups keep running in the background",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (isBatteryOptimizedExempt) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Allowed",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else {
+                    ExpressiveTonalButton(
+                        onClick = {
+                            DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                        },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text("Allow")
+                    }
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // 6. Background Guide for Your Phone
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onShowOemGuide() }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = "Background Guide for Your Phone",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Steps for Xiaomi, Samsung, and other brands to keep backups alive",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ExpressiveTonalButton(
+                    onClick = onShowOemGuide,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Guide")
+                }
+            }
         }
     }
 }

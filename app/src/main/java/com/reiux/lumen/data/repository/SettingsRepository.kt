@@ -3,6 +3,7 @@ package com.reiux.lumen.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.reiux.lumen.data.model.AccountBlock
+import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.BackupSettings
@@ -44,30 +45,7 @@ class SettingsRepository(
         val forcedSeason = prefs.getString(KEY_FORCED_SEASON, "NONE") ?: "NONE"
         val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
 
-        val foldersJson = prefs.getString(KEY_FOLDERS, null)
-        val folders = if (!foldersJson.isNullOrEmpty()) {
-            val list = mutableListOf<BackupFolder>()
-            val array = JSONArray(foldersJson)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                list.add(
-                    BackupFolder(
-                        path = obj.getString("path"),
-                        displayName = obj.getString("displayName"),
-                        enabled = obj.optBoolean("enabled", true),
-                        includeSubfolders = obj.optBoolean("includeSubfolders", false)
-                    )
-                )
-            }
-            list
-        } else {
-            listOf(
-                BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", true),
-                BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),
-                BackupFolder("/sdcard/Pictures", "Pictures", false),
-                BackupFolder("/sdcard/Download", "Downloads", false)
-            )
-        }
+        val folders = getFoldersForAccount(null)
 
         LumenLogger.d("Storage") {
             "Loaded settings: autoBackup=$autoBackup wifiOnly=$wifiOnly chargingOnly=$chargingOnly storageSaver=$storageSaver useQuota=$useQuota threads=$threads preset='$colorPreset' folders=${folders.size}"
@@ -306,43 +284,38 @@ class SettingsRepository(
         prefs.edit().putBoolean(key, true).apply()
     }
 
-    fun toggleFolder(path: String, enabled: Boolean) {
-        val old = _settings.value.folders.firstOrNull { it.path == path }?.enabled
-        val updated = _settings.value.folders.map {
-            if (it.path == path) it.copy(enabled = enabled) else it
+    fun parseFoldersJson(jsonStr: String?): List<BackupFolder>? {
+        if (jsonStr.isNullOrEmpty()) return null
+        return try {
+            val list = mutableListOf<BackupFolder>()
+            val array = JSONArray(jsonStr)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val modeStr = obj.optString("targetAlbumMode", "NONE")
+                val mode = try { AlbumTargetMode.valueOf(modeStr) } catch (_: Exception) { AlbumTargetMode.NONE }
+                val customName = if (obj.has("customAlbumName")) obj.getString("customAlbumName") else null
+                val customNickname = if (obj.has("customAlbumNickname")) obj.getString("customAlbumNickname") else null
+                val accountEmail = if (obj.has("accountEmail")) obj.getString("accountEmail") else null
+                list.add(
+                    BackupFolder(
+                        path = obj.getString("path"),
+                        displayName = obj.getString("displayName"),
+                        enabled = obj.optBoolean("enabled", true),
+                        includeSubfolders = obj.optBoolean("includeSubfolders", false),
+                        targetAlbumMode = mode,
+                        customAlbumName = customName,
+                        customAlbumNickname = customNickname,
+                        accountEmail = accountEmail
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            null
         }
-        LumenLogger.i("Settings") { "toggleFolder: path='$path' old=$old -> new=$enabled" }
-        saveFolders(updated)
     }
 
-    fun addFolder(folder: BackupFolder) {
-        val current = _settings.value.folders.toMutableList()
-        if (current.none { it.path == folder.path }) {
-            current.add(folder)
-            LumenLogger.i("Settings") { "addFolder: path='${folder.path}' displayName='${folder.displayName}' enabled=${folder.enabled}" }
-            saveFolders(current)
-        } else {
-            LumenLogger.d("Settings") { "addFolder ignored: folder '${folder.path}' already in list" }
-        }
-    }
-
-    fun removeFolder(path: String) {
-        val oldFolder = _settings.value.folders.firstOrNull { it.path == path }
-        val updated = _settings.value.folders.filterNot { it.path == path }
-        LumenLogger.i("Settings") { "removeFolder: path='$path' displayName='${oldFolder?.displayName}'" }
-        saveFolders(updated)
-    }
-
-    fun setIncludeSubfolders(path: String, includeSubfolders: Boolean) {
-        val old = _settings.value.folders.firstOrNull { it.path == path }?.includeSubfolders
-        val updated = _settings.value.folders.map {
-            if (it.path == path) it.copy(includeSubfolders = includeSubfolders) else it
-        }
-        LumenLogger.i("Settings") { "setIncludeSubfolders: path='$path' old=$old -> new=$includeSubfolders" }
-        saveFolders(updated)
-    }
-
-    private fun saveFolders(folders: List<BackupFolder>) {
+    fun serializeFoldersJson(folders: List<BackupFolder>): String {
         val array = JSONArray()
         for (f in folders) {
             val obj = JSONObject()
@@ -350,11 +323,301 @@ class SettingsRepository(
             obj.put("displayName", f.displayName)
             obj.put("enabled", f.enabled)
             obj.put("includeSubfolders", f.includeSubfolders)
+            obj.put("targetAlbumMode", f.targetAlbumMode.name)
+            if (f.customAlbumName != null) {
+                obj.put("customAlbumName", f.customAlbumName)
+            }
+            if (f.customAlbumNickname != null) {
+                obj.put("customAlbumNickname", f.customAlbumNickname)
+            }
+            if (f.accountEmail != null) {
+                obj.put("accountEmail", f.accountEmail)
+            }
             array.put(obj)
         }
-        prefs.edit().putString(KEY_FOLDERS, array.toString()).apply()
-        LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_FOLDERS count=${folders.size}" }
+        return array.toString()
+    }
+
+    fun getAllFolders(): List<BackupFolder> {
+        val json = prefs.getString(KEY_FOLDERS, null)
+        val parsed = parseFoldersJson(json)
+        if (parsed != null) return parsed
+
+        return listOf(
+            BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", true),
+            BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),
+            BackupFolder("/sdcard/Pictures", "Pictures", false),
+            BackupFolder("/sdcard/Download", "Downloads", false)
+        )
+    }
+
+    fun saveFolders(folders: List<BackupFolder>) {
+        val json = serializeFoldersJson(folders)
+        prefs.edit().putString(KEY_FOLDERS, json).apply()
         _settings.value = _settings.value.copy(folders = folders)
+    }
+
+    private fun matchesAccount(email1: String?, email2: String?): Boolean {
+        if (email1.isNullOrBlank() && email2.isNullOrBlank()) return true
+        if (email1.isNullOrBlank() || email2.isNullOrBlank()) return false
+        return email1.equals(email2, ignoreCase = true)
+    }
+
+    fun toggleFolder(path: String, enabled: Boolean) = toggleFolder(path, null, enabled)
+    fun toggleFolder(path: String, accountEmail: String?, enabled: Boolean) {
+        val current = getAllFolders()
+        val updated = current.map {
+            if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(enabled = enabled) else it
+        }
+        saveFolders(updated)
+    }
+
+    fun addFolder(folder: BackupFolder) {
+        val current = getAllFolders().toMutableList()
+        val index = current.indexOfFirst {
+            it.path == folder.path && matchesAccount(it.accountEmail, folder.accountEmail)
+        }
+        if (index >= 0) {
+            current[index] = folder
+        } else {
+            current.add(folder)
+        }
+        saveFolders(current)
+    }
+
+    fun removeFolder(path: String) = removeFolder(path, null)
+    fun removeFolder(path: String, accountEmail: String?) {
+        val current = getAllFolders()
+        val updated = current.filterNot {
+            it.path == path && matchesAccount(it.accountEmail, accountEmail)
+        }
+        saveFolders(updated)
+    }
+
+    fun setIncludeSubfolders(path: String, includeSubfolders: Boolean) = setIncludeSubfolders(path, null, includeSubfolders)
+    fun setIncludeSubfolders(path: String, accountEmail: String?, includeSubfolders: Boolean) {
+        val current = getAllFolders()
+        val updated = current.map {
+            if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(includeSubfolders = includeSubfolders) else it
+        }
+        saveFolders(updated)
+    }
+
+    fun getFoldersForAccount(email: String?): List<BackupFolder> {
+        val all = getAllFolders()
+        if (email.isNullOrBlank()) {
+            return all.filter { it.accountEmail.isNullOrBlank() }
+        }
+        return all.filter { !it.accountEmail.isNullOrBlank() && it.accountEmail.equals(email, ignoreCase = true) }
+    }
+
+    fun saveFoldersForAccount(email: String?, folders: List<BackupFolder>) {
+        val all = getAllFolders().toMutableList()
+        if (!email.isNullOrBlank()) {
+            all.removeAll { !it.accountEmail.isNullOrBlank() && it.accountEmail.equals(email, ignoreCase = true) }
+            val formatted = folders.map { if (it.accountEmail.isNullOrBlank()) it.copy(accountEmail = email) else it }
+            all.addAll(formatted)
+        } else {
+            all.removeAll { it.accountEmail.isNullOrBlank() }
+            all.addAll(folders)
+        }
+        saveFolders(all)
+    }
+
+    fun addFolderForAccount(email: String?, folder: BackupFolder) {
+        val f = if (!email.isNullOrBlank() && folder.accountEmail.isNullOrBlank()) folder.copy(accountEmail = email) else folder
+        addFolder(f)
+    }
+
+    fun toggleFolderForAccount(email: String?, path: String, enabled: Boolean) {
+        val current = getAllFolders()
+        val updated = current.map {
+            if (it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
+                it.copy(enabled = enabled)
+            } else it
+        }
+        saveFolders(updated)
+    }
+
+    fun removeFolderForAccount(email: String?, path: String) {
+        val current = getAllFolders()
+        val updated = current.filterNot {
+            it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))
+        }
+        saveFolders(updated)
+    }
+
+    fun setIncludeSubfoldersForAccount(email: String?, path: String, includeSubfolders: Boolean) {
+        val current = getAllFolders()
+        val updated = current.map {
+            if (it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
+                it.copy(includeSubfolders = includeSubfolders)
+            } else it
+        }
+        saveFolders(updated)
+    }
+
+    fun updateFolderForAccount(email: String?, folder: BackupFolder) = addFolderForAccount(email, folder)
+
+    fun getFolderWatermarkId(email: String?, folderPath: String): Long {
+        val emailKey = email?.lowercase()?.trim() ?: "default"
+        val key = "watermark_id_${emailKey}_${folderPath.hashCode()}"
+        return prefs.getLong(key, 0L)
+    }
+
+    fun saveFolderWatermarkId(email: String?, folderPath: String, watermarkId: Long) {
+        val emailKey = email?.lowercase()?.trim() ?: "default"
+        val key = "watermark_id_${emailKey}_${folderPath.hashCode()}"
+        prefs.edit().putLong(key, watermarkId).apply()
+    }
+
+    private val _recentAlbumsFlow = MutableStateFlow<List<com.reiux.lumen.data.network.GoogleAlbum>>(emptyList())
+    val recentAlbumsFlow: StateFlow<List<com.reiux.lumen.data.network.GoogleAlbum>> = _recentAlbumsFlow.asStateFlow()
+
+    fun getAlbumMediaKey(email: String, albumTitle: String): String? {
+        val key = "album_key_${email.lowercase().trim()}_${albumTitle.lowercase().trim().replace(Regex("\\s+"), "_")}"
+        return prefs.getString(key, null)
+    }
+
+    fun saveAlbumMediaKey(email: String, albumTitle: String, mediaKey: String) {
+        val cleanEmail = email.lowercase().trim()
+        val key = "album_key_${cleanEmail}_${albumTitle.lowercase().trim().replace(Regex("\\s+"), "_")}"
+        prefs.edit().putString(key, mediaKey).apply()
+        
+        // Also save to recent albums list
+        val recentsKey = "recent_albums_$cleanEmail"
+        val existingJson = prefs.getString(recentsKey, "[]") ?: "[]"
+        try {
+            val array = JSONArray(existingJson)
+            val newList = mutableListOf<Triple<String, String, String>>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val t = obj.optString("title")
+                val mk = obj.optString("mediaKey")
+                val acc = obj.optString("accountEmail", cleanEmail)
+                if (t.isNotEmpty() && mk.isNotEmpty() && mk != mediaKey && t != albumTitle) {
+                    newList.add(Triple(t, mk, acc))
+                }
+            }
+            newList.add(0, Triple(albumTitle, mediaKey, cleanEmail)) // add to top
+            val newArray = JSONArray()
+            newList.take(20).forEach { (t, mk, acc) -> // keep top 20
+                val obj = JSONObject()
+                obj.put("title", t)
+                obj.put("mediaKey", mk)
+                obj.put("accountEmail", acc)
+                newArray.put(obj)
+            }
+            prefs.edit().putString(recentsKey, newArray.toString()).apply()
+            _recentAlbumsFlow.value = getRecentAlbums(cleanEmail)
+        } catch (e: Exception) {
+            LumenLogger.w("Storage") { "Failed to update recent albums: ${e.message}" }
+        }
+    }
+
+    fun getRecentAlbums(email: String): List<com.reiux.lumen.data.network.GoogleAlbum> {
+        val cleanEmail = email.lowercase().trim()
+        val recentsKey = "recent_albums_$cleanEmail"
+        val existingJson = prefs.getString(recentsKey, "[]") ?: "[]"
+        val list = mutableListOf<com.reiux.lumen.data.network.GoogleAlbum>()
+        try {
+            val array = JSONArray(existingJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val t = obj.optString("title")
+                val mk = obj.optString("mediaKey")
+                val isMissing = obj.optBoolean("isMissing", false)
+                val acc = if (obj.has("accountEmail") && obj.getString("accountEmail").isNotBlank()) {
+                    obj.getString("accountEmail").lowercase().trim()
+                } else if (cleanEmail.isNotBlank()) {
+                    cleanEmail
+                } else null
+                if (t.isNotEmpty() && mk.isNotEmpty()) {
+                    list.add(com.reiux.lumen.data.network.GoogleAlbum(mediaKey = mk, title = t, accountEmail = acc, isMissing = isMissing))
+                }
+            }
+        } catch (e: Exception) {
+            LumenLogger.w("Storage") { "Failed to parse recent albums: ${e.message}" }
+        }
+        _recentAlbumsFlow.value = list
+        return list
+    }
+
+    fun markAlbumMissing(email: String, keyOrTitle: String, missing: Boolean = true) {
+        val cleanEmail = email.lowercase().trim()
+        val recentsKey = "recent_albums_$cleanEmail"
+        val existingJson = prefs.getString(recentsKey, "[]") ?: "[]"
+        try {
+            val array = JSONArray(existingJson)
+            val newArray = JSONArray()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val t = obj.optString("title")
+                val mk = obj.optString("mediaKey")
+                if (t == keyOrTitle || mk == keyOrTitle) {
+                    obj.put("isMissing", missing)
+                }
+                newArray.put(obj)
+            }
+            prefs.edit().putString(recentsKey, newArray.toString()).apply()
+            _recentAlbumsFlow.value = getRecentAlbums(email)
+            LumenLogger.i("Storage") { "Marked album '$keyOrTitle' as missing=$missing for $email" }
+        } catch (e: Exception) {
+            LumenLogger.w("Storage") { "Failed to mark album as missing: ${e.message}" }
+        }
+    }
+
+    fun getAllRecentAlbums(emails: Set<String>): List<com.reiux.lumen.data.network.GoogleAlbum> {
+        val all = mutableListOf<com.reiux.lumen.data.network.GoogleAlbum>()
+        val allKeys = prefs.all.keys.filter { it.startsWith("recent_albums_") }
+        val targetKeys = (emails.map { "recent_albums_${it.lowercase().trim()}" } + allKeys).toSet()
+
+        for (k in targetKeys) {
+            val emailFromKey = k.removePrefix("recent_albums_").trim()
+            val existingJson = prefs.getString(k, "[]") ?: "[]"
+            try {
+                val array = JSONArray(existingJson)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val t = obj.optString("title")
+                    val mk = obj.optString("mediaKey")
+                    val acc = if (obj.has("accountEmail") && obj.getString("accountEmail").isNotBlank()) {
+                        obj.getString("accountEmail").lowercase().trim()
+                    } else if (emailFromKey.isNotBlank()) {
+                        emailFromKey
+                    } else null
+                    val isMissing = obj.optBoolean("isMissing", false)
+                    if (t.isNotEmpty() && mk.isNotEmpty()) {
+                        all.add(com.reiux.lumen.data.network.GoogleAlbum(mediaKey = mk, title = t, accountEmail = acc, isMissing = isMissing))
+                    }
+                }
+            } catch (e: Exception) {
+                LumenLogger.w("Storage") { "Failed to parse recent albums for key $k: ${e.message}" }
+            }
+        }
+        return all.distinctBy { "${it.accountEmail}:${it.mediaKey}" }
+    }
+
+    fun removeRecentAlbum(email: String, keyOrTitle: String) {
+        val recentsKey = "recent_albums_${email.lowercase().trim()}"
+        val existingJson = prefs.getString(recentsKey, "[]") ?: "[]"
+        try {
+            val array = JSONArray(existingJson)
+            val newArray = JSONArray()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val t = obj.optString("title")
+                val mk = obj.optString("mediaKey")
+                if (t != keyOrTitle && mk != keyOrTitle) {
+                    newArray.put(obj)
+                }
+            }
+            prefs.edit().putString(recentsKey, newArray.toString()).apply()
+            _recentAlbumsFlow.value = getRecentAlbums(email)
+            LumenLogger.i("Storage") { "Removed album '$keyOrTitle' from recent albums for $email" }
+        } catch (e: Exception) {
+            LumenLogger.w("Storage") { "Failed to remove album from recents: ${e.message}" }
+        }
     }
 
     fun unlockPrismTheme() {

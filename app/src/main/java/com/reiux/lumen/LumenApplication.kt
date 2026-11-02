@@ -39,7 +39,7 @@ class LumenApplication : Application() {
         settingsRepository = SettingsRepository(this)
         com.reiux.lumen.util.LumenLogger.init(this, settingsRepository.settings.value.saveLogsEnabled)
         accountRepository = AccountRepository(this)
-        uploadRepository = UploadRepository(this, settingsRepository)
+        uploadRepository = UploadRepository(this, settingsRepository, accountRepository)
 
         // Clean stale account blocks for accounts that no longer exist
         val validAccountEmails = accountRepository.accounts.value.map { it.email }.toSet()
@@ -118,81 +118,97 @@ class LumenApplication : Application() {
      */
     fun checkAndEnqueueRecentMedia() {
         appScope.launch {
-            val account = accountRepository.selectedAccount.value ?: accountRepository.accounts.value.firstOrNull() ?: return@launch
+            val allAccounts = accountRepository.accounts.value
+            if (allAccounts.isEmpty()) return@launch
             val settings = settingsRepository.settings.value
             if (!settings.autoBackupEnabled) return@launch
-
-            val enabledPaths = settings.folders.filter { it.enabled }.map { it.path }
-            if (enabledPaths.isEmpty()) return@launch
 
             val supportedExts = setOf(
                 "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
                 "mp4", "mov", "mkv", "avi", "3gp", "webm"
             )
 
-            val found = queryRecentMediaForPaths(this@LumenApplication, enabledPaths, supportedExts)
-            if (found.isNotEmpty()) {
-                uploadRepository.enqueueFiles(
-                    files = found,
-                    account = account,
-                    storageSaver = settings.storageSaverQuality,
-                    useQuota = settings.useQuota
-                )
-            }
-        }
-    }
+            for (account in allAccounts) {
+                val enabledFolders = settingsRepository.getFoldersForAccount(account.email).filter { it.enabled }
+                val validFolders = enabledFolders.filter { !it.accountEmail.isNullOrBlank() }
+                if (validFolders.isEmpty()) continue
 
-    private fun queryRecentMediaForPaths(
-        context: Context,
-        enabledFolderPaths: List<String>,
-        supportedExts: Set<String>
-    ): List<File> {
-        val results = mutableListOf<File>()
-        val extStorage = try {
-            android.os.Environment.getExternalStorageDirectory().absolutePath
-        } catch (_: Exception) {
-            "/storage/emulated/0"
-        }
-        val allNormalizedEnabledPaths = enabledFolderPaths.flatMap { folderPath ->
-            val canonical = try { File(folderPath).canonicalPath } catch (_: Exception) { folderPath }
-            listOf(folderPath, canonical, folderPath.replaceFirst("/sdcard", extStorage))
-        }.toSet()
+                val foundFiles = mutableListOf<File>()
 
-        val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DATE_ADDED)
-        val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 30"
-        val pendingSelection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "${MediaStore.MediaColumns.IS_PENDING} = 0"
-        } else null
+                for (folder in validFolders) {
+                    val lastWatermarkId = settingsRepository.getFolderWatermarkId(account.email, folder.path)
+                    var maxId = lastWatermarkId
+                    val folderNewFiles = mutableListOf<File>()
 
-        val queryUris = listOf(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        )
+                    val queryUris = listOf(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    )
 
-        for (uri in queryUris) {
-            try {
-                context.contentResolver.query(uri, projection, pendingSelection, null, sortOrder)?.use { cursor ->
-                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                    while (cursor.moveToNext()) {
-                        if (dataCol >= 0) {
-                            val path = cursor.getString(dataCol)
-                            if (!path.isNullOrEmpty() && allNormalizedEnabledPaths.any { path.startsWith(it) }) {
-                                val file = File(path)
-                                if (file.exists() && file.isFile && file.length() > 0 && file.extension.lowercase() in supportedExts) {
-                                    results.add(file)
+                    val projection = mutableListOf(
+                        MediaStore.MediaColumns._ID,
+                        MediaStore.MediaColumns.DATA,
+                        MediaStore.MediaColumns.DATE_ADDED
+                    ).apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.MediaColumns.RELATIVE_PATH)
+                        add(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                    }.toTypedArray()
+
+                    var selection = "${MediaStore.MediaColumns._ID} > ?"
+                    var selectionArgs = arrayOf(lastWatermarkId.toString())
+
+                    if (lastWatermarkId == 0L) {
+                        val yesterdaySec = (System.currentTimeMillis() / 1000) - 86400
+                        selection = "${MediaStore.MediaColumns.DATE_ADDED} > ?"
+                        selectionArgs = arrayOf(yesterdaySec.toString())
+                    }
+
+                    for (uri in queryUris) {
+                        try {
+                            contentResolver.query(uri, projection, selection, selectionArgs, "${MediaStore.MediaColumns._ID} ASC")?.use { cursor ->
+                                val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                                val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
+                                val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+
+                                while (cursor.moveToNext()) {
+                                    val mediaId = if (idCol >= 0) cursor.getLong(idCol) else 0L
+                                    val path = if (dataCol >= 0) cursor.getString(dataCol) else null
+                                    val relPath = if (relCol >= 0) cursor.getString(relCol) else null
+                                    val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) else null
+
+                                    if (FolderWatcherManager.isMediaStoreItemInFolder(path, relPath, bucketName, folder)) {
+                                        if (mediaId > maxId) maxId = mediaId
+                                        if (!path.isNullOrEmpty()) {
+                                            val file = File(path)
+                                            if (file.exists() && file.isFile && file.length() > 0 && file.extension.lowercase() in supportedExts) {
+                                                folderNewFiles.add(file)
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            com.reiux.lumen.util.LumenLogger.w("LumenApp") { "Error querying MediaStore for folder ${folder.path}: ${e.message}" }
                         }
                     }
-                }
-            } catch (_: Exception) {}
-        }
 
-        // Deduplicate
-        val seen = mutableSetOf<String>()
-        return results.filter { file ->
-            val canonical = try { file.canonicalPath } catch (_: Exception) { file.absolutePath }
-            seen.add(canonical)
+                    if (maxId > lastWatermarkId) {
+                        settingsRepository.saveFolderWatermarkId(account.email, folder.path, maxId)
+                    }
+                    foundFiles.addAll(folderNewFiles)
+                }
+
+                if (foundFiles.isNotEmpty()) {
+                    com.reiux.lumen.util.LumenLogger.i("LumenApp") { "Found ${foundFiles.size} new item(s) in enabled folders for ${account.email} since watermark. Enqueueing." }
+                    uploadRepository.enqueueFiles(
+                        files = foundFiles.distinctBy { it.absolutePath },
+                        account = account,
+                        storageSaver = settings.storageSaverQuality,
+                        useQuota = settings.useQuota
+                    )
+                }
+            }
         }
     }
 

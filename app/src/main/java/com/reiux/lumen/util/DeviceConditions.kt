@@ -20,6 +20,17 @@ object DeviceConditions {
                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
 
+    fun isInternetAvailable(context: Context): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun isDeviceCharging(context: Context): Boolean {
         val batteryStatus = context.registerReceiver(
             null,

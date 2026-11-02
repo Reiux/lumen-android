@@ -49,6 +49,7 @@ import kotlin.random.Random
 @Composable
 fun PlayfulCompletionCelebration(
     completedCount: Int,
+    skippedCount: Int = 0,
     enabledButtons: Boolean,
     onStartBackup: () -> Unit,
     onPickPhotos: () -> Unit,
@@ -173,7 +174,18 @@ fun PlayfulCompletionCelebration(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val countText = if (completedCount > 0) "$completedCount items backed up to Google Photos" else "Your photos and videos are safe in Google Photos"
+            val countText = remember(completedCount, skippedCount) {
+                when {
+                    completedCount > 0 && skippedCount > 0 ->
+                        "$completedCount newly uploaded • $skippedCount already in Google Photos"
+                    completedCount > 0 && skippedCount == 0 ->
+                        "$completedCount items backed up to Google Photos"
+                    completedCount == 0 && skippedCount > 0 ->
+                        "All $skippedCount media items are already saved in Google Photos"
+                    else ->
+                        "Your photos and videos are safe in Google Photos"
+                }
+            }
             Text(
                 text = countText,
                 style = MaterialTheme.typography.bodyMedium,

@@ -37,11 +37,13 @@ class UploadForegroundService : Service() {
         super.onCreate()
         LumenLogger.d("Service") { "UploadForegroundService onCreate" }
         createNotificationChannel()
+        startForeground(NOTIFICATION_ID, buildInitialNotification())
         startObserving()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LumenLogger.d("Service") { "UploadForegroundService onStartCommand flags=$flags startId=$startId" }
+        startForeground(NOTIFICATION_ID, buildInitialNotification())
         startObserving()
         return START_NOT_STICKY
     }
@@ -51,14 +53,23 @@ class UploadForegroundService : Service() {
         LumenLogger.d("Service") { "UploadForegroundService onDestroy" }
         observeJob?.cancel()
         scope.cancel()
-        val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+        dismissNotificationInternal("onDestroy")
+    }
+
+    private fun buildInitialNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
-        manager?.cancel(NOTIFICATION_ID)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Lumen Backup")
+            .setContentText("Initializing upload service...")
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
     }
 
     private fun startObserving() {
@@ -77,17 +88,6 @@ class UploadForegroundService : Service() {
             stopForegroundAndDismiss(reason = "notifications_disabled_in_settings")
             return
         }
-
-        // Show immediate foreground notification
-        val initialNotification = buildNotification(
-            isUploading = true,
-            currentItem = uploadRepo.currentUploadingItem.value,
-            queue = uploadRepo.queue.value,
-            conditionNotice = uploadRepo.conditionNotice.value,
-            uploadSpeed = uploadRepo.uploadSpeed.value
-        )
-        startForeground(NOTIFICATION_ID, initialNotification)
-        LumenLogger.d("Service") { "UploadForegroundService started foreground notification" }
 
         observeJob = scope.launch {
             combine(
@@ -128,10 +128,19 @@ class UploadForegroundService : Service() {
         }
     }
 
-    private fun stopForegroundAndDismiss(reason: String = "completed") {
-        LumenLogger.d("Service") { "UploadForegroundService stopping foreground and dismissing notification reason='$reason'" }
-        observeJob?.cancel()
+    private fun dismissNotificationInternal(reason: String) {
+        LumenLogger.d("Service") { "UploadForegroundService dismissNotificationInternal reason='$reason'" }
         val manager = getSystemService(NotificationManager::class.java)
+        try {
+            // Post a non-ongoing notification update first so Android 14/15/16 System UI releases the status bar pill
+            val clearNotif = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(com.reiux.lumen.R.drawable.ic_launcher_monochrome)
+                .setOngoing(false)
+                .setSilent(true)
+                .build()
+            manager?.notify(NOTIFICATION_ID, clearNotif)
+        } catch (_: Exception) {}
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -139,6 +148,12 @@ class UploadForegroundService : Service() {
             stopForeground(true)
         }
         manager?.cancel(NOTIFICATION_ID)
+    }
+
+    private fun stopForegroundAndDismiss(reason: String = "completed") {
+        LumenLogger.d("Service") { "UploadForegroundService stopping foreground and dismissing notification reason='$reason'" }
+        observeJob?.cancel()
+        dismissNotificationInternal(reason)
         stopSelf()
     }
 
@@ -158,14 +173,16 @@ class UploadForegroundService : Service() {
         conditionNotice: String?,
         uploadSpeed: String? = null
     ): Notification {
-        // Exclude items already in Google Photos (SKIPPED) from notification counters & percentages
-        val actualQueue = queue.filter { it.status != UploadStatus.SKIPPED }
-        val totalInQueue = actualQueue.size
-        val completedInQueue = actualQueue.count { it.status == UploadStatus.COMPLETED }
+        val totalInQueue = queue.size
+        val processedInQueue = queue.count {
+            it.status == UploadStatus.COMPLETED ||
+            it.status == UploadStatus.SKIPPED ||
+            it.status == UploadStatus.FAILED
+        }
 
-        // Calculate batch progress strictly based on completed file count vs total file count
+        // Calculate batch progress strictly based on processed file count vs total file count
         val batchPercentByCount = if (totalInQueue > 0) {
-            ((completedInQueue.toDouble() / totalInQueue.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+            ((processedInQueue.toDouble() / totalInQueue.toDouble()) * 100.0).toInt().coerceIn(0, 100)
         } else 0
 
         // Calculate current file progress
@@ -175,7 +192,7 @@ class UploadForegroundService : Service() {
             ((currentFileUploaded.toDouble() / currentFileSize.toDouble()) * 100.0).toInt().coerceIn(0, 100)
         } else 0
 
-        val fileIndex = (completedInQueue + 1).coerceAtMost(totalInQueue.coerceAtLeast(1))
+        val fileIndex = (processedInQueue + 1).coerceAtMost(totalInQueue.coerceAtLeast(1))
         val currentName = currentItem?.fileName ?: "media"
 
         val title: String
