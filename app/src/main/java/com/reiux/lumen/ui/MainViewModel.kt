@@ -158,14 +158,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.removeRecentAlbum(targetEmail, album.mediaKey)
     }
 
-    fun addAlbum(keyOrUrl: String, nickname: String?, targetAccountEmail: String? = null) {
+    fun addAlbum(keyOrUrl: String, nickname: String?, targetAccountEmail: String? = null): com.reiux.lumen.data.network.GoogleAlbum {
+        val accountEmail = targetAccountEmail ?: selectedAccount.value?.email ?: ""
+        val titleToSave = nickname?.ifBlank { null } ?: keyOrUrl.trim()
+
         viewModelScope.launch {
-            val accountEmail = targetAccountEmail ?: selectedAccount.value?.email ?: return@launch
             val client = com.reiux.lumen.data.network.GooglePhotosClient()
             val resolvedKey = client.resolveAlbumInput(keyOrUrl)
-            val titleToSave = nickname?.ifBlank { null } ?: resolvedKey
+
             settingsRepo.saveAlbumMediaKey(accountEmail, titleToSave, resolvedKey)
         }
+        return com.reiux.lumen.data.network.GoogleAlbum(mediaKey = keyOrUrl.trim(), title = titleToSave, accountEmail = accountEmail)
     }
 
     private val _updateDownloadProgress = MutableStateFlow(-1)

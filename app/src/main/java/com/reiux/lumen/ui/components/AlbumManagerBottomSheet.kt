@@ -28,6 +28,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +38,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,6 +48,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.reiux.lumen.data.network.GoogleAlbum
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -206,8 +211,10 @@ fun AlbumManagerBottomSheet(
 
     // Add Album Dialog
     if (showAddDialog) {
+        var selectedSegment by remember { mutableIntStateOf(0) }
         var keyOrUrl by remember { mutableStateOf("") }
         var nickname by remember { mutableStateOf("") }
+        var newAlbumName by remember { mutableStateOf("") }
 
         val dialogScale = remember { Animatable(0.88f) }
         LaunchedEffect(Unit) {
@@ -228,40 +235,78 @@ fun AlbumManagerBottomSheet(
                 .scale(dialogScale.value),
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Add Album Key or Link", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    text = if (selectedSegment == 0) "Add Album Link or Key" else "Create New Album",
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = keyOrUrl,
-                        onValueChange = { keyOrUrl = it },
-                        label = { Text("Link or Key (Required)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = selectedSegment == 0,
+                            onClick = { selectedSegment = 0 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Link or Key", fontSize = 12.sp)
+                        }
+                        SegmentedButton(
+                            selected = selectedSegment == 1,
+                            onClick = { selectedSegment = 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Create Album", fontSize = 12.sp)
+                        }
+                    }
 
-                    OutlinedTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it },
-                        label = { Text("Album Nickname (Optional)") },
-                        placeholder = { Text("e.g. Family Vacation") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
+                    if (selectedSegment == 0) {
+                        OutlinedTextField(
+                            value = keyOrUrl,
+                            onValueChange = { keyOrUrl = it },
+                            label = { Text("Link or Key (Required)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = nickname,
+                            onValueChange = { nickname = it },
+                            label = { Text("Album Nickname (Optional)") },
+                            placeholder = { Text("e.g. Family Vacation") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = newAlbumName,
+                            onValueChange = { newAlbumName = it },
+                            label = { Text("New Album Name") },
+                            placeholder = { Text("e.g. Summer Trip 2026") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                    }
                 }
             },
             confirmButton = {
+                val canConfirm = if (selectedSegment == 0) keyOrUrl.isNotBlank() else newAlbumName.isNotBlank()
                 ExpressiveButton(
                     onClick = {
-                        if (keyOrUrl.isNotBlank()) {
+                        if (selectedSegment == 0 && keyOrUrl.isNotBlank()) {
                             onAddAlbum(keyOrUrl.trim(), nickname.ifBlank { null })
+                            showAddDialog = false
+                        } else if (selectedSegment == 1 && newAlbumName.isNotBlank()) {
+                            onAddAlbum(newAlbumName.trim(), nickname.ifBlank { null })
                             showAddDialog = false
                         }
                     },
-                    enabled = keyOrUrl.isNotBlank()
+                    enabled = canConfirm
                 ) {
-                    Text("Save Album")
+                    Text(if (selectedSegment == 0) "Save Album" else "Create Album")
                 }
             },
             dismissButton = {
