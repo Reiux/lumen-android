@@ -255,15 +255,6 @@ fun BackupScreen(
     val context = LocalContext.current
     var pendingPickedUris by remember { mutableStateOf<List<Uri>?>(null) }
 
-    val stoppedItem = queue.find { it.status == com.reiux.lumen.data.model.UploadStatus.STOPPED }
-    if (stoppedItem != null) {
-        com.reiux.lumen.ui.components.AlbumNotFoundDialog(
-            accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: "your account",
-            onOpenAlbums = onOpenAlbumManager,
-            onDismiss = { onClearCompleted() }
-        )
-    }
-
     if (pendingPickedUris != null) {
         com.reiux.lumen.ui.components.ManualUploadDestinationDialog(
             itemCount = pendingPickedUris?.size ?: 0,
@@ -379,13 +370,6 @@ fun BackupScreen(
                     onOpenDiagnostics = { showDevDiagnostics = true },
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
-
-                if (remoteAlbums.any { it.isMissing }) {
-                    com.reiux.lumen.ui.components.MissingAlbumBanner(
-                        accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: "your account",
-                        onOpenAlbums = onOpenAlbumManager
-                    )
-                }
 
                 if (developerModeUnlocked && isMockMode) {
                     MockModeCard(

@@ -400,22 +400,14 @@ class GooglePhotosClient(
     suspend fun createAlbum(
         bearerToken: String,
         albumName: String,
-        initialMediaKey: String,
+        initialMediaKey: String? = null,
         model: String = "Pixel XL",
         opId: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val mediaKeyItem = CreateAlbum.field4_type.newBuilder()
-            .setField1(
-                CreateAlbum.field4_type.field1_type.newBuilder()
-                    .setMediaKey(initialMediaKey)
-            )
-            .build()
-
-        val proto = CreateAlbum.newBuilder()
+        val builder = CreateAlbum.newBuilder()
             .setAlbumName(albumName)
             .setTimestamp(System.currentTimeMillis() / 1000L)
             .setField3(1L)
-            .addMediaKeys(mediaKeyItem)
             .setField6(CreateAlbum.field6_type.newBuilder())
             .setField7(CreateAlbum.field7_type.newBuilder().setField1(3L))
             .setDeviceInfo(
@@ -424,9 +416,18 @@ class GooglePhotosClient(
                     .setMake("Google")
                     .setAndroidApiVersion(28L)
             )
-            .build()
 
-        val protoBytes = proto.toByteArray()
+        if (!initialMediaKey.isNullOrBlank()) {
+            val mediaKeyItem = CreateAlbum.field4_type.newBuilder()
+                .setField1(
+                    CreateAlbum.field4_type.field1_type.newBuilder()
+                        .setMediaKey(initialMediaKey)
+                )
+                .build()
+            builder.addMediaKeys(mediaKeyItem)
+        }
+
+        val protoBytes = builder.build().toByteArray()
         val requestBody = protoBytes.toRequestBody("application/x-protobuf".toMediaType())
 
         val request = Request.Builder()

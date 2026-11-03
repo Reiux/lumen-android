@@ -58,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
+import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.GoogleAccount
@@ -217,17 +219,6 @@ fun FoldersScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                ExpressiveButton(
-                    onClick = { showAddDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Folder")
-                }
             }
 
             // Right Pane: Folder Items List
@@ -264,7 +255,32 @@ fun FoldersScreen(
                         onRemoveFolder = { folderToRemove = it }
                     )
                 }
-                item { Spacer(modifier = Modifier.height(16.dp)) }
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        ExpressiveButton(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add Folder")
+                        }
+
+                        ExpressiveTonalButton(
+                            onClick = onOpenAlbumManager,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Album Manager")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
     } else {
@@ -291,13 +307,6 @@ fun FoldersScreen(
                         text = "Photos and videos in enabled folders will be backed up",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (remoteAlbums.any { it.isMissing } || folders.any { it.isMissingAlbum }) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    com.reiux.lumen.ui.components.MissingAlbumBanner(
-                        accountName = activeAccount?.displayName ?: activeAccount?.email ?: "your account",
-                        onOpenAlbums = onOpenAlbumManager
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -329,13 +338,27 @@ fun FoldersScreen(
 
             item {
                 Spacer(modifier = Modifier.height(8.dp))
-                ExpressiveButton(
-                    onClick = { showAddDialog = true },
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Folder")
+                    ExpressiveButton(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add Folder")
+                    }
+
+                    ExpressiveTonalButton(
+                        onClick = onOpenAlbumManager,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Album Manager")
+                    }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }

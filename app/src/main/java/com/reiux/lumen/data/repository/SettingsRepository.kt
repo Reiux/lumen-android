@@ -476,7 +476,15 @@ class SettingsRepository(
 
     fun getAlbumMediaKey(email: String, albumTitle: String): String? {
         val key = "album_key_${email.lowercase().trim()}_${albumTitle.lowercase().trim().replace(Regex("\\s+"), "_")}"
-        return prefs.getString(key, null)
+        val saved = prefs.getString(key, null)
+        if (saved != null) {
+            val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
+            if (!saved.startsWith("AF1Qip") && !keyRegex.matches(saved)) {
+                prefs.edit().remove(key).apply()
+                return null
+            }
+        }
+        return saved
     }
 
     fun saveAlbumMediaKey(email: String, albumTitle: String, mediaKey: String) {

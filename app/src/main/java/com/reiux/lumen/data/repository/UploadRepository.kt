@@ -415,10 +415,11 @@ class UploadRepository(
             _queue.value = _queue.value.filter {
                 it.status != UploadStatus.COMPLETED &&
                 it.status != UploadStatus.SKIPPED &&
-                it.status != UploadStatus.FAILED
+                it.status != UploadStatus.FAILED &&
+                it.status != UploadStatus.STOPPED
             }
             _currentUploadingItem.value = getActiveUploadingItem()
-            LumenLogger.i("UploadEngine") { "Cleared completed items (removed ${before - _queue.value.size} items)" }
+            LumenLogger.i("UploadEngine") { "Cleared completed/stopped items (removed ${before - _queue.value.size} items)" }
         }
     }
 
@@ -630,6 +631,10 @@ class UploadRepository(
                 LumenLogger.i("UploadEngine", opId = opId) {
                     "Local cache HIT mediaKey=$cachedMediaKey reason=already_backed_up totalDurationMs=$totalMs. Skipping upload."
                 }
+                
+                val activeToken = tokenProvider()
+                handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, cachedMediaKey, opId)
+                
                 updateItemCompleted(item.id, cachedMediaKey, isSkipped = true)
                 return
             }
@@ -672,6 +677,9 @@ class UploadRepository(
                 LumenLogger.i("UploadEngine", opId = opId) {
                     "Remote dedup HIT in Google Photos cloud mediaKey=$existingMediaKey checkDurationMs=$remoteCheckDuration totalDurationMs=$totalMs. Skipping upload."
                 }
+                
+                handleAlbumAssignment(bearerToken, accountEmail, file.absolutePath, item, existingMediaKey, opId)
+
                 hashCache.put(
                     accountEmail = accountEmail,
                     sha1B64 = sha1Result.base64,
@@ -708,6 +716,9 @@ class UploadRepository(
                             LumenLogger.i("UploadEngine", opId = opId) {
                                 "Ambiguous commit recovery HIT: File was registered by server mediaKey=$retryCheckKey. Skipping re-upload."
                             }
+                            
+                            handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, retryCheckKey, opId)
+
                             hashCache.put(
                                 accountEmail = accountEmail,
                                 sha1B64 = sha1Result.base64,
@@ -902,92 +913,48 @@ class UploadRepository(
         mediaKey: String,
         opId: String? = null
     ) {
-        try {
-            val (albumMode, customName, customNickname) = if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
-                Triple(item.targetAlbumMode, item.customAlbumName, item.customAlbumNickname)
+        val (albumMode, customName, customNickname) = if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
+            Triple(item.targetAlbumMode, item.customAlbumName, item.customAlbumNickname)
+        } else {
+            val folders = settingsRepository.getFoldersForAccount(accountEmail)
+            val matchingFolder = folders.firstOrNull { f ->
+                f.enabled && f.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE && (
+                    filePath.startsWith(f.path) || File(filePath).parentFile?.absolutePath == File(f.path).absolutePath
+                )
+            }
+            if (matchingFolder != null) {
+                Triple(matchingFolder.targetAlbumMode, matchingFolder.customAlbumName, matchingFolder.customAlbumNickname)
             } else {
-                val folders = settingsRepository.getFoldersForAccount(accountEmail)
-                val matchingFolder = folders.firstOrNull { f ->
-                    f.enabled && f.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE && (
-                        filePath.startsWith(f.path) || File(filePath).parentFile?.absolutePath == File(f.path).absolutePath
-                    )
-                }
-                if (matchingFolder != null) {
-                    Triple(matchingFolder.targetAlbumMode, matchingFolder.customAlbumName, matchingFolder.customAlbumNickname)
+                Triple(com.reiux.lumen.data.model.AlbumTargetMode.NONE, null, null)
+            }
+        }
+
+        if (albumMode == com.reiux.lumen.data.model.AlbumTargetMode.NONE) return
+
+        val rawTitle = when (albumMode) {
+            com.reiux.lumen.data.model.AlbumTargetMode.AUTO_FOLDER_NAME -> {
+                if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
+                    val currentMonth = java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(java.util.Date())
+                    "Uploads $currentMonth"
                 } else {
-                    Triple(com.reiux.lumen.data.model.AlbumTargetMode.NONE, null, null)
+                    val folders = settingsRepository.getFoldersForAccount(accountEmail)
+                    val f = folders.firstOrNull { filePath.startsWith(it.path) || File(filePath).parentFile?.absolutePath == File(it.path).absolutePath }
+                    f?.displayName ?: "Uploads"
                 }
             }
+            com.reiux.lumen.data.model.AlbumTargetMode.CUSTOM_NAME -> customName?.ifBlank { "Uploads" } ?: "Uploads"
+            else -> return
+        }
 
-            if (albumMode == com.reiux.lumen.data.model.AlbumTargetMode.NONE) return
+        val albumTitleOrKey = photosClient.resolveAlbumInput(rawTitle)
+        if (albumTitleOrKey.isBlank()) return
 
-            val rawTitle = when (albumMode) {
-                com.reiux.lumen.data.model.AlbumTargetMode.AUTO_FOLDER_NAME -> {
-                    if (item.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE) {
-                        val currentMonth = java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(java.util.Date())
-                        "Uploads $currentMonth"
-                    } else {
-                        val folders = settingsRepository.getFoldersForAccount(accountEmail)
-                        val f = folders.firstOrNull { filePath.startsWith(it.path) || File(filePath).parentFile?.absolutePath == File(it.path).absolutePath }
-                        f?.displayName ?: "Uploads"
-                    }
-                }
-                com.reiux.lumen.data.model.AlbumTargetMode.CUSTOM_NAME -> customName?.ifBlank { "Uploads" } ?: "Uploads"
-                else -> return
-            }
-
-            val albumTitleOrKey = photosClient.resolveAlbumInput(rawTitle)
-            if (albumTitleOrKey.isBlank()) return
-
-            val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
-            if (albumTitleOrKey.startsWith("AF1Qip") || keyRegex.matches(albumTitleOrKey)) {
-                LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to direct album key $albumTitleOrKey for account $accountEmail..." }
-                photosClient.addMediaToAlbum(token, albumTitleOrKey, listOf(mediaKey), opId = opId)
-                if (customNickname != null) {
-                    settingsRepository.saveAlbumMediaKey(accountEmail, customNickname, albumTitleOrKey)
-                }
-                return
-            }
-
-            var albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
-            if (albumMediaKey.isNullOrEmpty()) {
-                val lockKey = "$accountEmail:${albumTitleOrKey.lowercase().trim()}"
-                val mutex = albumCreationLocks.computeIfAbsent(lockKey) { Mutex() }
-                
-                mutex.withLock {
-                    albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
-                    if (albumMediaKey.isNullOrEmpty()) {
-                        val existingAlbums = try {
-                            photosClient.listAlbums(token, opId = opId)
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
-
-                        val matchedAlbum = existingAlbums.firstOrNull { it.title.equals(albumTitleOrKey, ignoreCase = true) }
-                        if (matchedAlbum != null) {
-                            LumenLogger.i("UploadEngine", opId = opId) { "Found existing Google Photos album '${matchedAlbum.title}' (${matchedAlbum.mediaKey}) for account $accountEmail" }
-                            val mKey = matchedAlbum.mediaKey
-                            albumMediaKey = mKey
-                            settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, mKey)
-                        } else {
-                            LumenLogger.i("UploadEngine", opId = opId) { "Creating new Google Photos album '$albumTitleOrKey' with initial mediaKey $mediaKey for account $accountEmail..." }
-                            val createdKey = photosClient.createAlbum(token, albumTitleOrKey, initialMediaKey = mediaKey, opId = opId)
-                            settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, createdKey)
-                            return
-                        }
-                    }
-                }
-            }
-
-            if (!albumMediaKey.isNullOrEmpty()) {
-                LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to existing album '$albumTitleOrKey' ($albumMediaKey)..." }
-                photosClient.addMediaToAlbum(token, albumMediaKey!!, listOf(mediaKey), opId = opId)
-            }
-        } catch (e: Exception) {
+        val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
+        
+        fun handle404(e: Exception) {
             val msg = e.message ?: ""
             if (msg.contains("404") || msg.contains("Requested entity was not found") || msg.contains("NOT_FOUND")) {
                 LumenLogger.e("UploadEngine", opId = opId) { "Target album no longer exists in Google Photos!" }
-                val rawTitle = item.customAlbumName ?: ""
                 if (rawTitle.isNotBlank()) {
                     settingsRepository.markAlbumMissing(accountEmail, rawTitle)
                 }
@@ -1005,7 +972,79 @@ class UploadRepository(
                 }
                 throw IOException("Target album no longer exists in Google Photos")
             }
-            LumenLogger.w("UploadEngine", opId = opId) { "Album assignment skipped or failed: ${e.message}" }
+        }
+
+        if (albumTitleOrKey.startsWith("AF1Qip") || keyRegex.matches(albumTitleOrKey)) {
+            LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to direct album key $albumTitleOrKey for account $accountEmail..." }
+            try {
+                photosClient.addMediaToAlbum(token, albumTitleOrKey, listOf(mediaKey), opId = opId)
+                if (customNickname != null) {
+                    settingsRepository.saveAlbumMediaKey(accountEmail, customNickname, albumTitleOrKey)
+                }
+            } catch (e: Exception) {
+                handle404(e)
+                throw e
+            }
+            return
+        }
+
+        var albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
+        if (albumMediaKey != null && !albumMediaKey.startsWith("AF1Qip") && !keyRegex.matches(albumMediaKey)) {
+            albumMediaKey = null
+        }
+
+        if (albumMediaKey.isNullOrEmpty()) {
+            val lockKey = "$accountEmail:${albumTitleOrKey.lowercase().trim()}"
+            val mutex = albumCreationLocks.computeIfAbsent(lockKey) { Mutex() }
+            
+            mutex.withLock {
+                albumMediaKey = settingsRepository.getAlbumMediaKey(accountEmail, albumTitleOrKey)
+                if (albumMediaKey != null && !albumMediaKey.startsWith("AF1Qip") && !keyRegex.matches(albumMediaKey)) {
+                    albumMediaKey = null
+                }
+
+                if (albumMediaKey.isNullOrEmpty()) {
+                    val existingAlbums = try {
+                        photosClient.listAlbums(token, opId = opId)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    val matchedAlbum = existingAlbums.firstOrNull { it.title.equals(albumTitleOrKey, ignoreCase = true) }
+                    if (matchedAlbum != null) {
+                        LumenLogger.i("UploadEngine", opId = opId) { "Found existing Google Photos album '${matchedAlbum.title}' (${matchedAlbum.mediaKey}) for account $accountEmail" }
+                        val mKey = matchedAlbum.mediaKey
+                        albumMediaKey = mKey
+                        settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, mKey)
+                        if (!customNickname.isNullOrBlank()) {
+                            settingsRepository.saveAlbumMediaKey(accountEmail, customNickname, mKey)
+                        }
+                    } else {
+                        LumenLogger.i("UploadEngine", opId = opId) { "Creating new Google Photos album '$albumTitleOrKey' with initial mediaKey $mediaKey for account $accountEmail..." }
+                        try {
+                            val createdKey = photosClient.createAlbum(token, albumTitleOrKey, initialMediaKey = mediaKey, opId = opId)
+                            settingsRepository.saveAlbumMediaKey(accountEmail, albumTitleOrKey, createdKey)
+                            if (!customNickname.isNullOrBlank()) {
+                                settingsRepository.saveAlbumMediaKey(accountEmail, customNickname, createdKey)
+                            }
+                            return
+                        } catch (createErr: Exception) {
+                            LumenLogger.e("UploadEngine", opId = opId, tr = createErr) { "Failed to create new album '$albumTitleOrKey': ${createErr.message}" }
+                            throw IOException("Failed to create new album in Google Photos")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!albumMediaKey.isNullOrEmpty()) {
+            LumenLogger.i("UploadEngine", opId = opId) { "Adding mediaKey $mediaKey to existing album '$albumTitleOrKey' ($albumMediaKey)..." }
+            try {
+                photosClient.addMediaToAlbum(token, albumMediaKey!!, listOf(mediaKey), opId = opId)
+            } catch (e: Exception) {
+                handle404(e)
+                throw e
+            }
         }
     }
 

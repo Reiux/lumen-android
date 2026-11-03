@@ -392,6 +392,27 @@ class RepositoryAndSecurityTest {
         assertEquals("some detail", block3?.rawDetail)
     }
 
+    @Test
+    fun testSettingsRepositoryRejectsInvalidAlbumMediaKeys() {
+        val dummyContext = DummyContext()
+        val fakePrefs = dummyContext.getSharedPreferences("lumen_settings", Context.MODE_PRIVATE) as FakeSharedPreferences
+        val repo = SettingsRepository(context = dummyContext, sharedPreferencesOverride = fakePrefs)
+
+        // Attempting to save album title as mediaKey should be rejected
+        repo.saveAlbumMediaKey("test@gmail.com", "My Vacation Album", "My Vacation Album")
+        assertNull(repo.getAlbumMediaKey("test@gmail.com", "My Vacation Album"))
+
+        // Direct write of corrupt key into prefs should be cleaned up and return null
+        fakePrefs.putDirect("album_key_test@gmail.com_corrupt_album", "Corrupt Album Title")
+        assertNull(repo.getAlbumMediaKey("test@gmail.com", "Corrupt Album"))
+        assertFalse(fakePrefs.contains("album_key_test@gmail.com_corrupt_album"))
+
+        // Saving valid AF1Qip media key should succeed
+        val validKey = "AF1QipRealAlbumMediaKey123"
+        repo.saveAlbumMediaKey("test@gmail.com", "My Vacation Album", validKey)
+        assertEquals(validKey, repo.getAlbumMediaKey("test@gmail.com", "My Vacation Album"))
+    }
+
     private class DummyContext : ContextWrapper(null) {
         private val prefsMap = mutableMapOf<String, FakeSharedPreferences>()
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
