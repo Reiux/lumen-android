@@ -4,7 +4,7 @@
 
 ![Downloads](https://img.shields.io/github/downloads/Reiux/lumen-android/total?style=for-the-badge)
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
-[![Android](https://img.shields.io/badge/android-14%20%7C%2015%20%7C%2016%20%7C%2017-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/Android-8.0%20or%20Later-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 
 <p align="center">
   <img src=".github/assets/banner.png" alt="Lumen Android Banner">
@@ -65,7 +65,7 @@ When you sign in, Google gives the app an **OAuth token**.
 
 ## Requirements
 
-- Android 8.0 or newer
+- Android 8.0 or Later
 - Google Account
 - Network connection (Wi-Fi or Mobile Data)
 
