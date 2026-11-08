@@ -72,24 +72,23 @@ class GoogleAuthClient(
                 "MissingDroidguard" -> "Google rejected device verification data."
                 else -> "Google authentication failed: $googleError"
             }
-            LumenLogger.w("Auth") { "exchangeOAuthToken error '$googleError': $body" }
+            LumenLogger.w("Auth") { "exchangeOAuthToken error '$googleError'" }
             throw IOException(userFriendlyMsg)
         }
 
         if (!response.isSuccessful) {
-            val errBody = body.take(300).replace("\n", " ")
             LumenLogger.w("Network") {
-                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms errBody='$errBody'"
+                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
             }
-            throw IOException("Google token exchange failed: HTTP ${response.code} ($errBody)")
+            throw IOException("Google token exchange failed: HTTP ${response.code}")
         }
 
         LumenLogger.d("Network") {
             "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
         }
 
-        val masterToken = parsed["Token"] ?: throw IOException("Google auth missing master Token. Response: $body")
-        val email = parsed["Email"] ?: throw IOException("Google auth missing Email. Response: $body")
+        val masterToken = parsed["Token"] ?: throw IOException("Google auth missing master Token")
+        val email = parsed["Email"] ?: throw IOException("Google auth missing Email")
 
         val credentialString = buildCredentialString(email, masterToken, androidId)
         GoogleAccount(
@@ -136,9 +135,8 @@ class GoogleAuthClient(
                 "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
             }
         } else {
-            val errBody = respBytes.decodeToString().take(500)
             LumenLogger.w("Network") {
-                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms errBody='$errBody'"
+                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
             }
             throw IOException("Failed to obtain Photos bearer token: HTTP ${response.code}")
         }
@@ -149,7 +147,7 @@ class GoogleAuthClient(
 
         if (!response.isSuccessful || !googleError.isNullOrEmpty()) {
             val errCode = response.code
-            val rawDetail = "HTTP $errCode: ${googleError ?: body.take(300)}"
+            val rawDetail = "HTTP $errCode: ${googleError ?: "Auth error"}"
             val kind = when (googleError) {
                 "NeedsBrowser", "NeedsVerification", "CaptchaRequired", "DeviceManagementRequired", "BadAuthentication", "NeedPermission", "TermsOfServiceNotAccepted" -> AuthFailureKind.SIGN_IN_REQUIRED
                 "AccountDisabled", "AccountDeleted", "ServiceDisabled", "AccessNotConfigured", "GoogleAccountDataDeletion", "AccountLocked" -> AuthFailureKind.ACCOUNT_RESTRICTED
@@ -159,7 +157,7 @@ class GoogleAuthClient(
             throw com.reiux.lumen.util.AuthFailureException(kind = kind, rawDetail = rawDetail)
         }
 
-        val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response: $body")
+        val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response")
         val expirySec = parsed["Expiry"]?.toLongOrNull() ?: (now + 3600)
 
         tokenCache[account.email] = CachedToken(bearerToken, expirySec)

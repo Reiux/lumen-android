@@ -110,17 +110,6 @@ fun DevDiagnosticsDialog(
 
     val testResults = remember { mutableStateListOf<DiagnosticTest>().apply { addAll(initialTests) } }
 
-    val dialogScale = remember { Animatable(0.88f) }
-    LaunchedEffect(Unit) {
-        dialogScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
-
     fun updateTest(id: String, state: TestState, details: String, durationMs: Long = 0L) {
         val index = testResults.indexOfFirst { it.id == id }
         if (index >= 0) {
@@ -242,13 +231,12 @@ fun DevDiagnosticsDialog(
         }
     }
 
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .widthIn(min = 360.dp, max = if (isWideLayout) 760.dp else 540.dp)
-            .padding(horizontal = 16.dp)
-            .scale(dialogScale.value),
+            .padding(horizontal = 16.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(

@@ -44,11 +44,13 @@ class SettingsRepository(
         val unlockedNewYr = prefs.getBoolean(KEY_UNLOCKED_NEWYR, false)
         val forcedSeason = prefs.getString(KEY_FORCED_SEASON, "NONE") ?: "NONE"
         val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+        val deleteAfterBackup = prefs.getBoolean(KEY_DELETE_AFTER_BACKUP, false)
+        val enableBlurEffects = prefs.getBoolean(KEY_ENABLE_BLUR_EFFECTS, true)
 
         val folders = getFoldersForAccount(null)
 
         LumenLogger.d("Storage") {
-            "Loaded settings: autoBackup=$autoBackup wifiOnly=$wifiOnly chargingOnly=$chargingOnly storageSaver=$storageSaver useQuota=$useQuota threads=$threads preset='$colorPreset' folders=${folders.size}"
+            "Loaded settings: autoBackup=$autoBackup wifiOnly=$wifiOnly chargingOnly=$chargingOnly storageSaver=$storageSaver useQuota=$useQuota threads=$threads preset='$colorPreset' folders=${folders.size} deleteAfterBackup=$deleteAfterBackup enableBlurEffects=$enableBlurEffects"
         }
 
         return BackupSettings(
@@ -71,6 +73,8 @@ class SettingsRepository(
             unlockedNewYrTheme = unlockedNewYr,
             forcedSeason = forcedSeason,
             autoCheckUpdates = autoCheckUpdates,
+            deleteAfterBackup = deleteAfterBackup,
+            enableBlurEffects = enableBlurEffects,
             folders = folders
         )
     }
@@ -81,6 +85,22 @@ class SettingsRepository(
         LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_AUTO_CHECK_UPDATES" }
         LumenLogger.i("Settings") { "autoCheckUpdates changed: old=$old -> new=$enabled" }
         _settings.value = _settings.value.copy(autoCheckUpdates = enabled)
+    }
+
+    fun updateDeleteAfterBackup(enabled: Boolean) {
+        val old = _settings.value.deleteAfterBackup
+        prefs.edit().putBoolean(KEY_DELETE_AFTER_BACKUP, enabled).apply()
+        LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_DELETE_AFTER_BACKUP" }
+        LumenLogger.i("Settings") { "deleteAfterBackup changed: old=$old -> new=$enabled" }
+        _settings.value = _settings.value.copy(deleteAfterBackup = enabled)
+    }
+
+    fun updateEnableBlurEffects(enabled: Boolean) {
+        val old = _settings.value.enableBlurEffects
+        prefs.edit().putBoolean(KEY_ENABLE_BLUR_EFFECTS, enabled).apply()
+        LumenLogger.d("Storage") { "SharedPreferences write key=$KEY_ENABLE_BLUR_EFFECTS" }
+        LumenLogger.i("Settings") { "enableBlurEffects changed: old=$old -> new=$enabled" }
+        _settings.value = _settings.value.copy(enableBlurEffects = enabled)
     }
 
     fun updateDeveloperMode(unlocked: Boolean) {
@@ -367,7 +387,12 @@ class SettingsRepository(
     fun toggleFolder(path: String, accountEmail: String?, enabled: Boolean) {
         val current = getAllFolders()
         val updated = current.map {
-            if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(enabled = enabled) else it
+            val matches = if (accountEmail.isNullOrBlank()) {
+                it.path == path
+            } else {
+                it.path == path && matchesAccount(it.accountEmail, accountEmail)
+            }
+            if (matches) it.copy(enabled = enabled) else it
         }
         saveFolders(updated)
     }
@@ -760,6 +785,8 @@ class SettingsRepository(
         private const val KEY_UNLOCKED_NEWYR = "unlocked_newyr_theme"
         private const val KEY_FORCED_SEASON = "forced_season"
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        private const val KEY_DELETE_AFTER_BACKUP = "delete_after_backup"
+        private const val KEY_ENABLE_BLUR_EFFECTS = "enable_blur_effects"
         private const val KEY_LAST_SEEN_DARK = "last_seen_dark"
         private const val KEY_BOLD_CHOICE_DATE = "last_bold_choice_date"
         private const val KEY_LIFETIME_UPLOADS = "lifetime_uploads"

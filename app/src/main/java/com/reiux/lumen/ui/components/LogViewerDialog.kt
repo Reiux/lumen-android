@@ -125,16 +125,22 @@ fun LogViewerDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp
-        ) {
+        PredictiveBackDialogContainer(onDismiss = onDismiss) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.96f)
+                    .fillMaxHeight(0.92f),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 6.dp
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -287,10 +293,11 @@ fun LogViewerDialog(
             }
         }
     }
+}
 
     if (showCrashReportDialog && crashLogFile != null) {
         val crashText = remember { crashLogFile.readText() }
-        AlertDialog(
+        PredictiveAlertDialog(
             onDismissRequest = { showCrashReportDialog = false },
             title = { Text("Last Session Crash Report", fontWeight = FontWeight.Bold) },
             text = {
@@ -1044,7 +1051,7 @@ private fun ShareReportDialog(
         return sb.toString()
     }
 
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Share Diagnostics Report", fontWeight = FontWeight.Bold) },
         text = {

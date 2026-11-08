@@ -9,16 +9,21 @@ import com.reiux.lumen.service.MediaContentJobService
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_LOCKED_BOOT_COMPLETED ||
-            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
-            action == "android.intent.action.QUICKBOOT_POWERON"
-        ) {
+        if (action in ALLOWED_ACTIONS) {
             val app = context.applicationContext as? LumenApplication ?: return
             if (app.settingsRepository.settings.value.autoBackupEnabled) {
                 MediaContentJobService.scheduleMediaWatcher(context)
                 app.checkAndEnqueueRecentMedia()
             }
         }
+    }
+
+    companion object {
+        private val ALLOWED_ACTIONS = setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            "android.intent.action.QUICKBOOT_POWERON"
+        )
     }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.ui.components.AccountPickerRow
 import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.AlbumTargetMode
 import java.text.SimpleDateFormat
@@ -49,37 +50,28 @@ import java.util.Locale
 @Composable
 fun ManualUploadDestinationDialog(
     itemCount: Int,
+    accounts: List<com.reiux.lumen.data.model.GoogleAccount> = emptyList(),
     activeAccount: com.reiux.lumen.data.model.GoogleAccount? = null,
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum>,
     onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> com.reiux.lumen.data.network.GoogleAlbum = { k, n, e -> com.reiux.lumen.data.network.GoogleAlbum(k, n, e) },
     onOpenAlbumManager: () -> Unit = {},
-    onConfirm: (targetAlbumMode: AlbumTargetMode, customAlbumName: String?, customAlbumNickname: String?) -> Unit,
+    onConfirm: (targetAlbumMode: AlbumTargetMode, customAlbumName: String?, customAlbumNickname: String?) -> Unit = { _, _, _ -> },
+    onConfirmWithAccount: ((targetAccount: com.reiux.lumen.data.model.GoogleAccount?, targetAlbumMode: AlbumTargetMode, customAlbumName: String?, customAlbumNickname: String?) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
+    var chosenAccount by remember(activeAccount, accounts) { mutableStateOf(activeAccount ?: accounts.firstOrNull()) }
     var albumChoice by remember { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
-
-    val dialogScale = remember { Animatable(0.88f) }
-    LaunchedEffect(Unit) {
-        dialogScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
 
     val currentMonth = remember {
         SimpleDateFormat("MMM yyyy", Locale.US).format(Date())
     }
 
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .widthIn(min = 320.dp, max = 480.dp)
-            .padding(horizontal = 16.dp)
-            .scale(dialogScale.value),
+            .padding(horizontal = 16.dp),
         title = {
             Column {
                 Text(
@@ -88,14 +80,12 @@ fun ManualUploadDestinationDialog(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                val accName = activeAccount?.displayName ?: activeAccount?.email
-                if (accName != null) {
-                    Text(
-                        text = "Saving to $accName",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                val accName = chosenAccount?.displayName ?: chosenAccount?.email
+                Text(
+                    text = if (accName != null && accounts.size <= 1) "Upload to Google Photos • $accName" else "Upload to Google Photos",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         },
         text = {
@@ -103,6 +93,23 @@ fun ManualUploadDestinationDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (accounts.size > 1) {
+                    Text(
+                        text = "Upload to Account",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    AccountPickerRow(
+                        accounts = accounts,
+                        selectedAccount = chosenAccount,
+                        onSelectAccount = {
+                            chosenAccount = it
+                            albumChoice = AlbumChoice.None
+                        }
+                    )
+                }
+
                 Text(
                     text = "Choose where these selected files should be saved in Google Photos:",
                     style = MaterialTheme.typography.bodyMedium,
@@ -113,7 +120,7 @@ fun ManualUploadDestinationDialog(
                     choice = albumChoice,
                     onChoiceSelected = { albumChoice = it },
                     savedAlbums = remoteAlbums,
-                    activeAccount = activeAccount,
+                    activeAccount = chosenAccount,
                     isManualUploadDialog = true,
                     currentMonthName = currentMonth,
                     onAddAlbum = onAddAlbum,
@@ -134,7 +141,12 @@ fun ManualUploadDestinationDialog(
                         android.widget.Toast.makeText(context, "No internet connection", android.widget.Toast.LENGTH_SHORT).show()
                         return@ExpressiveButton
                     }
-                    val activeEmail = activeAccount?.email
+                    val targetAcc = chosenAccount ?: activeAccount
+                    if (targetAcc == null) {
+                        android.widget.Toast.makeText(context, "No Google account connected. Please sign in first.", android.widget.Toast.LENGTH_LONG).show()
+                        return@ExpressiveButton
+                    }
+                    val activeEmail = targetAcc.email
                     val (mode, customName, customNickname) = when (val c = albumChoice) {
                         is AlbumChoice.None -> Triple(AlbumTargetMode.NONE, null, null)
                         is AlbumChoice.ByMonth -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
@@ -147,7 +159,11 @@ fun ManualUploadDestinationDialog(
                         }
                         else -> Triple(AlbumTargetMode.NONE, null, null)
                     }
-                    onConfirm(mode, customName, customNickname)
+                    if (onConfirmWithAccount != null) {
+                        onConfirmWithAccount(targetAcc, mode, customName, customNickname)
+                    } else {
+                        onConfirm(mode, customName, customNickname)
+                    }
                 },
                 enabled = isOnline
             ) {

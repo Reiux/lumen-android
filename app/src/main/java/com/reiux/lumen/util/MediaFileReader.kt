@@ -22,7 +22,8 @@ import java.util.ArrayDeque
 
 data class ScannedFile(
     val file: File,
-    val size: Long
+    val size: Long,
+    val originalFilePath: String? = null
 )
 
 data class ScanProgress(
@@ -436,6 +437,56 @@ object MediaFileReader {
         if (details.mediaStoreName != null && details.pickerSize != null && details.pickerSize > 0 && details.pickerSize == details.mediaStoreSize) {
             return details.mediaStoreName
         }
+        return null
+    }
+
+    fun resolveRealFilePathFromUri(context: Context, uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.path
+        }
+        if (uri.scheme != "content") return null
+
+        val id = uri.lastPathSegment?.toLongOrNull()
+        val projection = arrayOf(MediaStore.MediaColumns.DATA)
+
+        if (id != null) {
+            for (contentUri in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
+                try {
+                    context.contentResolver.query(
+                        contentUri,
+                        projection,
+                        "${MediaStore.MediaColumns._ID} = ?",
+                        arrayOf(id.toString()),
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                            if (idx >= 0) {
+                                val path = cursor.getString(idx)
+                                if (!path.isNullOrBlank() && File(path).exists()) {
+                                    return path
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        try {
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (idx >= 0) {
+                        val path = cursor.getString(idx)
+                        if (!path.isNullOrBlank() && File(path).exists()) {
+                            return path
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
         return null
     }
 

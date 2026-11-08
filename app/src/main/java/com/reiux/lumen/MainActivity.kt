@@ -1,6 +1,7 @@
 package com.reiux.lumen
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -41,22 +42,28 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.reiux.lumen.ui.MainViewModel
 import com.reiux.lumen.ui.components.ColdStartSplashScreen
 import com.reiux.lumen.ui.components.DevDiagnosticsDialog
 import com.reiux.lumen.ui.components.ExpressiveNavBar
 import com.reiux.lumen.ui.components.ExpressiveNavRail
+import com.reiux.lumen.ui.components.LocalBlurEffectsEnabled
 import com.reiux.lumen.ui.components.NavDestination
+import com.reiux.lumen.ui.components.PredictiveBackScreenContainer
 import com.reiux.lumen.ui.screens.AboutScreen
 import com.reiux.lumen.ui.screens.AccountsScreen
 import com.reiux.lumen.ui.screens.AlbumsScreen
@@ -70,6 +77,7 @@ import com.reiux.lumen.ui.theme.LumenTheme
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+    private val incomingShareUris = mutableStateOf<List<android.net.Uri>?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -77,9 +85,49 @@ class MainActivity : ComponentActivity() {
         com.reiux.lumen.util.LumenLogger.i("Permissions", "Permission results: $results")
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+
+        val extracted = mutableListOf<android.net.Uri>()
+        if (action == Intent.ACTION_SEND) {
+            val streamUri = androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            if (streamUri != null) {
+                extracted.add(streamUri)
+            } else if (intent.data != null) {
+                extracted.add(intent.data!!)
+            }
+        } else if (action == Intent.ACTION_SEND_MULTIPLE) {
+            val streamUris = androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            if (!streamUris.isNullOrEmpty()) {
+                extracted.addAll(streamUris)
+            }
+        }
+        if (extracted.isEmpty() && intent.clipData != null) {
+            val clipData = intent.clipData!!
+            for (i in 0 until clipData.itemCount) {
+                val itemUri = clipData.getItemAt(i).uri
+                if (itemUri != null) extracted.add(itemUri)
+            }
+        }
+
+        if (extracted.isNotEmpty()) {
+            com.reiux.lumen.util.LumenLogger.i("ShareTarget") { "Received ${extracted.size} shared media URIs via share sheet" }
+            incomingShareUris.value = extracted
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        handleShareIntent(intent)
         val isRestored = savedInstanceState != null
         com.reiux.lumen.util.LumenLogger.i("AppLifecycle") {
             "MainActivity onCreate (SDK ${Build.VERSION.SDK_INT}, processRestore=$isRestored)"
@@ -98,6 +146,18 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
         }
+
+        // Release legacy SAF persisted URI permissions to clean up App Info external storage grants
+        try {
+            contentResolver.persistedUriPermissions.forEach { perm ->
+                try {
+                    contentResolver.releasePersistableUriPermission(
+                        perm.uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
 
         setContent {
             val settings by viewModel.settings.collectAsState()
@@ -132,19 +192,13 @@ class MainActivity : ComponentActivity() {
                 colorPreset = settings.colorPreset,
                 activeSeason = activeSeason
             ) {
-                var showDevDiagnostics by remember { mutableStateOf(false) }
+                CompositionLocalProvider(
+                    LocalBlurEffectsEnabled provides settings.enableBlurEffects
+                ) {
+                    var showDevDiagnostics by remember { mutableStateOf(false) }
                 var showAboutScreen by remember { mutableStateOf(false) }
                 var showAlbumsScreen by remember { mutableStateOf(false) }
-
-                BackHandler(enabled = showAboutScreen) {
-                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back pressed: Exiting About screen" }
-                    showAboutScreen = false
-                }
-
-                BackHandler(enabled = showAlbumsScreen) {
-                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back pressed: Exiting Album Manager screen" }
-                    showAlbumsScreen = false
-                }
+                var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
 
                 val selectedDestination by viewModel.selectedDestination.collectAsState()
                 val selectedAccount by viewModel.selectedAccount.collectAsState()
@@ -290,6 +344,7 @@ class MainActivity : ComponentActivity() {
                             onClearError = { viewModel.clearAddAccountError() },
                             isAddingAccount = isAddingAccount,
                             addAccountError = addAccountError,
+                            isUploading = isUploading,
                             hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
                             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                             modifier = screenModifier
@@ -297,14 +352,11 @@ class MainActivity : ComponentActivity() {
 
                         NavDestination.SETTINGS -> SettingsScreen(
                             settings = settings,
+                            isUploading = isUploading,
                             isMockMode = isMockMode,
                             isShowcaseMode = isShowcaseMode,
-                            simulateOffline = viewModel.simulateOffline.collectAsState().value,
-                            simulateMissingAlbum = remoteAlbums.any { it.isMissing },
                             onToggleMockMode = { viewModel.toggleMockMode() },
                             onToggleShowcaseMode = { viewModel.toggleShowcaseMode() },
-                            onToggleSimulateOffline = { viewModel.toggleSimulateOffline() },
-                            onToggleSimulateMissingAlbum = { viewModel.toggleSimulateMissingAlbum() },
                             onUpdateAutoBackup = { viewModel.updateAutoBackup(it) },
                             onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
                             onUpdateChargingOnly = { viewModel.updateChargingOnly(it) },
@@ -313,6 +365,8 @@ class MainActivity : ComponentActivity() {
                             onUpdateUploadThreads = { viewModel.updateUploadThreads(it) },
                             onUpdateColorPreset = { viewModel.updateColorPreset(it) },
                             onUpdateNotifications = { viewModel.updateNotifications(it) },
+                            onUpdateDeleteAfterBackup = { viewModel.updateDeleteAfterBackup(it) },
+                            onUpdateEnableBlurEffects = { viewModel.updateEnableBlurEffects(it) },
                             onUpdateAutoCheckUpdates = { viewModel.setAutoCheckUpdates(it) },
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
                             onUpdateForcedSeason = { viewModel.updateForcedSeason(it) },
@@ -346,72 +400,42 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AnimatedContent(
-                        targetState = settings.hasCompletedOnboarding,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        label = "onboardingMainTransition"
-                    ) { hasCompleted ->
-                        if (!hasCompleted) {
-                            OnboardingScreen(
-                                viewModel = viewModel,
-                                onFinish = {
-                                    viewModel.setHasCompletedOnboarding(true)
-                                }
+                    val underlyingBlurDp = if (settings.enableBlurEffects) (predictiveBackProgress * 20).dp else 0.dp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (underlyingBlurDp > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    Modifier.blur(underlyingBlurDp)
+                                } else Modifier
                             )
-                        } else {
-                            if (!useNavRail) {
-                                Scaffold(
-                                    modifier = Modifier.fillMaxSize(),
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    bottomBar = {
-                                        ExpressiveNavBar(
-                                            selectedDestination = selectedDestination,
-                                            onDestinationSelected = {
-                                                viewModel.selectDestination(it)
-                                            }
-                                        )
+                    ) {
+                        AnimatedContent(
+                            targetState = settings.hasCompletedOnboarding,
+                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            label = "onboardingMainTransition"
+                        ) { hasCompleted ->
+                            if (!hasCompleted) {
+                                OnboardingScreen(
+                                    viewModel = viewModel,
+                                    onFinish = {
+                                        viewModel.setHasCompletedOnboarding(true)
                                     }
-                                ) { innerPadding ->
-                                    AnimatedContent(
-                                        targetState = selectedDestination,
-                                        transitionSpec = {
-                                            (fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)) +
-                                                    scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)))
-                                                .togetherWith(
-                                                    fadeOut(animationSpec = spring(stiffness = 1600f)) +
-                                                            scaleOut(targetScale = 0.97f, animationSpec = spring(stiffness = 1600f))
-                                                )
-                                        },
-                                        label = "screenTransition",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(innerPadding)
-                                    ) { destination ->
-                                        ScreenContent(destination)
-                                    }
-                                }
+                                )
                             } else {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(MaterialTheme.colorScheme.surface)
-                                ) {
-                                    ExpressiveNavRail(
-                                        selectedDestination = selectedDestination,
-                                        onDestinationSelected = {
-                                            viewModel.selectDestination(it)
-                                        }
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .windowInsetsPadding(
-                                                WindowInsets.safeDrawing.only(
-                                                    WindowInsetsSides.End + WindowInsetsSides.Vertical
-                                                )
+                                if (!useNavRail) {
+                                    Scaffold(
+                                        modifier = Modifier.fillMaxSize(),
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        bottomBar = {
+                                            ExpressiveNavBar(
+                                                selectedDestination = selectedDestination,
+                                                onDestinationSelected = {
+                                                    viewModel.selectDestination(it)
+                                                }
                                             )
-                                    ) {
+                                        }
+                                    ) { innerPadding ->
                                         AnimatedContent(
                                             targetState = selectedDestination,
                                             transitionSpec = {
@@ -423,9 +447,50 @@ class MainActivity : ComponentActivity() {
                                                     )
                                             },
                                             label = "screenTransition",
-                                            modifier = Modifier.fillMaxSize()
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(innerPadding)
                                         ) { destination ->
                                             ScreenContent(destination)
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        ExpressiveNavRail(
+                                            selectedDestination = selectedDestination,
+                                            onDestinationSelected = {
+                                                viewModel.selectDestination(it)
+                                            }
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .windowInsetsPadding(
+                                                    WindowInsets.safeDrawing.only(
+                                                        WindowInsetsSides.End + WindowInsetsSides.Vertical
+                                                    )
+                                                )
+                                        ) {
+                                            AnimatedContent(
+                                                targetState = selectedDestination,
+                                                transitionSpec = {
+                                                    (fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)) +
+                                                            scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)))
+                                                        .togetherWith(
+                                                            fadeOut(animationSpec = spring(stiffness = 1600f)) +
+                                                                    scaleOut(targetScale = 0.97f, animationSpec = spring(stiffness = 1600f))
+                                                        )
+                                                },
+                                                label = "screenTransition",
+                                                modifier = Modifier.fillMaxSize()
+                                            ) { destination ->
+                                                ScreenContent(destination)
+                                            }
                                         }
                                     }
                                 }
@@ -466,30 +531,41 @@ class MainActivity : ComponentActivity() {
                             animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
                         ) + fadeOut(animationSpec = tween(180))
                     ) {
-                        AboutScreen(
-                            saveLogsEnabled = settings.saveLogsEnabled,
-                            onToggleSaveLogs = { viewModel.updateSaveLogs(it, this@MainActivity) },
-                            selectedAccount = selectedAccount,
-                            settings = settings,
-                            developerModeUnlocked = settings.developerModeUnlocked,
-                            unlockedPrismTheme = settings.unlockedPrismTheme,
-                            onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
-                            onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
-                            onUnlockMatrixTheme = { viewModel.unlockMatrixTheme() },
-                            forcedSeason = settings.forcedSeason,
-                            onCheckForUpdates = {
-                                viewModel.checkAndShowUpdate(this@MainActivity, forceShow = false) {
-                                    android.widget.Toast.makeText(this@MainActivity, "Lumen is up to date", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onForceUpdateDialog = {
-                                viewModel.checkAndShowUpdate(this@MainActivity, forceShow = true) {}
-                            },
-                            onNavigateBack = {
-                                com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting About screen" }
+                        PredictiveBackScreenContainer(
+                            enabled = showAboutScreen,
+                            onProgressUpdate = { predictiveBackProgress = it },
+                            onDismiss = {
+                                predictiveBackProgress = 0f
+                                com.reiux.lumen.util.LumenLogger.i("Navigation") { "Predictive back: Exiting About screen" }
                                 showAboutScreen = false
                             }
-                        )
+                        ) {
+                            AboutScreen(
+                                saveLogsEnabled = settings.saveLogsEnabled,
+                                onToggleSaveLogs = { viewModel.updateSaveLogs(it, this@MainActivity) },
+                                selectedAccount = selectedAccount,
+                                settings = settings,
+                                developerModeUnlocked = settings.developerModeUnlocked,
+                                unlockedPrismTheme = settings.unlockedPrismTheme,
+                                onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
+                                onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
+                                onUnlockMatrixTheme = { viewModel.unlockMatrixTheme() },
+                                forcedSeason = settings.forcedSeason,
+                                onCheckForUpdates = {
+                                    viewModel.checkAndShowUpdate(this@MainActivity, forceShow = false) {
+                                        android.widget.Toast.makeText(this@MainActivity, "Lumen is up to date", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onForceUpdateDialog = {
+                                    viewModel.checkAndShowUpdate(this@MainActivity, forceShow = true) {}
+                                },
+                                onNavigateBack = {
+                                    predictiveBackProgress = 0f
+                                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting About screen" }
+                                    showAboutScreen = false
+                                }
+                            )
+                        }
                     }
 
                     AnimatedVisibility(
@@ -503,14 +579,28 @@ class MainActivity : ComponentActivity() {
                             animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
                         ) + fadeOut(animationSpec = tween(180))
                     ) {
-                        AlbumsScreen(
-                            albums = remoteAlbums,
-                            accounts = accounts,
-                            activeAccount = selectedAccount,
-                            onBack = { showAlbumsScreen = false },
-                            onRemoveAlbum = { album -> viewModel.removeAlbum(album) },
-                            onAddAlbum = { keyOrUrl, nickname, targetEmail -> viewModel.addAlbum(keyOrUrl, nickname, targetEmail) }
-                        )
+                        PredictiveBackScreenContainer(
+                            enabled = showAlbumsScreen,
+                            onProgressUpdate = { predictiveBackProgress = it },
+                            onDismiss = {
+                                predictiveBackProgress = 0f
+                                com.reiux.lumen.util.LumenLogger.i("Navigation") { "Predictive back: Exiting Album Manager screen" }
+                                showAlbumsScreen = false
+                            }
+                        ) {
+                            AlbumsScreen(
+                                albums = remoteAlbums,
+                                accounts = accounts,
+                                activeAccount = selectedAccount,
+                                onBack = {
+                                    predictiveBackProgress = 0f
+                                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting Album Manager screen" }
+                                    showAlbumsScreen = false
+                                },
+                                onRemoveAlbum = { album -> viewModel.removeAlbum(album) },
+                                onAddAlbum = { keyOrUrl, nickname, targetEmail -> viewModel.addAlbum(keyOrUrl, nickname, targetEmail) }
+                            )
+                        }
                     }
 
                     if (showDevDiagnostics) {
@@ -521,8 +611,38 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    val sharedUris by incomingShareUris
+                    if (!sharedUris.isNullOrEmpty()) {
+                        val urisToUpload = sharedUris!!
+                        com.reiux.lumen.ui.components.ManualUploadDestinationDialog(
+                            itemCount = urisToUpload.size,
+                            accounts = accounts,
+                            activeAccount = selectedAccount,
+                            remoteAlbums = remoteAlbums,
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onOpenAlbumManager = { showAlbumsScreen = true },
+                            onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
+                                viewModel.uploadSelectedUris(
+                                    uris = urisToUpload,
+                                    context = this@MainActivity,
+                                    targetAlbumMode = albumMode,
+                                    customAlbumName = customName,
+                                    customAlbumNickname = customNickname,
+                                    targetAccount = targetAccount
+                                )
+                                incomingShareUris.value = null
+                                intent?.action = null
+                            },
+                            onDismiss = {
+                                incomingShareUris.value = null
+                                intent?.action = null
+                            }
+                        )
+                    }
+
                     com.reiux.lumen.ui.components.FallingSnowOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.CHRISTMAS)
                     com.reiux.lumen.ui.components.FlyingBatOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.HALLOWEEN)
+                }
                 }
             }
         }

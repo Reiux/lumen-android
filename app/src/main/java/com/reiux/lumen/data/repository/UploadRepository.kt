@@ -102,6 +102,8 @@ class UploadRepository(
     private var speedTickerJob: Job? = null
     private val speedTracker = UploadSpeedTracker()
     private val albumCreationLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    private val remoteDedupMutex = Mutex()
+    private var lastRemoteDedupTime = 0L
 
     init {
         scope.launch {
@@ -185,7 +187,7 @@ class UploadRepository(
     }
 
     fun triggerAccountBlock(email: String, kind: AuthFailureKind, rawDetail: String? = null, retryAfterSec: Long? = null) {
-        val retryAfterTs = if (retryAfterSec != null) System.currentTimeMillis() + (retryAfterSec * 1000L) else if (kind == AuthFailureKind.RATE_LIMITED) System.currentTimeMillis() + (900 * 1000L) else null
+        val retryAfterTs = if (retryAfterSec != null) System.currentTimeMillis() + (retryAfterSec * 1000L) else if (kind == AuthFailureKind.RATE_LIMITED) System.currentTimeMillis() + (30 * 1000L) else null
         val block = AccountBlock(
             kind = kind,
             timestamp = System.currentTimeMillis(),
@@ -293,9 +295,12 @@ class UploadRepository(
         useQuota: Boolean = false,
         targetAlbumMode: com.reiux.lumen.data.model.AlbumTargetMode = com.reiux.lumen.data.model.AlbumTargetMode.NONE,
         customAlbumName: String? = null,
-        customAlbumNickname: String? = null
+        customAlbumNickname: String? = null,
+        originalFilePaths: List<String?>? = null
     ) {
-        val scanned = files.map { ScannedFile(it, it.length()) }
+        val scanned = files.mapIndexed { index, file ->
+            ScannedFile(file, file.length(), originalFilePaths?.getOrNull(index) ?: file.absolutePath)
+        }
         enqueueScannedFiles(scanned, account, storageSaver, useQuota, targetAlbumMode, customAlbumName, customAlbumNickname)
     }
 
@@ -310,7 +315,7 @@ class UploadRepository(
     ) {
         if (scannedFiles.isEmpty()) return
 
-        val activePaths = _queue.value
+        val activeKeys = _queue.value
             .filter {
                 it.status == UploadStatus.QUEUED ||
                 it.status == UploadStatus.HASHING ||
@@ -318,12 +323,12 @@ class UploadRepository(
                 it.status == UploadStatus.UPLOADING ||
                 it.status == UploadStatus.COMMITTING
             }
-            .map { it.filePath }
+            .map { "${it.accountEmail ?: account.email}:${it.filePath}" }
             .toSet()
 
-        val uniqueFiles = scannedFiles.filter { it.file.absolutePath !in activePaths }
+        val uniqueFiles = scannedFiles.filter { "${account.email}:${it.file.absolutePath}" !in activeKeys }
         if (uniqueFiles.isNotEmpty()) {
-            val pathsToEnqueue = uniqueFiles.map { it.file.absolutePath }.toSet()
+            val keysToEnqueue = uniqueFiles.map { "${account.email}:${it.file.absolutePath}" }.toSet()
 
             val newItems = uniqueFiles.map { sf ->
                 UploadItem(
@@ -335,17 +340,18 @@ class UploadRepository(
                     targetAlbumMode = targetAlbumMode,
                     customAlbumName = customAlbumName,
                     customAlbumNickname = customAlbumNickname,
-                    accountEmail = account.email
+                    accountEmail = account.email,
+                    originalFilePath = sf.originalFilePath ?: sf.file.absolutePath
                 )
             }
 
             val totalBytes = newItems.sumOf { it.fileSize }
             LumenLogger.i("UploadEngine") {
-                "Enqueued ${newItems.size} files (${totalBytes / (1024 * 1024)}MB total). Total queue size: ${_queue.value.size + newItems.size}"
+                "Enqueued ${newItems.size} files for ${LumenLogger.redact(account.email)} (${totalBytes / (1024 * 1024)}MB total). Total queue size: ${_queue.value.size + newItems.size}"
             }
 
             synchronized(_queue) {
-                val remainingQueue = _queue.value.filter { it.filePath !in pathsToEnqueue }
+                val remainingQueue = _queue.value.filter { "${it.accountEmail ?: account.email}:${it.filePath}" !in keysToEnqueue }
                 val updatedQueue = remainingQueue.toMutableList()
 
                 // Chunk enqueue in batches of 500 for UI responsiveness
@@ -456,21 +462,6 @@ class UploadRepository(
     }
 
     private suspend fun processQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean) {
-        val bearerToken = try {
-            authClient.getBearerToken(account)
-        } catch (e: Exception) {
-            LumenLogger.e("UploadEngine", tr = e) {
-                "Authentication token retrieval failed for ${LumenLogger.redact(account.email)}: ${e.message}"
-            }
-            synchronized(_queue) {
-                _queue.value = _queue.value.map {
-                    if (it.status == UploadStatus.QUEUED) it.copy(status = UploadStatus.FAILED, error = "Authentication failed: ${e.message}") else it
-                }
-                _currentUploadingItem.value = getActiveUploadingItem()
-            }
-            return
-        }
-
         val concurrency = settingsRepository.settings.value.uploadThreads.coerceIn(1, 20)
         LumenLogger.i("UploadEngine") { "processQueue started with $concurrency concurrent worker threads" }
 
@@ -481,7 +472,9 @@ class UploadRepository(
                         // Atomically claim the next QUEUED item and immediately mark it HASHING
                         var queueRemaining = 0
                         val nextItem = synchronized(_queue) {
-                            val item = _queue.value.firstOrNull { it.status == UploadStatus.QUEUED }
+                            val item = _queue.value.firstOrNull {
+                                it.status == UploadStatus.QUEUED && getAccountBlock(it.accountEmail ?: account.email) == null
+                            }
                             if (item != null) {
                                 _queue.value = _queue.value.map {
                                     if (it.id == item.id) it.copy(status = UploadStatus.HASHING) else it
@@ -652,23 +645,31 @@ class UploadRepository(
             }
 
             val remoteCheckStart = System.currentTimeMillis()
-            val existingMediaKey = try {
-                photosClient.findRemoteMediaByHash(bearerToken, sha1Result.bytes, opId)
-            } catch (e: com.reiux.lumen.util.AuthFailureException) {
-                if (e.kind == AuthFailureKind.TOKEN_EXPIRED) {
-                    authClient.invalidateCache(accountEmail)
-                    val freshToken = tokenProvider()
-                    photosClient.findRemoteMediaByHash(freshToken, sha1Result.bytes, opId)
-                } else if (e.kind == AuthFailureKind.SIGN_IN_REQUIRED || e.kind == AuthFailureKind.ACCOUNT_RESTRICTED || e.kind == AuthFailureKind.RATE_LIMITED) {
-                    triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
-                    throw e
-                } else null
-            } catch (e: Exception) {
-                val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
-                LumenLogger.w("UploadEngine", opId = opId, tr = e) {
-                    "Remote dedup check network error durationMs=$remoteCheckDuration: ${e.message}"
+            val existingMediaKey = remoteDedupMutex.withLock {
+                val elapsed = System.currentTimeMillis() - lastRemoteDedupTime
+                if (elapsed < 60) {
+                    delay(60 - elapsed)
                 }
-                null
+                lastRemoteDedupTime = System.currentTimeMillis()
+
+                try {
+                    photosClient.findRemoteMediaByHash(bearerToken, sha1Result.bytes, opId)
+                } catch (e: com.reiux.lumen.util.AuthFailureException) {
+                    if (e.kind == AuthFailureKind.TOKEN_EXPIRED) {
+                        authClient.invalidateCache(accountEmail)
+                        val freshToken = tokenProvider()
+                        photosClient.findRemoteMediaByHash(freshToken, sha1Result.bytes, opId)
+                    } else if (e.kind == AuthFailureKind.SIGN_IN_REQUIRED || e.kind == AuthFailureKind.ACCOUNT_RESTRICTED || e.kind == AuthFailureKind.RATE_LIMITED) {
+                        triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
+                        throw e
+                    } else null
+                } catch (e: Exception) {
+                    val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
+                    LumenLogger.w("UploadEngine", opId = opId, tr = e) {
+                        "Remote dedup check network error durationMs=$remoteCheckDuration: ${e.message}"
+                    }
+                    null
+                }
             }
             val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
 
@@ -727,6 +728,7 @@ class UploadRepository(
                                 mtime = file.lastModified() / 1000
                             )
                             updateItemCompleted(item.id, retryCheckKey, isSkipped = false)
+                            handlePostBackupDeletion(item, file, opId)
                             return
                         }
                     }
@@ -812,6 +814,7 @@ class UploadRepository(
                         "Upload SUCCESS mediaKey=$mediaKey totalDurationMs=$totalDuration attempts=$currentAttempt"
                     }
                     updateItemCompleted(item.id, mediaKey, isSkipped = false)
+                    handlePostBackupDeletion(item, file, opId)
 
                     val (_, milestoneTriggered) = settingsRepository.recordRealUploads(1)
                     if (milestoneTriggered != null) {
@@ -847,6 +850,7 @@ class UploadRepository(
                                 mtime = file.lastModified() / 1000
                             )
                             updateItemCompleted(item.id, postCommitKey, isSkipped = false)
+                            handlePostBackupDeletion(item, file, opId)
                             return
                         }
                     }
@@ -863,6 +867,7 @@ class UploadRepository(
                                     val mediaKey = photosClient.commitUpload(freshToken, commitToken, item.fileName, sha1Result.bytes, file.lastModified() / 1000, storageSaver, useQuota, opId)
 
                                     updateItemCompleted(item.id, mediaKey, isSkipped = false)
+                                    handlePostBackupDeletion(item, file, opId)
                                     return
                                 } catch (retryErr: Exception) {
                                     LumenLogger.e("UploadEngine", opId = opId, tr = retryErr) { "Token refresh retry failed: ${retryErr.message}" }
@@ -1091,6 +1096,42 @@ class UploadRepository(
                 if (it.id == id) it.copy(status = UploadStatus.FAILED, error = error) else it
             }
             _currentUploadingItem.value = getActiveUploadingItem()
+        }
+    }
+
+    private fun handlePostBackupDeletion(item: UploadItem, file: File, opId: String) {
+        // Clean up temporary staging cache copy if this item was staged
+        if (file.absolutePath.contains("/cache/staging/")) {
+            try {
+                file.delete()
+            } catch (_: Exception) {}
+        }
+
+        if (settingsRepository.settings.value.deleteAfterBackup) {
+            val targetPath = item.originalFilePath ?: item.filePath
+            val targetFile = File(targetPath)
+            if (targetFile.exists() && !targetFile.absolutePath.contains("/cache/staging/")) {
+                try {
+                    val deleted = targetFile.delete()
+                    LumenLogger.i("UploadEngine", opId = opId) {
+                        "Post-backup original file deletion: path=$targetPath deleted=$deleted"
+                    }
+                    if (deleted) {
+                        try {
+                            android.media.MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(targetPath),
+                                null,
+                                null
+                            )
+                        } catch (_: Exception) {}
+                    }
+                } catch (delEx: Exception) {
+                    LumenLogger.w("UploadEngine", opId = opId, tr = delEx) {
+                        "Failed to delete original file after backup: $targetPath"
+                    }
+                }
+            }
         }
     }
 

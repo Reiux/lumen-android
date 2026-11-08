@@ -24,8 +24,7 @@ fun AllFilesPermissionDialog(
     onConfirm: () -> Unit = {}
 ) {
     val context = LocalContext.current
-
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(

@@ -11,6 +11,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,6 +121,7 @@ fun OnboardingScreen(
 
     var showSignInWebView by remember { mutableStateOf(false) }
     var showManualTokenDialog by remember { mutableStateOf(false) }
+    var showAddAccountDialog by remember { mutableStateOf(false) }
 
     // Dynamic permission states
     var hasMediaPermission by remember { mutableStateOf(checkMediaPermission(context)) }
@@ -178,6 +180,25 @@ fun OnboardingScreen(
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             isManualOnly = true,
+            hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+            onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() }
+        )
+    }
+
+    if (showAddAccountDialog) {
+        AddAccountDialog(
+            onDismiss = { showAddAccountDialog = false },
+            onSubmitToken = { token ->
+                viewModel.addAccountWithToken(token)
+                showAddAccountDialog = false
+            },
+            onSubmitCredential = { credential ->
+                viewModel.addAccountWithCredential(credential)
+                showAddAccountDialog = false
+            },
+            isLoading = isAddingAccount,
+            errorMessage = addAccountError,
+            isManualOnly = false,
             hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() }
         )
@@ -311,12 +332,13 @@ fun OnboardingScreen(
                                 onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                                 onOpenSignIn = { showSignInWebView = true },
                                 onOpenManual = { showManualTokenDialog = true },
+                                onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
                                 isTwoPane = true
                             )
                             3 -> OnboardingFoldersPage(
                                 folders = settings.folders,
-                                onToggleFolder = { path, enabled ->
-                                    viewModel.toggleFolder(path, enabled)
+                                onToggleFolder = { folder, enabled ->
+                                    viewModel.toggleFolder(folder.path, folder.accountEmail ?: selectedAccount?.email, enabled)
                                 },
                                 isTwoPane = true
                             )
@@ -432,12 +454,13 @@ fun OnboardingScreen(
                             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                             onOpenSignIn = { showSignInWebView = true },
                             onOpenManual = { showManualTokenDialog = true },
+                            onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
                             isTwoPane = false
                         )
                         3 -> OnboardingFoldersPage(
                             folders = settings.folders,
-                            onToggleFolder = { path, enabled ->
-                                viewModel.toggleFolder(path, enabled)
+                            onToggleFolder = { folder, enabled ->
+                                viewModel.toggleFolder(folder.path, folder.accountEmail ?: selectedAccount?.email, enabled)
                             },
                             isTwoPane = false
                         )
@@ -576,15 +599,7 @@ private fun OnboardingStepLeftHeader(page: Int) {
     ) {
         when (page) {
             0 -> {
-                Surface(
-                    modifier = Modifier.size(80.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        com.reiux.lumen.ui.components.DynamicLumenIcon(size = 52.dp)
-                    }
-                }
+                com.reiux.lumen.ui.components.DynamicLumenIcon(size = 68.dp)
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
                     text = "Welcome to Lumen",
@@ -797,15 +812,7 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
         if (!isTwoPane) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                modifier = Modifier.size(96.dp),
-                shape = RoundedCornerShape(32.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    com.reiux.lumen.ui.components.DynamicLumenIcon(size = 64.dp)
-                }
-            }
+            com.reiux.lumen.ui.components.DynamicLumenIcon(size = 84.dp)
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -1066,6 +1073,7 @@ private fun OnboardingAccountPage(
     onAcknowledgeRisk: () -> Unit,
     onOpenSignIn: () -> Unit,
     onOpenManual: () -> Unit,
+    onOpenSwitchOrAddAccount: () -> Unit = onOpenSignIn,
     isTwoPane: Boolean = false
 ) {
     var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
@@ -1136,20 +1144,10 @@ private fun OnboardingAccountPage(
                     modifier = Modifier.padding(18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = selectedAccount.email.take(1).uppercase(),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
+                    com.reiux.lumen.ui.components.AccountAvatar(
+                        account = selectedAccount,
+                        size = 48.dp
+                    )
 
                     Spacer(modifier = Modifier.width(16.dp))
 
@@ -1195,7 +1193,7 @@ private fun OnboardingAccountPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            TextButton(onClick = onOpenSignIn) {
+            TextButton(onClick = onOpenSwitchOrAddAccount) {
                 Text("Switch or Add Another Account")
             }
         } else {
@@ -1234,7 +1232,7 @@ private fun OnboardingAccountPage(
 @Composable
 private fun OnboardingFoldersPage(
     folders: List<com.reiux.lumen.data.model.BackupFolder>,
-    onToggleFolder: (String, Boolean) -> Unit,
+    onToggleFolder: (com.reiux.lumen.data.model.BackupFolder, Boolean) -> Unit,
     isTwoPane: Boolean = false
 ) {
     Column(
@@ -1293,6 +1291,8 @@ private fun OnboardingFoldersPage(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onToggleFolder(folder, !folder.enabled) }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1332,7 +1332,7 @@ private fun OnboardingFoldersPage(
 
                         ExpressiveSwitch(
                             checked = folder.enabled,
-                            onCheckedChange = { onToggleFolder(folder.path, it) }
+                            onCheckedChange = { onToggleFolder(folder, it) }
                         )
                     }
                 }

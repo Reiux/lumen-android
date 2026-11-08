@@ -502,7 +502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val info = _updateInfo.value ?: return
         viewModelScope.launch {
             _updateDownloadProgress.value = 0
-            val destFile = File(context.cacheDir, "lumen_update_${info.versionName}.apk")
+            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+            val destFile = File(updatesDir, "lumen_update_${info.versionName}.apk")
             try {
                 com.reiux.lumen.data.repository.UpdateRepository().downloadUpdate(info.downloadUrl, destFile).collect { p ->
                     _updateDownloadProgress.value = p
@@ -899,9 +900,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         context: Context,
         targetAlbumMode: AlbumTargetMode = AlbumTargetMode.NONE,
         customAlbumName: String? = null,
-        customAlbumNickname: String? = null
+        customAlbumNickname: String? = null,
+        targetAccount: GoogleAccount? = null
     ) {
-        val account = selectedAccount.value
+        val account = targetAccount ?: selectedAccount.value
         if (account == null) {
             LumenLogger.w("BackupUI", "Cannot upload selected URIs: No account selected")
             return
@@ -919,15 +921,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 withContext(Dispatchers.IO) {
                     val files = mutableListOf<File>()
+                    val originalPaths = mutableListOf<String?>()
                     val nameCounts = mutableMapOf<String, Int>()
                     for (uri in uris) {
                         val originalName = MediaFileReader.getFileNameFromUri(context, uri)
+                        val realPath = MediaFileReader.resolveRealFilePathFromUri(context, uri)
+                        val directFile = realPath?.let { File(it) }?.takeIf { it.exists() && it.canRead() && it.length() > 0 }
                         val occurrenceIndex = nameCounts.getOrDefault(originalName, 0)
                         nameCounts[originalName] = occurrenceIndex + 1
 
-                        val file = MediaFileReader.stageUriFile(context, uri, originalName, occurrenceIndex)
+                        val file = directFile ?: MediaFileReader.stageUriFile(context, uri, originalName, occurrenceIndex)
                         if (file != null) {
                             files.add(file)
+                            originalPaths.add(realPath ?: file.absolutePath)
                         }
                     }
                     if (files.isNotEmpty()) {
@@ -938,7 +944,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             useQuota = settings.value.useQuota,
                             targetAlbumMode = targetAlbumMode,
                             customAlbumName = customAlbumName,
-                            customAlbumNickname = customAlbumNickname
+                            customAlbumNickname = customAlbumNickname,
+                            originalFilePaths = originalPaths
                         )
                     }
                 }
@@ -1257,6 +1264,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _mockSettings.value = _mockSettings.value.copy(notificationsEnabled = enabled)
         } else {
             settingsRepo.updateNotifications(enabled)
+        }
+    }
+
+    fun updateDeleteAfterBackup(enabled: Boolean) {
+        LumenLogger.i("SettingsUI", "Delete photos after backup updated to: $enabled")
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(deleteAfterBackup = enabled)
+        } else {
+            settingsRepo.updateDeleteAfterBackup(enabled)
+        }
+    }
+
+    fun updateEnableBlurEffects(enabled: Boolean) {
+        LumenLogger.i("SettingsUI", "Enable blur effects updated to: $enabled")
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(enableBlurEffects = enabled)
+        } else {
+            settingsRepo.updateEnableBlurEffects(enabled)
         }
     }
 

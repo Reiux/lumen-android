@@ -81,24 +81,12 @@ fun EditFolderDialog(
     }
     var albumChoice by remember { mutableStateOf<AlbumChoice>(initialChoice) }
 
-    val dialogScale = remember { Animatable(0.88f) }
-    LaunchedEffect(Unit) {
-        dialogScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
-
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .widthIn(min = 320.dp, max = 500.dp)
-            .padding(horizontal = 16.dp)
-            .scale(dialogScale.value),
+            .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {

@@ -90,6 +90,7 @@ fun AddAlbumBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
+        DialogBlurEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -292,7 +293,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
         )
     }
 
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.scale(dialogScale.value),
         shape = RoundedCornerShape(28.dp),

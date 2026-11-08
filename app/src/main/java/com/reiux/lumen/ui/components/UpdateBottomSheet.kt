@@ -60,6 +60,7 @@ fun UpdateBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
+        DialogBlurEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -106,16 +107,14 @@ fun UpdateBottomSheet(
                         .padding(16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    Text(
-                        text = "What's New",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
                     val releaseNotes = updateInfo.releaseNotes.takeIf { it.isNotBlank() } ?: "Bug fixes and improvements."
-                    val annotatedText = parseSimpleMarkdown(releaseNotes, MaterialTheme.colorScheme.primary)
+                    val annotatedText = parseSimpleMarkdown(
+                        text = releaseNotes,
+                        primaryColor = MaterialTheme.colorScheme.primary,
+                        codeBgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        codeTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
                     
                     Text(
                         text = annotatedText,
@@ -189,6 +188,24 @@ fun UpdateBottomSheet(
 
 fun launchApkInstall(context: Context, apkFile: File) {
     try {
+        if (!apkFile.exists() || apkFile.length() <= 0L || !apkFile.name.endsWith(".apk", ignoreCase = true)) {
+            android.widget.Toast.makeText(context, "Invalid update package", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Verify package archive integrity and package name matching
+        val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+        if (archiveInfo == null) {
+            android.widget.Toast.makeText(context, "Downloaded update is corrupt or invalid", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val expectedPackage = context.packageName.removeSuffix(".dev")
+        val archivePackage = archiveInfo.packageName.removeSuffix(".dev")
+        if (archivePackage != expectedPackage) {
+            android.widget.Toast.makeText(context, "Security check failed: Package name mismatch", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
         android.widget.Toast.makeText(context, "Launching installer...", android.widget.Toast.LENGTH_SHORT).show()
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -199,49 +216,71 @@ fun launchApkInstall(context: Context, apkFile: File) {
         context.startActivity(intent)
     } catch (e: Exception) {
         e.printStackTrace()
+        android.widget.Toast.makeText(context, "Could not launch package installer: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
-fun parseSimpleMarkdown(text: String, primaryColor: androidx.compose.ui.graphics.Color): androidx.compose.ui.text.AnnotatedString {
+fun parseSimpleMarkdown(
+    text: String,
+    primaryColor: androidx.compose.ui.graphics.Color,
+    codeBgColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    codeTextColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    dividerColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
+): androidx.compose.ui.text.AnnotatedString {
     val builder = androidx.compose.ui.text.AnnotatedString.Builder()
+    val hrRegex = Regex("^(-{3,}|\\*{3,}|_{3,})$")
     
     text.lines().forEach { rawLine ->
         val line = rawLine.trim()
         
         when {
+            // Horizontal rule separator (---, ***, ___)
+            line.matches(hrRegex) -> {
+                builder.append("\n")
+                builder.withStyle(
+                    androidx.compose.ui.text.SpanStyle(
+                        color = dividerColor,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp
+                    )
+                ) {
+                    append("────────────────────────────────────────")
+                }
+                builder.append("\n\n")
+            }
             line.startsWith("###### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("###### ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("###### ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
             line.startsWith("##### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("##### ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("##### ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
             line.startsWith("#### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("#### ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("#### ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
             line.startsWith("### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("### ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("### ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
             line.startsWith("## ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("## ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("## ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
             line.startsWith("# ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 22.sp, color = primaryColor)) {
-                    appendInlineMarkdown(builder, line.removePrefix("# ").trim())
+                    appendInlineMarkdown(builder, line.removePrefix("# ").trim(), codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
@@ -249,12 +288,12 @@ fun parseSimpleMarkdown(text: String, primaryColor: androidx.compose.ui.graphics
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = primaryColor)) {
                     append(" •  ")
                 }
-                appendInlineMarkdown(builder, line.drop(2).trim())
+                appendInlineMarkdown(builder, line.drop(2).trim(), codeBgColor, codeTextColor)
                 builder.append("\n")
             }
             else -> {
                 if (line.isNotEmpty()) {
-                    appendInlineMarkdown(builder, line)
+                    appendInlineMarkdown(builder, line, codeBgColor, codeTextColor)
                 }
                 builder.append("\n")
             }
@@ -263,21 +302,58 @@ fun parseSimpleMarkdown(text: String, primaryColor: androidx.compose.ui.graphics
     return builder.toAnnotatedString()
 }
 
-private fun appendInlineMarkdown(builder: androidx.compose.ui.text.AnnotatedString.Builder, text: String) {
-    val boldRegex = Regex("\\*\\*(.*?)\\*\\*")
+private fun appendInlineMarkdown(
+    builder: androidx.compose.ui.text.AnnotatedString.Builder,
+    text: String,
+    codeBgColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    codeTextColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
+) {
+    // Regex matching inline code `code`, bold **text**, or italic *text*
+    val inlineRegex = Regex("(`[^`]+`|\\*\\*.*?\\*\\*|\\*.*?\\*)")
     var lastIndex = 0
-    
-    boldRegex.findAll(text).forEach { matchResult ->
-        // Text before the match
-        builder.append(text.substring(lastIndex, matchResult.range.first))
-        // The bold text
-        builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
-            append(matchResult.groupValues[1])
+
+    inlineRegex.findAll(text).forEach { matchResult ->
+        if (matchResult.range.first > lastIndex) {
+            builder.append(text.substring(lastIndex, matchResult.range.first))
+        }
+
+        val match = matchResult.value
+        when {
+            // Inline code `example`
+            match.startsWith("`") && match.endsWith("`") && match.length >= 2 -> {
+                val codeContent = match.substring(1, match.length - 1)
+                builder.withStyle(
+                    androidx.compose.ui.text.SpanStyle(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        background = codeBgColor,
+                        color = codeTextColor
+                    )
+                ) {
+                    append(" $codeContent ")
+                }
+            }
+            // Bold **text**
+            match.startsWith("**") && match.endsWith("**") && match.length >= 4 -> {
+                val boldContent = match.substring(2, match.length - 2)
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append(boldContent)
+                }
+            }
+            // Italic *text*
+            match.startsWith("*") && match.endsWith("*") && match.length >= 2 -> {
+                val italicContent = match.substring(1, match.length - 1)
+                builder.withStyle(androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) {
+                    append(italicContent)
+                }
+            }
+            else -> {
+                builder.append(match)
+            }
         }
         lastIndex = matchResult.range.last + 1
     }
-    
-    // Remaining text
+
     if (lastIndex < text.length) {
         builder.append(text.substring(lastIndex))
     }

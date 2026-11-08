@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -213,6 +216,67 @@ fun ExpressiveIconButton(
             modifier = Modifier.size(48.dp)
         ) {
             content()
+        }
+    }
+}
+
+/**
+ * Material 3 Expressive extended floating action button with spring shape morphing,
+ * scale recoil, latched press timing, and tactile haptic feedback.
+ */
+@Composable
+fun ExpressiveExtendedFloatingActionButton(
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+    text: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    val clickPulse = remember { mutableStateOf(false) }
+
+    val isVisuallyPressed = isGesturePressed || clickPulse.value
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse.value = true
+            delay(180)
+            clickPulse.value = false
+        }
+        onClick()
+    }
+
+    val cornerRadius by animateDpAsState(
+        targetValue = if (isVisuallyPressed) 12.dp else 20.dp,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        label = "fabCornerRadius",
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (isVisuallyPressed) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 800f),
+        label = "fabScale",
+    )
+
+    Surface(
+        onClick = hapticClick,
+        modifier = modifier.scale(scale),
+        shape = RoundedCornerShape(cornerRadius),
+        color = containerColor,
+        contentColor = contentColor,
+        shadowElevation = if (isVisuallyPressed) 3.dp else 6.dp,
+        interactionSource = interactionSource,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            icon()
+            text()
         }
     }
 }

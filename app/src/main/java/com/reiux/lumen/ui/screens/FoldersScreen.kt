@@ -127,7 +127,7 @@ fun FoldersScreen(
 
     if (folderToRemove != null) {
         val target = folderToRemove!!
-        androidx.compose.material3.AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { folderToRemove = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

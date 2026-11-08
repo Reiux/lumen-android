@@ -118,7 +118,6 @@ import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
-import com.reiux.lumen.ui.components.DevDiagnosticsDialog
 import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
@@ -183,8 +182,59 @@ fun BackupScreen(
     onClearBlock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var showSignInDialog by remember { mutableStateOf(false) }
     var showRestrictedRemoveDialog by remember { mutableStateOf(false) }
+    var showAccountSwitchBlockedDialog by remember { mutableStateOf(false) }
+
+    if (showAccountSwitchBlockedDialog) {
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+            onDismissRequest = { showAccountSwitchBlockedDialog = false },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Upload in Progress",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "You cannot switch accounts while a backup is actively uploading.\n\n" +
+                            "Files are currently streaming to ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your active account"}.\n\n" +
+                            "Please wait for active uploads to finish or cancel the backup first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                com.reiux.lumen.ui.components.ExpressiveButton(
+                    onClick = { showAccountSwitchBlockedDialog = false }
+                ) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
+    val handleSelectAccount: (GoogleAccount) -> Unit = { targetAccount ->
+        if (isUploading && targetAccount.email != selectedAccount?.email) {
+            showAccountSwitchBlockedDialog = true
+            Toast.makeText(context, "Cannot switch accounts while uploading", Toast.LENGTH_SHORT).show()
+        } else {
+            onSelectAccount(targetAccount)
+        }
+    }
 
     if (showSignInDialog) {
         com.reiux.lumen.ui.components.GoogleSignInWebViewDialog(
@@ -201,7 +251,7 @@ fun BackupScreen(
     }
 
     if (addAccountError != null) {
-        androidx.compose.material3.AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = onClearAddAccountError,
             title = { Text("Authentication Error", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = { Text(addAccountError) },
@@ -222,7 +272,7 @@ fun BackupScreen(
     }
 
     if (showRestrictedRemoveDialog && accountBlock != null) {
-        androidx.compose.material3.AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { showRestrictedRemoveDialog = false },
             title = { Text("Remove Restricted Account", fontWeight = FontWeight.Bold) },
             text = {
@@ -252,7 +302,6 @@ fun BackupScreen(
         )
     }
 
-    val context = LocalContext.current
     var pendingPickedUris by remember { mutableStateOf<List<Uri>?>(null) }
 
     if (pendingPickedUris != null) {
@@ -288,8 +337,6 @@ fun BackupScreen(
         }
     }
 
-    var showDevDiagnostics by remember { mutableStateOf(false) }
-
     var triggerShakeFlicker by remember { mutableStateOf(false) }
     var mockEmptyStateVariantIndex by remember { mutableStateOf<Int?>(null) }
     var mockForcedPunTitle by remember { mutableStateOf<String?>(null) }
@@ -321,13 +368,6 @@ fun BackupScreen(
         if (activeSeason != Season.NONE && !isMockMode) {
             EasterEggsManager.checkSeasonalGreeting(context, activeSeason)
         }
-    }
-
-    if (showDevDiagnostics) {
-        DevDiagnosticsDialog(
-            selectedAccount = selectedAccount,
-            onDismiss = { showDevDiagnostics = false }
-        )
     }
 
     val configuration = LocalConfiguration.current
@@ -364,10 +404,8 @@ fun BackupScreen(
                 BackupTopHeader(
                     storageSaverQuality = storageSaverQuality,
                     useQuota = useQuota,
-                    developerModeUnlocked = developerModeUnlocked,
                     unlockedPrismTheme = unlockedPrismTheme,
                     activeSeason = activeSeason,
-                    onOpenDiagnostics = { showDevDiagnostics = true },
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
 
@@ -406,7 +444,7 @@ fun BackupScreen(
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
                     accounts = accounts,
-                    onSelectAccount = onSelectAccount,
+                    onSelectAccount = handleSelectAccount,
                     onNavigateToAccounts = onNavigateToAccounts
                 )
 
@@ -625,10 +663,8 @@ fun BackupScreen(
                 BackupTopHeader(
                     storageSaverQuality = storageSaverQuality,
                     useQuota = useQuota,
-                    developerModeUnlocked = developerModeUnlocked,
                     unlockedPrismTheme = unlockedPrismTheme,
                     activeSeason = activeSeason,
-                    onOpenDiagnostics = { showDevDiagnostics = true },
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
             }
@@ -671,7 +707,7 @@ fun BackupScreen(
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
                     accounts = accounts,
-                    onSelectAccount = onSelectAccount,
+                    onSelectAccount = handleSelectAccount,
                     onNavigateToAccounts = onNavigateToAccounts
                 )
             }
@@ -876,10 +912,8 @@ fun BackupScreen(
 private fun BackupTopHeader(
     storageSaverQuality: Boolean,
     useQuota: Boolean,
-    developerModeUnlocked: Boolean = false,
     unlockedPrismTheme: Boolean = false,
     activeSeason: Season = Season.NONE,
-    onOpenDiagnostics: () -> Unit,
     onUnlockPrismTheme: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -994,22 +1028,6 @@ private fun BackupTopHeader(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = statusColor
-                    )
-                }
-            }
-
-            if (developerModeUnlocked) {
-                Spacer(modifier = Modifier.width(6.dp))
-
-                ExpressiveIconButton(
-                    onClick = onOpenDiagnostics,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.BugReport,
-                        contentDescription = "Developer Diagnostics",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

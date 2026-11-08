@@ -36,24 +36,12 @@ fun EditDisplayNameDialog(
 ) {
     var name by remember { mutableStateOf(initialName) }
 
-    val dialogScale = remember { Animatable(0.88f) }
-    LaunchedEffect(Unit) {
-        dialogScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
-
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .widthIn(min = 320.dp, max = 500.dp)
-            .padding(horizontal = 16.dp)
-            .scale(dialogScale.value),
+            .padding(horizontal = 16.dp),
         title = {
             Text(
                 text = "Change Display Name",

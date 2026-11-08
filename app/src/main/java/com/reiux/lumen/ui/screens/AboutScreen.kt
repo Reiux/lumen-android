@@ -140,7 +140,7 @@ fun AboutScreen(
     }
 
     if (showMatrixDialog) {
-        AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { showMatrixDialog = false },
             title = {
                 Text(
@@ -777,7 +777,7 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
         "Kotlin Coroutines" to "Apache License 2.0 (JetBrains s.r.o.)"
     )
 
-    AlertDialog(
+    com.reiux.lumen.ui.components.PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(

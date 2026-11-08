@@ -78,6 +78,9 @@ class UpdateRepository(
     }
     
     fun downloadUpdate(url: String, destFile: File): Flow<Int> = flow {
+        if (!url.startsWith("https://github.com/") && !url.startsWith("https://objects.githubusercontent.com/")) {
+            throw SecurityException("Untrusted or insecure download URL: $url")
+        }
         val request = Request.Builder().url(url).build()
         val response = httpClient.newCall(request).execute()
         

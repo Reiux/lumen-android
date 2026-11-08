@@ -2,6 +2,7 @@ package com.reiux.lumen.ui.screens
 
 import android.content.res.Configuration
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -90,15 +93,76 @@ fun AccountsScreen(
     onClearError: () -> Unit = {},
     isAddingAccount: Boolean,
     addAccountError: String?,
+    isUploading: Boolean = false,
     hasAcknowledgedAccountRisk: Boolean = false,
     onAcknowledgeRisk: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var showAddDialog by remember { mutableStateOf(false) }
     var accountToRename by remember { mutableStateOf<GoogleAccount?>(null) }
     var accountToRemove by remember { mutableStateOf<GoogleAccount?>(null) }
+    var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
     var targetAvatarAccountEmail by remember { mutableStateOf<String?>(null) }
     var showTimeCapsule by remember { mutableStateOf(false) }
+
+    if (showUploadActiveBlockedDialog != null) {
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+            onDismissRequest = { showUploadActiveBlockedDialog = null },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Upload in Progress",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "You cannot ${showUploadActiveBlockedDialog} while an upload is currently running.\n\n" +
+                            "Files are actively streaming to ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your active account"}.\n\n" +
+                            "Please wait for the current upload batch to complete or cancel the backup first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                ExpressiveButton(
+                    onClick = { showUploadActiveBlockedDialog = null }
+                ) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
+    val handleSelectAccount: (String) -> Unit = { targetEmail ->
+        if (isUploading && targetEmail != selectedAccount?.email) {
+            showUploadActiveBlockedDialog = "switch accounts"
+            Toast.makeText(context, "Cannot switch accounts while uploading", Toast.LENGTH_SHORT).show()
+        } else {
+            onSelectAccount(targetEmail)
+        }
+    }
+
+    val handleRemoveAccount: (GoogleAccount) -> Unit = { targetAccount ->
+        if (isUploading) {
+            showUploadActiveBlockedDialog = "remove an account"
+            Toast.makeText(context, "Cannot remove an account while uploading", Toast.LENGTH_SHORT).show()
+        } else {
+            accountToRemove = targetAccount
+        }
+    }
 
     val avatarPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -151,7 +215,7 @@ fun AccountsScreen(
         val attachedFolders = folders.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
         val attachedAlbums = albums.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
 
-        androidx.compose.material3.AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { accountToRemove = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -292,8 +356,8 @@ fun AccountsScreen(
                             OtherAccountRowItem(
                                 account = account,
                                 position = groupPositionOf(index, otherAccounts.size),
-                                onSelectAccount = onSelectAccount,
-                                onRemove = { accountToRemove = account }
+                                onSelectAccount = handleSelectAccount,
+                                onRemove = { handleRemoveAccount(account) }
                             )
                         }
                         item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -377,8 +441,8 @@ fun AccountsScreen(
                     OtherAccountRowItem(
                         account = account,
                         position = groupPositionOf(index, otherAccounts.size),
-                        onSelectAccount = onSelectAccount,
-                        onRemove = { accountToRemove = account }
+                        onSelectAccount = handleSelectAccount,
+                        onRemove = { handleRemoveAccount(account) }
                     )
                 }
             }
@@ -657,7 +721,7 @@ private fun OtherAccountRowItem(
 fun LumenTimeCapsuleDialog(
     onDismiss: () -> Unit
 ) {
-    androidx.compose.material3.AlertDialog(
+    com.reiux.lumen.ui.components.PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {

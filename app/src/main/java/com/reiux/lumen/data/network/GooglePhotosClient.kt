@@ -97,15 +97,15 @@ class GooglePhotosClient(
 
     private fun handleResponseError(response: okhttp3.Response, respBytes: ByteArray, endpointName: String) {
         val code = response.code
-        val errBody = respBytes.decodeToString().take(400)
+        val errBody = respBytes.decodeToString().take(200)
         when (code) {
-            401, 403 -> throw AuthFailureException(kind = AuthFailureKind.TOKEN_EXPIRED, rawDetail = "$endpointName HTTP $code: $errBody")
+            401, 403 -> throw AuthFailureException(kind = AuthFailureKind.TOKEN_EXPIRED, rawDetail = "$endpointName HTTP $code: Authentication required")
             429 -> {
-                val retryHeader = response.header("Retry-After")?.toLongOrNull() ?: 900L
-                throw AuthFailureException(kind = AuthFailureKind.RATE_LIMITED, retryAfterSec = retryHeader, rawDetail = "$endpointName HTTP 429: $errBody")
+                val retryHeader = response.header("Retry-After")?.toLongOrNull() ?: 30L
+                throw AuthFailureException(kind = AuthFailureKind.RATE_LIMITED, retryAfterSec = retryHeader, rawDetail = "$endpointName HTTP 429: Rate limit exceeded")
             }
-            in 500..599 -> throw AuthFailureException(kind = AuthFailureKind.TRANSIENT, rawDetail = "$endpointName HTTP $code: $errBody")
-            else -> throw IOException("$endpointName failed HTTP $code: $errBody")
+            in 500..599 -> throw AuthFailureException(kind = AuthFailureKind.TRANSIENT, rawDetail = "$endpointName HTTP $code: Server error")
+            else -> throw IOException("$endpointName failed HTTP $code")
         }
     }
 

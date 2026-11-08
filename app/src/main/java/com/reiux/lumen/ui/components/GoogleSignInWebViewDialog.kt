@@ -61,22 +61,28 @@ fun GoogleSignInWebViewDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = if (isWideLayout) 860.dp else 540.dp)
-                .padding(if (isWideLayout) 24.dp else 12.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(28.dp)
-                ),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
+        PredictiveBackDialogContainer(onDismiss = onDismiss) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = if (isWideLayout) 860.dp else 540.dp)
+                    .padding(if (isWideLayout) 24.dp else 12.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(28.dp)
+                    ),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 TopAppBar(
                     title = {
@@ -141,6 +147,9 @@ fun GoogleSignInWebViewDialog(
 
                                     settings.javaScriptEnabled = true
                                     settings.domStorageEnabled = true
+                                    settings.allowFileAccess = false
+                                    settings.allowContentAccess = false
+                                    settings.setGeolocationEnabled(false)
                                     settings.userAgentString =
                                         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36"
 
@@ -158,6 +167,16 @@ fun GoogleSignInWebViewDialog(
                                             view: WebView?,
                                             request: WebResourceRequest?
                                         ): Boolean {
+                                            val uri = request?.url
+                                            if (uri != null) {
+                                                val host = uri.host?.lowercase() ?: ""
+                                                val scheme = uri.scheme?.lowercase() ?: ""
+                                                val isGoogle = host == "google.com" || host.endsWith(".google.com")
+                                                val isGoogleUserContent = host == "googleusercontent.com" || host.endsWith(".googleusercontent.com")
+                                                if (scheme != "https" || (!isGoogle && !isGoogleUserContent)) {
+                                                    return true // Block navigation outside Google auth
+                                                }
+                                            }
                                             val url = request?.url?.toString() ?: ""
                                             checkCookie(url)
                                             return false
@@ -236,6 +255,7 @@ fun GoogleSignInWebViewDialog(
             }
         }
     }
+}
 }
 
 fun extractOAuthTokenFromCookies(cookieString: String): String? {

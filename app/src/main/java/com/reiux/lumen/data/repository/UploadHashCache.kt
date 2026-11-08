@@ -39,6 +39,15 @@ class UploadHashCache(context: Context) : SQLiteOpenHelper(context, DATABASE_NAM
                 arrayOf(accountEmail, sha1B64, fileSize.toString())
             ).use { cursor ->
                 if (cursor.moveToFirst()) {
+                    return@withContext cursor.getString(0)
+                }
+            }
+            // Fallback: match by account and SHA-1 hash alone if file size metadata differs
+            readableDatabase.rawQuery(
+                "SELECT media_key FROM file_hashes WHERE account_email = ? AND sha1_b64 = ?",
+                arrayOf(accountEmail, sha1B64)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
                     cursor.getString(0)
                 } else null
             }

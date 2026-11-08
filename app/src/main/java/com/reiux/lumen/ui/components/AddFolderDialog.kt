@@ -117,25 +117,12 @@ fun AddFolderDialog(
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
-    // Dynamic M3E Bouncy Scale Animation for Dialog Entrance
-    val dialogScale = remember { Animatable(0.88f) }
-    LaunchedEffect(Unit) {
-        dialogScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
-
-    AlertDialog(
+    PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
             .widthIn(min = 340.dp, max = if (isWideLayout) 700.dp else 500.dp)
-            .padding(horizontal = 16.dp)
-            .scale(dialogScale.value),
+            .padding(horizontal = 16.dp),
         title = {
             Text(
                 text = "Add Backup Folder",
@@ -501,12 +488,6 @@ private fun ExpressivePresetChip(
  */
 private fun resolveFolderPathFromUri(context: Context, uri: Uri): Pair<String, String>? {
     return try {
-        try {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-        } catch (_: Exception) {
-        }
-
         val docId = DocumentsContract.getTreeDocumentId(uri)
         val basePath = Environment.getExternalStorageDirectory().absolutePath
 

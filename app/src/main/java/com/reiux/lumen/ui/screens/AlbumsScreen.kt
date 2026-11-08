@@ -54,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.reiux.lumen.ui.components.DialogBlurEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +73,7 @@ import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.network.GoogleAlbum
 import com.reiux.lumen.ui.components.AccountPickerRow
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveExtendedFloatingActionButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -130,13 +132,12 @@ fun AlbumsScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            ExpressiveExtendedFloatingActionButton(
                 onClick = { showAddSheet = true },
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 text = { Text("Add Album", fontWeight = FontWeight.SemiBold) },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(20.dp)
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     ) { innerPadding ->
@@ -216,14 +217,6 @@ fun AlbumsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
                                 )
-
-                                ExpressiveButton(
-                                    onClick = { showAddSheet = true }
-                                ) {
-                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Add Album")
-                                }
                             }
                         }
                     }
@@ -370,20 +363,9 @@ fun AlbumsScreen(
     // Confirmation Dialog for Album Deletion
     if (albumToDelete != null) {
         val target = albumToDelete!!
-        val dialogScale = remember { Animatable(0.88f) }
-        LaunchedEffect(Unit) {
-            dialogScale.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
-        }
 
-        AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { albumToDelete = null },
-            modifier = Modifier.scale(dialogScale.value),
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text("Remove album?", fontWeight = FontWeight.Bold) },
@@ -414,20 +396,9 @@ fun AlbumsScreen(
         var targetAccount by remember(target, accounts, activeAccount) {
             mutableStateOf(accounts.find { it.email.equals(target.accountEmail, ignoreCase = true) } ?: activeAccount ?: accounts.firstOrNull())
         }
-        val dialogScale = remember { Animatable(0.88f) }
-        LaunchedEffect(Unit) {
-            dialogScale.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
-        }
 
-        AlertDialog(
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { albumToRename = null },
-            modifier = Modifier.scale(dialogScale.value),
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text("Edit Album Settings", fontWeight = FontWeight.Bold) },
@@ -517,6 +488,7 @@ fun AlbumsScreen(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
+            DialogBlurEffect()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

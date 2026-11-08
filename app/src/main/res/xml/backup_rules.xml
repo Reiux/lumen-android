@@ -2,6 +2,8 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="lumen_accounts.xml" />
     <exclude domain="sharedpref" path="lumen_accounts_encrypted.xml" />
+    <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_key_keyset__.xml" />
+    <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs_value_keyset__.xml" />
     <exclude domain="database" path="lumen_hash_cache.db" />
     <exclude domain="database" path="lumen_hash_cache.db-journal" />
     <exclude domain="database" path="lumen_hash_cache.db-wal" />

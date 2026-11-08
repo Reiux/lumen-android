@@ -72,6 +72,7 @@ fun AlbumManagerBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
+        DialogBlurEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -184,7 +185,7 @@ fun AlbumManagerBottomSheet(
     // Natural Confirmation Dialog for Album Deletion
     if (albumToDelete != null) {
         val target = albumToDelete!!
-        AlertDialog(
+        PredictiveAlertDialog(
             onDismissRequest = { albumToDelete = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -227,12 +228,11 @@ fun AlbumManagerBottomSheet(
             )
         }
 
-        AlertDialog(
+        PredictiveAlertDialog(
             onDismissRequest = { showAddDialog = false },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .scale(dialogScale.value),
+                .padding(horizontal = 16.dp),
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = {

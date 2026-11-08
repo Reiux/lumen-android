@@ -2,6 +2,9 @@ package com.reiux.lumen.ui.screens
 
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
+import android.os.Environment
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -36,6 +39,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.reiux.lumen.R
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,6 +51,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -55,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +79,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.ui.components.DynamicLumenIcon
+import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
@@ -92,14 +99,11 @@ fun SettingsScreen(
     onUpdateUploadThreads: (Int) -> Unit,
     onUpdateColorPreset: (String) -> Unit,
     onUpdateNotifications: (Boolean) -> Unit,
+    isUploading: Boolean = false,
     isMockMode: Boolean = false,
     isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
-    onToggleSimulateOffline: () -> Unit = {},
-    onToggleSimulateMissingAlbum: () -> Unit = {},
-    simulateOffline: Boolean = false,
-    simulateMissingAlbum: Boolean = false,
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
@@ -107,6 +111,8 @@ fun SettingsScreen(
     onOpenAlbumManager: () -> Unit = {},
     onToggleDeveloperMode: (Boolean) -> Unit = {},
     onUpdateForcedSeason: (String) -> Unit = {},
+    onUpdateDeleteAfterBackup: (Boolean) -> Unit = {},
+    onUpdateEnableBlurEffects: (Boolean) -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -115,14 +121,156 @@ fun SettingsScreen(
 
     var showOemGuideDialog by remember { mutableStateOf(false) }
     var showAccountSafetyDialog by remember { mutableStateOf(false) }
+    var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
+    var showConfirmDeleteAfterBackupDialog by remember { mutableStateOf(false) }
+    var showAllFilesPermissionDialog by remember { mutableStateOf(false) }
     var isBatteryOptimizedExempt by remember {
         mutableStateOf(DeviceConditions.isIgnoringBatteryOptimizations(context))
+    }
+
+    if (showConfirmDeleteAfterBackupDialog) {
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+            onDismissRequest = { showConfirmDeleteAfterBackupDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 24.dp),
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Delete Media After Backup?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enabling this option will permanently delete backed up photos and videos from your phone's storage to free up space.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = "• Photos and videos uploaded after enabling this will be removed from this device once Google Photos confirms the upload.\n" +
+                               "• If you delete a photo from Google Photos in the future, it will no longer exist on your phone.\n" +
+                               "• Files that failed to upload or haven't been backed up yet will never be deleted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 18.sp
+                    )
+                    Text(
+                        text = "Are you sure you want to enable automatic local deletion?",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            confirmButton = {
+                ExpressiveButton(
+                    onClick = {
+                        showConfirmDeleteAfterBackupDialog = false
+                        onUpdateDeleteAfterBackup(true)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                            showAllFilesPermissionDialog = true
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("I Understand, Enable")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDeleteAfterBackupDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAllFilesPermissionDialog) {
+        com.reiux.lumen.ui.components.AllFilesPermissionDialog(
+            onDismiss = { showAllFilesPermissionDialog = false },
+            onConfirm = { showAllFilesPermissionDialog = false }
+        )
     }
 
     if (showAccountSafetyDialog) {
         com.reiux.lumen.ui.components.AccountSafetyDialog(
             onDismiss = { showAccountSafetyDialog = false }
         )
+    }
+
+    if (showUploadActiveBlockedDialog != null) {
+        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+            onDismissRequest = { showUploadActiveBlockedDialog = null },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Upload in Progress",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "You cannot change the ${showUploadActiveBlockedDialog} while an upload is currently running.\n\n" +
+                            "Changing quota or compression profiles mid-transfer alters device emulation headers and will corrupt active file chunks or trigger Google storage quota lockouts.\n\n" +
+                            "Please wait for your uploads to finish or cancel the active backup first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                com.reiux.lumen.ui.components.ExpressiveButton(
+                    onClick = { showUploadActiveBlockedDialog = null }
+                ) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
+    val handleStorageSaverToggle: (Boolean) -> Unit = { newValue ->
+        if (isUploading) {
+            showUploadActiveBlockedDialog = "Storage Saver Quality"
+            Toast.makeText(context, "Cannot change quality while uploading", Toast.LENGTH_SHORT).show()
+        } else {
+            onUpdateStorageSaver(newValue)
+        }
+    }
+
+    val handleUseQuotaToggle: (Boolean) -> Unit = { newValue ->
+        if (isUploading) {
+            showUploadActiveBlockedDialog = "Account Quota setting"
+            Toast.makeText(context, "Cannot change quota setting while uploading", Toast.LENGTH_SHORT).show()
+        } else {
+            onUpdateUseQuota(newValue)
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -252,6 +400,16 @@ fun SettingsScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         if (com.reiux.lumen.BuildConfig.DEBUG) {
                             SettingSwitchRow(
+                                title = "Gaussian Blur on Dialogs & Sheets",
+                                subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                checked = settings.enableBlurEffects,
+                                onCheckedChange = onUpdateEnableBlurEffects
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingSwitchRow(
                                 title = "Screenshot Showcase Mode",
                                 subtitle = "Freeze UI into static sample data for banner screenshots",
                                 checked = isShowcaseMode,
@@ -266,30 +424,6 @@ fun SettingsScreen(
                                 subtitle = "Run active background upload loops and timers",
                                 checked = isMockMode,
                                 onCheckedChange = { onToggleMockMode() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingSwitchRow(
-                                title = "Simulate Offline",
-                                subtitle = "Force 'No internet' state on the Backup page",
-                                checked = simulateOffline,
-                                onCheckedChange = { onToggleSimulateOffline() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingSwitchRow(
-                                title = "Simulate Missing Album",
-                                subtitle = "Force 'Album doesn't exist' card on the Backup page",
-                                checked = simulateMissingAlbum,
-                                onCheckedChange = { onToggleSimulateMissingAlbum() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                         }
                         SettingActionRow(
@@ -417,7 +551,7 @@ fun SettingsScreen(
                             title = "Storage Saver Quality",
                             subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
                             checked = settings.storageSaverQuality,
-                            onCheckedChange = onUpdateStorageSaver
+                            onCheckedChange = handleStorageSaverToggle
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -427,7 +561,7 @@ fun SettingsScreen(
                             title = "Use Account Quota",
                             subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
                             checked = settings.useQuota,
-                            onCheckedChange = onUpdateUseQuota
+                            onCheckedChange = handleUseQuotaToggle
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -448,6 +582,35 @@ fun SettingsScreen(
                             subtitle = stringResource(R.string.account_safety_subtitle),
                             actionLabel = "View",
                             onClick = { showAccountSafetyDialog = true }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Storage Cleanup",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingSwitchRow(
+                            title = "Delete photos from phone after backup",
+                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            checked = settings.deleteAfterBackup,
+                            onCheckedChange = { next ->
+                                if (next) {
+                                    showConfirmDeleteAfterBackupDialog = true
+                                } else {
+                                    onUpdateDeleteAfterBackup(false)
+                                }
+                            }
                         )
                     }
                 }
@@ -653,7 +816,7 @@ fun SettingsScreen(
                             title = "Storage Saver Quality",
                             subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
                             checked = settings.storageSaverQuality,
-                            onCheckedChange = onUpdateStorageSaver
+                            onCheckedChange = handleStorageSaverToggle
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -663,7 +826,7 @@ fun SettingsScreen(
                             title = "Use Account Quota",
                             subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
                             checked = settings.useQuota,
-                            onCheckedChange = onUpdateUseQuota
+                            onCheckedChange = handleUseQuotaToggle
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -689,6 +852,40 @@ fun SettingsScreen(
                 }
             }
 
+            // Storage Cleanup (Red section)
+            item {
+                Text(
+                    text = "Storage Cleanup",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingSwitchRow(
+                            title = "Delete photos from phone after backup",
+                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            checked = settings.deleteAfterBackup,
+                            onCheckedChange = { next ->
+                                if (next) {
+                                    showConfirmDeleteAfterBackupDialog = true
+                                } else {
+                                    onUpdateDeleteAfterBackup(false)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
             // Developer & Testing Tools (only shown when developer mode is unlocked)
             if (settings.developerModeUnlocked) {
                 item {
@@ -708,6 +905,16 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (com.reiux.lumen.BuildConfig.DEBUG) {
+                                SettingSwitchRow(
+                                    title = "Gaussian Blur on Dialogs & Sheets",
+                                    subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                    checked = settings.enableBlurEffects,
+                                    onCheckedChange = onUpdateEnableBlurEffects
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
                                 SettingSwitchRow(
                                     title = "Screenshot Showcase Mode",
                                     subtitle = "Freeze UI into static sample data for banner screenshots",

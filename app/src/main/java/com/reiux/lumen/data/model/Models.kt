@@ -47,6 +47,8 @@ data class BackupSettings(
     val unlockedNewYrTheme: Boolean = false,
     val forcedSeason: String = "NONE",
     val autoCheckUpdates: Boolean = true,
+    val deleteAfterBackup: Boolean = false,
+    val enableBlurEffects: Boolean = true,
     val folders: List<BackupFolder> = listOf(
         BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", true),
         BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),
@@ -79,7 +81,8 @@ data class UploadItem(
     val targetAlbumMode: AlbumTargetMode = AlbumTargetMode.NONE,
     val customAlbumName: String? = null,
     val customAlbumNickname: String? = null,
-    val accountEmail: String? = null
+    val accountEmail: String? = null,
+    val originalFilePath: String? = null
 )
 
 enum class AuthFailureKind {

@@ -151,7 +151,7 @@ object LumenLogger {
     // Redaction patterns
     private val emailPattern = Pattern.compile("(?i)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+")
     private val bearerPattern = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9_\\-\\.]+")
-    private val sensitiveParamPattern = Pattern.compile("(?i)(token|masterToken|credentialString|upload_token|password|auth|secret)=([^&\\s]+)")
+    private val sensitiveParamPattern = Pattern.compile("(?i)(token|masterToken|credentialString|upload_token|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)=([^&\\s]+)")
 
     fun init(context: Context, saveLogsEnabled: Boolean, isDevDiagnostics: Boolean = BuildConfig.DEBUG) {
         appContext = context.applicationContext
@@ -704,7 +704,8 @@ object LumenLogger {
         val dir = logDir ?: return
         scope.launch(Dispatchers.IO) {
             try {
-                val exportFile = File(context.cacheDir, "lumen_export_logs.txt")
+                val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+                val exportFile = File(exportDir, "lumen_export_logs.txt")
                 FileWriter(exportFile, false).use { writer ->
                     dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
                         writer.appendLine("--- FILE: ${logFile.name} ---")

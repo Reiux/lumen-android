@@ -134,6 +134,7 @@ fun AlbumPickerRow(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
+            DialogBlurEffect()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
