@@ -33,4 +33,4 @@ jobs:
         with:
           name: lumen-dev-debug
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
+          retention-days: 7

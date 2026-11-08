@@ -106,7 +106,7 @@ jobs:
           EOF
 
       - name: Build
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease assembleDebug
 
       - name: Verify release signature
         run: |
@@ -137,6 +137,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/lumen-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/lumen-dev-debug.apk
 
       - name: Write release notes
         run: |
@@ -164,6 +165,7 @@ jobs:
           echo "" >> dist/notes.md
           echo "### Verification" >> dist/notes.md
           echo "- **Release APK Certificate SHA-256:** \`$CERT_SHA256\`" >> dist/notes.md
+          echo "- \`lumen-dev-debug.apk\` is signed with a CI debug key and is for testing only." >> dist/notes.md
 
       - name: Publish
         uses: softprops/action-gh-release@v2
@@ -173,6 +175,7 @@ jobs:
           body_path: dist/notes.md
           files: |
             dist/lumen-release.apk
+            dist/lumen-dev-debug.apk
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
