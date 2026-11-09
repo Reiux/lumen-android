@@ -288,15 +288,17 @@ class PredictiveBackDialogState(
 
                         // Instantly clear the window blur flag as soon as the swipe commits
                         try {
-                            val dialogWindow = (view.parent as? DialogWindowProvider)?.window
-                                ?: (view.context as? DialogWindowProvider)?.window
-                                ?: (generateSequence(view.parent) { (it as? View)?.parent }
-                                    .mapNotNull { it as? DialogWindowProvider }
-                                    .firstOrNull()?.window)
-                                ?: (view.context as? android.app.Dialog)?.window
-                            dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                            dialogWindow?.attributes = dialogWindow?.attributes?.apply {
-                                blurBehindRadius = 0
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                val dialogWindow = (view.parent as? DialogWindowProvider)?.window
+                                    ?: (view.context as? DialogWindowProvider)?.window
+                                    ?: (generateSequence(view.parent) { (it as? View)?.parent }
+                                        .mapNotNull { it as? DialogWindowProvider }
+                                        .firstOrNull()?.window)
+                                    ?: (view.context as? android.app.Dialog)?.window
+                                dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                                dialogWindow?.attributes = dialogWindow?.attributes?.apply {
+                                    blurBehindRadius = 0
+                                }
                             }
                         } catch (_: Throwable) {}
 
