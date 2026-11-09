@@ -1,6 +1,6 @@
 # Lumen 1.3.0
 
-We crossed 1,000 downloads with this release. Huge thanks to everyone using the app, reporting bugs, and helping test builds.
+We crossed 1,000 downloads with this release! Huge thanks to everyone using the app, reporting bugs, and helping test builds.
 
 Special shoutouts:
 - @ra-rear for suggesting the system share sheet integration.
@@ -18,7 +18,7 @@ Special shoutouts:
 ---
 
 ### Bug Fixes & Improvements
-- Remote Dedup Throttling: Enforced a 60ms sequential pacing mutex on remote hash checks to prevent burst QPS spikes and 429 rate-limit errors against Google's servers.
+- Remote Dedup Throttling: Enforced a 60ms sequential pacing mutex on remote hash checks to prevent burst QPS spikes and 429 rate-limit errors against Google's servers. This eliminates Google rate-limiting accounts when Lumen checks a bunch of media on Google Photos.
 - Rate Limit Lockout: Reduced the default 429 backoff penalty from 15 minutes down to 30 seconds when Google does not provide a `Retry-After` header.
 - Landscape Dialog Gestures: Fixed an issue on tablets and landscape phones where dialogs closed immediately on touch-down when starting a back swipe from the screen bezel.
 - Dialog Sizing: Fixed dialog card layout so cards maintain proper margin constraints instead of stretching edge-to-edge on wide screens.
@@ -37,3 +37,9 @@ Special shoutouts:
 - Release Code Minification: Enabled R8 shrinking and ProGuard optimization on release builds with keep rules for Protobuf models and core libraries.
 - BroadcastReceiver Protection: Added `RECEIVE_BOOT_COMPLETED` permission gating to `BootReceiver` and implemented an explicit whitelist check on incoming intent actions.
 - WebView Hardening: Disabled file scheme access, content access, and geolocation in `GoogleSignInWebViewDialog`, and enforced strict exact and subdomain matching (`*.google.com`, `*.googleusercontent.com`) to prevent domain spoofing.
+
+### Downloads
+- **[Download Release APK (Production)](https://github.com/Reiux/lumen-android/releases/download/v1.3.0/lumen-release.apk)** — Signed production build for general use.
+- [Download Dev APK (Debug)](https://github.com/Reiux/lumen-android/releases/download/v1.3.0/lumen-dev-debug.apk) — Debug build for testing and diagnostics.
+  
+---
