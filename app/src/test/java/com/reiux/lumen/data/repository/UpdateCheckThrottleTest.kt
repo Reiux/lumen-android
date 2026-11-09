@@ -82,4 +82,31 @@ class UpdateCheckThrottleTest {
         settingsRepository.setLastUpdateCheckMillis(testMillis)
         assertEquals(testMillis, settingsRepository.getLastUpdateCheckMillis())
     }
+
+    @Test
+    fun testShouldNotifyForVersion_neverNotified_returnsTrue() {
+        assertTrue(UpdateRepository.shouldNotifyForVersion("1.4.0", null))
+    }
+
+    @Test
+    fun testShouldNotifyForVersion_sameVersionAlreadyNotified_returnsFalse() {
+        assertFalse(UpdateRepository.shouldNotifyForVersion("1.4.0", "1.4.0"))
+    }
+
+    @Test
+    fun testShouldNotifyForVersion_newerReleaseAfterPreviousNotification_returnsTrue() {
+        assertTrue(UpdateRepository.shouldNotifyForVersion("1.5.0", "1.4.0"))
+    }
+
+    @Test
+    fun testShouldNotifyForVersion_blankVersion_returnsFalse() {
+        assertFalse(UpdateRepository.shouldNotifyForVersion("", null))
+    }
+
+    @Test
+    fun testSettingsRepository_lastNotifiedUpdateVersion_roundTrip() {
+        assertEquals(null, settingsRepository.getLastNotifiedUpdateVersion())
+        settingsRepository.setLastNotifiedUpdateVersion("1.4.0")
+        assertEquals("1.4.0", settingsRepository.getLastNotifiedUpdateVersion())
+    }
 }

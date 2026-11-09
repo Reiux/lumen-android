@@ -694,6 +694,15 @@ class SettingsRepository(
         prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_MILLIS, millis).apply()
     }
 
+    /** Version string of the last release we posted an update notification for. */
+    fun getLastNotifiedUpdateVersion(): String? {
+        return prefs.getString(KEY_LAST_NOTIFIED_UPDATE_VERSION, null)
+    }
+
+    fun setLastNotifiedUpdateVersion(version: String) {
+        prefs.edit().putString(KEY_LAST_NOTIFIED_UPDATE_VERSION, version).apply()
+    }
+
     fun getAccountBlock(email: String): AccountBlock? {
         val key = "account_block_${email.lowercase()}"
         val valStr = prefs.getString(key, null) ?: return null
@@ -795,6 +804,7 @@ class SettingsRepository(
         private const val KEY_MILESTONE_10000_SHOWN = "milestone_10000_shown"
         private const val KEY_LATE_NIGHT_DATE = "last_late_night_date"
         private const val KEY_LAST_UPDATE_CHECK_MILLIS = "last_update_check_millis"
+        private const val KEY_LAST_NOTIFIED_UPDATE_VERSION = "last_notified_update_version"
         private const val KEY_FOLDERS = "folders"
     }
 }

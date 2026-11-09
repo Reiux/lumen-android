@@ -38,9 +38,22 @@ class UpdateCheckWorker(
         }
 
         val updateInfo = repo.checkForUpdates(currentVersion)
-        if (updateInfo != null && updateInfo.isUpdateAvailable) {
-            LumenLogger.i("Updater") { "Update available! v${updateInfo.versionName}. Showing notification." }
-            showUpdateNotification(updateInfo.versionName)
+        if (updateInfo == null) {
+            // Network/API failure: let WorkManager retry with backoff instead of
+            // waiting a whole period before the next attempt.
+            LumenLogger.w("Updater") { "Background update check failed (attempt ${runAttemptCount + 1}). Will retry." }
+            return if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
+        }
+
+        if (updateInfo.isUpdateAvailable) {
+            val lastNotified = settingsRepo.getLastNotifiedUpdateVersion()
+            if (UpdateRepository.shouldNotifyForVersion(updateInfo.versionName, lastNotified)) {
+                LumenLogger.i("Updater") { "Update available! v${updateInfo.versionName}. Showing notification." }
+                showUpdateNotification(updateInfo.versionName)
+                settingsRepo.setLastNotifiedUpdateVersion(updateInfo.versionName)
+            } else {
+                LumenLogger.d("Updater") { "Update v${updateInfo.versionName} already notified. Skipping." }
+            }
         } else {
             LumenLogger.d("Updater") { "No update available." }
         }
@@ -74,7 +87,7 @@ class UpdateCheckWorker(
         )
 
         val notif = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("Lumen Update Available")
             .setContentText("Version $newVersion is available. Tap to update.")
             .setContentIntent(pendingIntent)
@@ -83,5 +96,9 @@ class UpdateCheckWorker(
             .build()
 
         nm.notify(9002, notif)
+    }
+
+    companion object {
+        private const val MAX_RETRIES = 3
     }
 }

@@ -73,7 +73,7 @@ class LumenApplication : Application() {
                 }
         }
 
-        // Schedule periodic update checks (Once every 24 hours)
+        // Schedule periodic background update checks so users get notified of new releases
         appScope.launch {
             val workManager = androidx.work.WorkManager.getInstance(this@LumenApplication)
             settingsRepository.settings
@@ -86,12 +86,21 @@ class LumenApplication : Application() {
                             .build()
                         
                         val updateCheckWork = androidx.work.PeriodicWorkRequestBuilder<com.reiux.lumen.service.UpdateCheckWorker>(
-                            24, java.util.concurrent.TimeUnit.HOURS
-                        ).setConstraints(constraints).build()
+                            com.reiux.lumen.data.repository.UpdateRepository.BACKGROUND_CHECK_INTERVAL_HOURS,
+                            java.util.concurrent.TimeUnit.HOURS
+                        )
+                            .setConstraints(constraints)
+                            .setBackoffCriteria(
+                                androidx.work.BackoffPolicy.EXPONENTIAL,
+                                15, java.util.concurrent.TimeUnit.MINUTES
+                            )
+                            .build()
                         
+                        // UPDATE (not KEEP) so installs that already have the old 24h job
+                        // pick up the new interval instead of keeping the stale schedule.
                         workManager.enqueueUniquePeriodicWork(
                             "LumenUpdateCheck",
-                            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
                             updateCheckWork
                         )
                     } else {

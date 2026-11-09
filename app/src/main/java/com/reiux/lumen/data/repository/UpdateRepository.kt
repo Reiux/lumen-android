@@ -136,6 +136,17 @@ class UpdateRepository(
     }
 
     companion object {
+        /** How often the background worker polls GitHub for a new release. */
+        const val BACKGROUND_CHECK_INTERVAL_HOURS = 4L
+
+        /**
+         * Only notify once per release, so frequent background checks don't re-post
+         * the same "update available" notification every few hours.
+         */
+        internal fun shouldNotifyForVersion(latestVersion: String, lastNotifiedVersion: String?): Boolean {
+            return latestVersion.isNotBlank() && latestVersion != lastNotifiedVersion
+        }
+
         internal fun shouldAutoCheck(
             lastCheckMillis: Long,
             nowMillis: Long,
