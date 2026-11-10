@@ -1578,7 +1578,7 @@ private fun HeroBackupCard(
 
     val totalInQueue = queue.size
     val isDone = totalInQueue == 0 || queue.all { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
-    val completedRecently = (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
+    val completedRecently = !isOffline && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
 
     if (completedRecently || showMockCompletionCelebration) {
         PlayfulCompletionCelebration(

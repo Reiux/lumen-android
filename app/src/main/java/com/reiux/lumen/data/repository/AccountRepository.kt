@@ -64,12 +64,13 @@ class AccountRepository(
             }
         }
         _accounts.value = list
-        _selectedAccount.value = list.firstOrNull { it.email == selectedEmail } ?: list.firstOrNull()
+        _selectedAccount.value = list.firstOrNull { it.email.equals(selectedEmail, ignoreCase = true) } ?: list.firstOrNull()
     }
 
     suspend fun addAccountFromOAuthToken(oauthToken: String): Result<GoogleAccount> {
         return runCatching {
             val account = authClient.exchangeOAuthToken(oauthToken)
+            authClient.invalidateCache(account.email)
             saveAccount(account)
             account
         }
@@ -88,6 +89,7 @@ class AccountRepository(
                 androidId = androidId,
                 masterToken = token
             )
+            authClient.invalidateCache(email)
             saveAccount(account)
             account
         }
@@ -109,9 +111,9 @@ class AccountRepository(
     }
 
     fun selectAccount(email: String) {
-        val account = _accounts.value.firstOrNull { it.email == email }
+        val account = _accounts.value.firstOrNull { it.email.equals(email, ignoreCase = true) }
         if (account != null) {
-            prefs.edit().putString(KEY_SELECTED_ACCOUNT, email).apply()
+            prefs.edit().putString(KEY_SELECTED_ACCOUNT, account.email).apply()
             _selectedAccount.value = account
         }
     }
@@ -135,6 +137,7 @@ class AccountRepository(
     }
 
     fun removeAccount(email: String) {
+        authClient.invalidateCache(email)
         val current = _accounts.value.filterNot { it.email.equals(email, ignoreCase = true) }
         val newSelected = if (_selectedAccount.value?.email.equals(email, ignoreCase = true)) {
             current.firstOrNull()?.email
@@ -162,7 +165,7 @@ class AccountRepository(
             .apply()
 
         _accounts.value = list
-        _selectedAccount.value = list.firstOrNull { it.email == selectedEmail }
+        _selectedAccount.value = list.firstOrNull { it.email.equals(selectedEmail, ignoreCase = true) }
     }
 
     private fun parseQueryString(query: String): Map<String, String> {

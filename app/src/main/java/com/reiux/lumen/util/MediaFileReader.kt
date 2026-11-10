@@ -613,8 +613,23 @@ object MediaFileReader {
             }
         } catch (_: Exception) {}
 
-        val nameSelection = "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE)$pendingFilter"
-        val nameArgs = arrayOf(name)
+        val parentDir = file.parentFile
+        val parentRelPath = parentDir?.let {
+            val pCanon = try { it.canonicalPath } catch (_: Exception) { it.absolutePath }
+            pCanon.substringAfter("/sdcard/").substringAfter("/storage/emulated/0/").trim('/')
+        }
+        val bucketName = parentDir?.name
+
+        val (nameSelection, nameArgs) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !parentRelPath.isNullOrEmpty()) {
+            "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND (${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR ${MediaStore.MediaColumns.RELATIVE_PATH} = ?))$pendingFilter" to
+                arrayOf(name, "$parentRelPath/", parentRelPath)
+        } else if (!bucketName.isNullOrEmpty()) {
+            "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND ${MediaStore.MediaColumns.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE)$pendingFilter" to
+                arrayOf(name, bucketName)
+        } else {
+            return null
+        }
+
         try {
             context.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,

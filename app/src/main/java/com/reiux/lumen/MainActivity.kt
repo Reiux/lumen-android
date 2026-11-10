@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val incomingShareUris = mutableStateOf<List<android.net.Uri>?>(null)
+    private val pendingShowUpdate = mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -89,6 +90,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+        if (intent.getStringExtra("action") == "show_update") {
+            pendingShowUpdate.value = true
+        }
     }
 
     private fun handleShareIntent(intent: Intent?) {
@@ -128,6 +132,9 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         handleShareIntent(intent)
+        if (intent?.getStringExtra("action") == "show_update") {
+            pendingShowUpdate.value = true
+        }
         val isRestored = savedInstanceState != null
         com.reiux.lumen.util.LumenLogger.i("AppLifecycle") {
             "MainActivity onCreate (SDK ${Build.VERSION.SDK_INT}, processRestore=$isRestored)"
@@ -179,12 +186,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val showUpdateRequest by pendingShowUpdate
+            LaunchedEffect(showUpdateRequest) {
+                if (showUpdateRequest) {
+                    pendingShowUpdate.value = false
+                    intent?.removeExtra("action")
+                    viewModel.checkAndShowUpdate(this@MainActivity)
+                }
+            }
+
             LaunchedEffect(Unit) {
                 viewModel.loadAlbums()
-                if (intent?.getStringExtra("action") == "show_update") {
-                    viewModel.checkAndShowUpdate(this@MainActivity)
-                } else if (settings.autoCheckUpdates) {
-                    viewModel.checkAndShowUpdate(this@MainActivity)
+                if (!pendingShowUpdate.value && settings.autoCheckUpdates) {
+                    val lastCheck = viewModel.settingsRepo.getLastUpdateCheckMillis()
+                    val now = System.currentTimeMillis()
+                    if (com.reiux.lumen.data.repository.UpdateRepository.shouldAutoCheck(lastCheck, now)) {
+                        viewModel.settingsRepo.setLastUpdateCheckMillis(now)
+                        viewModel.checkAndShowUpdate(this@MainActivity)
+                    }
                 }
             }
 
@@ -289,7 +308,7 @@ class MainActivity : ComponentActivity() {
                             onStartBackup = { viewModel.startBackup() },
                             onUploadFiles = { uris -> viewModel.uploadSelectedUris(uris, this@MainActivity) },
                             onUploadFilesWithAlbumTarget = { uris, mode, customName, customNickname -> viewModel.uploadSelectedUris(uris, this@MainActivity, mode, customName, customNickname) },
-                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                             onOpenAlbumManager = { showAlbumsScreen = true },
                             onCancelBackup = { viewModel.cancelBackup() },
                             onCancelScan = { viewModel.cancelScan() },
@@ -325,7 +344,7 @@ class MainActivity : ComponentActivity() {
                             onSetIncludeSubfolders = { path, email, inc -> viewModel.setIncludeSubfolders(path, email, inc) },
                             onAddFolder = { viewModel.addFolder(it) },
                             onRemoveFolder = { path, email -> viewModel.removeFolder(path, email) },
-                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                             onOpenAlbumManager = { showAlbumsScreen = true },
                             modifier = screenModifier
                         )
@@ -619,7 +638,7 @@ class MainActivity : ComponentActivity() {
                             accounts = accounts,
                             activeAccount = selectedAccount,
                             remoteAlbums = remoteAlbums,
-                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email); com.reiux.lumen.data.network.GoogleAlbum(key, nick, email) },
+                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                             onOpenAlbumManager = { showAlbumsScreen = true },
                             onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
                                 viewModel.uploadSelectedUris(

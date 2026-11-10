@@ -15,6 +15,7 @@ import com.reiux.lumen.util.LumenLogger
 import com.reiux.lumen.util.MediaFileReader
 import com.reiux.lumen.util.ScannedFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -100,6 +101,7 @@ class UploadRepository(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var uploadJob: Job? = null
     private var speedTickerJob: Job? = null
+    private val jobLock = Any()
     private val speedTracker = UploadSpeedTracker()
     private val albumCreationLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
     private val remoteDedupMutex = Mutex()
@@ -108,32 +110,48 @@ class UploadRepository(
     init {
         scope.launch {
             settingsRepository.settings
-                .map { it.folders.filter { f -> !f.enabled }.map { f -> f.path } }
+                .map { it.folders.filter { f -> !f.enabled } }
                 .distinctUntilChanged()
-                .collect { disabledPaths ->
-                    if (disabledPaths.isNotEmpty()) {
-                        pruneQueuedItemsForDisabledFolders(disabledPaths)
+                .collect { disabledFolders ->
+                    if (disabledFolders.isNotEmpty()) {
+                        pruneQueuedItemsForDisabledFolders(disabledFolders)
                     }
                 }
         }
     }
 
-    fun pruneQueuedItemsForDisabledFolders(disabledFolderPaths: List<String>) {
-        val current = _queue.value
-        if (current.isEmpty() || disabledFolderPaths.isEmpty()) return
+    fun pruneQueuedItemsForDisabledFolders(disabledFolders: List<com.reiux.lumen.data.model.BackupFolder>) {
+        if (disabledFolders.isEmpty()) return
+        val droppedItems = mutableListOf<UploadItem>()
+        synchronized(_queue) {
+            val current = _queue.value
+            if (current.isEmpty()) return
+            val (toDrop, toKeep) = current.partition { item ->
+                val checkPath = item.originalFilePath ?: item.filePath
+                disabledFolders.any { disabled ->
+                    val accountMatches = disabled.accountEmail.isNullOrBlank() ||
+                        item.accountEmail.isNullOrBlank() ||
+                        disabled.accountEmail.equals(item.accountEmail, ignoreCase = true)
+                    accountMatches && com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(checkPath, disabled)
+                }
+            }
+            if (toDrop.isNotEmpty()) {
+                _queue.value = toKeep
+                _currentUploadingItem.value = getActiveUploadingItem()
+                droppedItems.addAll(toDrop)
+            }
+        }
+        for (dropped in droppedItems) {
+            MediaFileReader.cleanupStagedFile(context, File(dropped.filePath))
+            LumenLogger.i("UploadEngine") { "Dropped queued item '${dropped.fileName}' (${dropped.filePath}) because folder is disabled." }
+        }
+    }
 
-        val (toDrop, toKeep) = current.partition { item ->
-            disabledFolderPaths.any { path ->
-                val folder = com.reiux.lumen.data.model.BackupFolder(path, "", enabled = false)
-                com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(item.filePath, folder)
-            }
+    fun pruneQueuedItemsForDisabledFolders(disabledFolderPaths: List<String>, accountEmail: String? = null) {
+        val folders = disabledFolderPaths.map { path ->
+            com.reiux.lumen.data.model.BackupFolder(path, "", enabled = false, accountEmail = accountEmail)
         }
-        if (toDrop.isNotEmpty()) {
-            _queue.value = toKeep
-            for (dropped in toDrop) {
-                LumenLogger.i("UploadEngine") { "Dropped queued item '${dropped.fileName}' (${dropped.filePath}) because folder is disabled." }
-            }
-        }
+        pruneQueuedItemsForDisabledFolders(folders)
     }
 
     suspend fun fetchRemoteAlbums(account: GoogleAccount): List<com.reiux.lumen.data.network.GoogleAlbum> {
@@ -196,23 +214,22 @@ class UploadRepository(
             rawDetail = rawDetail
         )
 
-        uploadJob?.cancel()
-        uploadJob = null
-        speedTickerJob?.cancel()
-        speedTracker.reset()
-        _uploadSpeed.value = null
-        _isUploading.value = false
-        _currentUploadingItem.value = null
-        _conditionNotice.value = null
+        var hasOtherActiveItems = false
+        val stagedPathsToCleanup = mutableListOf<String>()
 
         synchronized(_queue) {
             _queue.value = _queue.value.map { item ->
-                if (item.status == UploadStatus.QUEUED ||
+                val isTargetAccount = item.accountEmail == null || item.accountEmail.equals(email, ignoreCase = true)
+                val isActiveStatus = item.status == UploadStatus.QUEUED ||
                     item.status == UploadStatus.HASHING ||
                     item.status == UploadStatus.CHECKING ||
                     item.status == UploadStatus.UPLOADING ||
                     item.status == UploadStatus.COMMITTING
-                ) {
+
+                if (isActiveStatus && isTargetAccount) {
+                    if (item.status == UploadStatus.QUEUED) {
+                        stagedPathsToCleanup.add(item.filePath)
+                    }
                     val err = when (kind) {
                         AuthFailureKind.RATE_LIMITED -> "Rate limited by Google Photos"
                         AuthFailureKind.SIGN_IN_REQUIRED -> "Sign in required"
@@ -220,8 +237,25 @@ class UploadRepository(
                         else -> "Upload paused"
                     }
                     item.copy(status = UploadStatus.FAILED, error = err, bytesUploaded = 0L)
-                } else item
+                } else {
+                    if (isActiveStatus) hasOtherActiveItems = true
+                    item
+                }
             }
+            _currentUploadingItem.value = getActiveUploadingItem()
+        }
+
+        stagedPathsToCleanup.forEach { path ->
+            MediaFileReader.cleanupStagedFile(context, File(path))
+        }
+
+        if (!hasOtherActiveItems) {
+            detachAndCancelJobs()
+            speedTracker.reset()
+            _uploadSpeed.value = null
+            _isUploading.value = false
+            _currentUploadingItem.value = null
+            _conditionNotice.value = null
         }
 
         settingsRepository.setAccountBlock(block)
@@ -371,44 +405,73 @@ class UploadRepository(
             return
         }
 
-        if (_isUploading.value) return
+        // Check-and-start must be atomic: auto-backup triggers (folder watcher, media job,
+        // boot) and the UI can call this concurrently. Without the lock, two callers could both
+        // launch a processQueue job, leaving one orphaned and impossible to cancel.
+        synchronized(jobLock) {
+            if (uploadJob?.isActive == true) return
 
-        _completedCount.value = 0
-        _skippedCount.value = 0
-        
-        LumenLogger.i("UploadEngine") {
-            "Starting upload queue for ${LumenLogger.redact(account.email)} (StorageSaver: $storageSaver, UseQuota: $useQuota)"
-        }
-        speedTracker.reset()
-        _uploadSpeed.value = null
+            _completedCount.value = 0
+            _skippedCount.value = 0
 
-        speedTickerJob?.cancel()
-        speedTickerJob = scope.launch {
-            while (isActive) {
-                delay(500)
-                if (_isUploading.value) {
-                    _uploadSpeed.value = speedTracker.tick()
-                }
+            LumenLogger.i("UploadEngine") {
+                "Starting upload queue for ${LumenLogger.redact(account.email)} (StorageSaver: $storageSaver, UseQuota: $useQuota)"
             }
-        }
-
-        uploadJob = scope.launch {
+            speedTracker.reset()
+            _uploadSpeed.value = null
             _isUploading.value = true
-            try {
-                processQueue(account, storageSaver, useQuota)
-            } finally {
-                _isUploading.value = false
-                speedTickerJob?.cancel()
-                speedTracker.reset()
-                _uploadSpeed.value = null
-                _currentUploadingItem.value = null
-                _conditionNotice.value = null
-                LumenLogger.i("UploadEngine") { "Upload queue completed / finished" }
-                launch(Dispatchers.Main) {
-                    com.reiux.lumen.util.EasterEggsManager.checkLateNightToast(context)
+
+            speedTickerJob?.cancel()
+            val ticker = scope.launch {
+                while (isActive) {
+                    delay(500)
+                    if (_isUploading.value) {
+                        _uploadSpeed.value = speedTracker.tick()
+                    }
                 }
             }
+            speedTickerJob = ticker
+
+            lateinit var job: Job
+            job = scope.launch(start = CoroutineStart.LAZY) {
+                try {
+                    processQueue(account, storageSaver, useQuota)
+                } finally {
+                    ticker.cancel()
+                    // Only reset shared state if this job is still the current one. If it was
+                    // cancelled and a new queue was started in the meantime, resetting here would
+                    // flip isUploading to false under the new run and stop the foreground service.
+                    val isCurrent = synchronized(jobLock) {
+                        if (uploadJob === job) { uploadJob = null; true } else false
+                    }
+                    if (isCurrent) {
+                        _isUploading.value = false
+                        speedTracker.reset()
+                        _uploadSpeed.value = null
+                        _currentUploadingItem.value = null
+                        _conditionNotice.value = null
+                    }
+                    LumenLogger.i("UploadEngine") { "Upload queue completed / finished" }
+                    launch(Dispatchers.Main) {
+                        com.reiux.lumen.util.EasterEggsManager.checkLateNightToast(context)
+                    }
+                }
+            }
+            uploadJob = job
+            job.start()
         }
+    }
+
+    /** Detaches the current upload/ticker jobs (so their cleanup won't touch shared state) and cancels them. */
+    private fun detachAndCancelJobs() {
+        val (job, ticker) = synchronized(jobLock) {
+            val pair = uploadJob to speedTickerJob
+            uploadJob = null
+            speedTickerJob = null
+            pair
+        }
+        job?.cancel()
+        ticker?.cancel()
     }
 
     fun pauseQueue() {
@@ -416,16 +479,22 @@ class UploadRepository(
     }
 
     fun clearCompleted() {
+        val removedPaths = mutableListOf<String>()
         synchronized(_queue) {
             val before = _queue.value.size
-            _queue.value = _queue.value.filter {
+            val (keep, remove) = _queue.value.partition {
                 it.status != UploadStatus.COMPLETED &&
                 it.status != UploadStatus.SKIPPED &&
                 it.status != UploadStatus.FAILED &&
                 it.status != UploadStatus.STOPPED
             }
+            _queue.value = keep
+            remove.forEach { removedPaths.add(it.filePath) }
             _currentUploadingItem.value = getActiveUploadingItem()
             LumenLogger.i("UploadEngine") { "Cleared completed/stopped items (removed ${before - _queue.value.size} items)" }
+        }
+        removedPaths.forEach { path ->
+            MediaFileReader.cleanupStagedFile(context, File(path))
         }
     }
 
@@ -445,19 +514,23 @@ class UploadRepository(
     fun cancelQueue() {
         val pendingCount = _queue.value.count { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
         LumenLogger.w("UploadEngine") { "Cancelling upload queue ($pendingCount pending items)" }
-        uploadJob?.cancel()
-        uploadJob = null
-        speedTickerJob?.cancel()
+        detachAndCancelJobs()
         speedTracker.reset()
         _uploadSpeed.value = null
         _isUploading.value = false
         _currentUploadingItem.value = null
         _conditionNotice.value = null
 
+        val removedPaths = mutableListOf<String>()
         synchronized(_queue) {
-            _queue.value = _queue.value.filter {
+            val (keep, remove) = _queue.value.partition {
                 it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED
             }
+            _queue.value = keep
+            remove.forEach { removedPaths.add(it.filePath) }
+        }
+        removedPaths.forEach { path ->
+            MediaFileReader.cleanupStagedFile(context, File(path))
         }
     }
 
@@ -535,7 +608,11 @@ class UploadRepository(
 
                         val itemAccountEmail = nextItem.accountEmail ?: account.email
                         val itemAccount = accountRepository?.accounts?.value?.find { it.email.equals(itemAccountEmail, ignoreCase = true) }
-                            ?: GoogleAccount(itemAccountEmail, itemAccountEmail)
+                            ?: account.takeIf { it.email.equals(itemAccountEmail, ignoreCase = true) }
+                        if (itemAccount == null) {
+                            updateItemError(nextItem.id, "Account $itemAccountEmail is no longer signed in")
+                            continue
+                        }
 
                         val tokenProvider: suspend () -> String = { authClient.getBearerToken(itemAccount) }
 
@@ -599,6 +676,7 @@ class UploadRepository(
             return
         }
 
+        val albumMatchPath = item.originalFilePath ?: item.filePath
         try {
             // Step 1: Hashing
             val hashStart = System.currentTimeMillis()
@@ -626,7 +704,7 @@ class UploadRepository(
                 }
                 
                 val activeToken = tokenProvider()
-                handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, cachedMediaKey, opId)
+                handleAlbumAssignment(activeToken, accountEmail, albumMatchPath, item, cachedMediaKey, opId)
                 
                 updateItemCompleted(item.id, cachedMediaKey, isSkipped = true)
                 return
@@ -664,6 +742,7 @@ class UploadRepository(
                         throw e
                     } else null
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
                     LumenLogger.w("UploadEngine", opId = opId, tr = e) {
                         "Remote dedup check network error durationMs=$remoteCheckDuration: ${e.message}"
@@ -679,7 +758,7 @@ class UploadRepository(
                     "Remote dedup HIT in Google Photos cloud mediaKey=$existingMediaKey checkDurationMs=$remoteCheckDuration totalDurationMs=$totalMs. Skipping upload."
                 }
                 
-                handleAlbumAssignment(bearerToken, accountEmail, file.absolutePath, item, existingMediaKey, opId)
+                handleAlbumAssignment(bearerToken, accountEmail, albumMatchPath, item, existingMediaKey, opId)
 
                 hashCache.put(
                     accountEmail = accountEmail,
@@ -697,6 +776,7 @@ class UploadRepository(
             var currentAttempt = 0
             val maxAttempts = 3
             var lastError: Exception? = null
+            var tokenRefreshRetryUsed = false
 
             while (currentAttempt < maxAttempts) {
                 currentAttempt++
@@ -718,7 +798,7 @@ class UploadRepository(
                                 "Ambiguous commit recovery HIT: File was registered by server mediaKey=$retryCheckKey. Skipping re-upload."
                             }
                             
-                            handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, retryCheckKey, opId)
+                            handleAlbumAssignment(activeToken, accountEmail, albumMatchPath, item, retryCheckKey, opId)
 
                             hashCache.put(
                                 accountEmail = accountEmail,
@@ -798,9 +878,8 @@ class UploadRepository(
                         "Commit response SUCCESS mediaKey=$mediaKey durationMs=$commitDuration"
                     }
 
-                    handleAlbumAssignment(activeToken, accountEmail, file.absolutePath, item, mediaKey, opId)
-
-                    // Stage 6: Cache uploaded mediaKey locally
+                    // Stage 6: Cache uploaded mediaKey locally BEFORE album assignment so a transient
+                    // album error cannot lose the confirmed mediaKey
                     hashCache.put(
                         accountEmail = accountEmail,
                         sha1B64 = sha1Result.base64,
@@ -808,6 +887,8 @@ class UploadRepository(
                         fileSize = file.length(),
                         mtime = file.lastModified() / 1000
                     )
+
+                    handleAlbumAssignment(activeToken, accountEmail, albumMatchPath, item, mediaKey, opId)
 
                     val totalDuration = System.currentTimeMillis() - overallStartTime
                     LumenLogger.i("UploadEngine", opId = opId) {
@@ -832,8 +913,10 @@ class UploadRepository(
                         LumenLogger.w("UploadEngine", opId = opId) {
                             "Commit failed (${e.message}). Checking if Google Photos server committed the media..."
                         }
+                        var recoveryToken: String? = null
                         val postCommitKey = try {
                             val freshToken = tokenProvider()
+                            recoveryToken = freshToken
                             photosClient.findRemoteMediaByHash(freshToken, sha1Result.bytes, opId)
                         } catch (_: Exception) { null }
 
@@ -841,6 +924,15 @@ class UploadRepository(
                             val totalMs = System.currentTimeMillis() - overallStartTime
                             LumenLogger.i("UploadEngine", opId = opId) {
                                 "Ambiguous commit recovery SUCCESS: Server registered mediaKey=$postCommitKey despite network drop. Duration: ${totalMs}ms."
+                            }
+                            // The upload landed, so still put it in its target album
+                            recoveryToken?.let { token ->
+                                try {
+                                    handleAlbumAssignment(token, accountEmail, albumMatchPath, item, postCommitKey, opId)
+                                } catch (albumErr: Exception) {
+                                    if (albumErr is CancellationException) throw albumErr
+                                    LumenLogger.w("UploadEngine", opId = opId, tr = albumErr) { "Album assignment after commit recovery failed: ${albumErr.message}" }
+                                }
                             }
                             hashCache.put(
                                 accountEmail = accountEmail,
@@ -856,25 +948,17 @@ class UploadRepository(
                     }
 
                     if (e is com.reiux.lumen.util.AuthFailureException) {
-                        when (e.kind) {
-                            AuthFailureKind.TOKEN_EXPIRED -> {
-                                LumenLogger.w("UploadEngine", opId = opId) { "Token expired. Invalidating cache and retrying once..." }
-                                authClient.invalidateCache(accountEmail)
-                                try {
-                                    val freshToken = tokenProvider()
-                                    val uploadToken = photosClient.getUploadToken(freshToken, sha1Result.base64, file.length(), opId)
-                                    val commitToken = photosClient.uploadFile(uploadToken, file, freshToken, opId)
-                                    val mediaKey = photosClient.commitUpload(freshToken, commitToken, item.fileName, sha1Result.bytes, file.lastModified() / 1000, storageSaver, useQuota, opId)
-
-                                    updateItemCompleted(item.id, mediaKey, isSkipped = false)
-                                    handlePostBackupDeletion(item, file, opId)
-                                    return
-                                } catch (retryErr: Exception) {
-                                    LumenLogger.e("UploadEngine", opId = opId, tr = retryErr) { "Token refresh retry failed: ${retryErr.message}" }
-                                    triggerAccountBlock(accountEmail, AuthFailureKind.SIGN_IN_REQUIRED, retryErr.message)
-                                    throw retryErr
-                                }
+                        if (e.kind == AuthFailureKind.TOKEN_EXPIRED) {
+                            // Refresh the token and let the main retry loop redo the upload, so the
+                            // success path (album assignment + hash cache) always runs. A free retry
+                            // is granted once so an expiry on the last attempt still gets retried.
+                            LumenLogger.w("UploadEngine", opId = opId) { "Token expired. Invalidating cache and retrying..." }
+                            authClient.invalidateCache(accountEmail)
+                            if (!tokenRefreshRetryUsed) {
+                                tokenRefreshRetryUsed = true
+                                currentAttempt--
                             }
+                        } else when (e.kind) {
                             AuthFailureKind.SIGN_IN_REQUIRED,
                             AuthFailureKind.ACCOUNT_RESTRICTED,
                             AuthFailureKind.RATE_LIMITED -> {
@@ -923,9 +1007,8 @@ class UploadRepository(
         } else {
             val folders = settingsRepository.getFoldersForAccount(accountEmail)
             val matchingFolder = folders.firstOrNull { f ->
-                f.enabled && f.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE && (
-                    filePath.startsWith(f.path) || File(filePath).parentFile?.absolutePath == File(f.path).absolutePath
-                )
+                f.enabled && f.targetAlbumMode != com.reiux.lumen.data.model.AlbumTargetMode.NONE &&
+                    com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(filePath, f)
             }
             if (matchingFolder != null) {
                 Triple(matchingFolder.targetAlbumMode, matchingFolder.customAlbumName, matchingFolder.customAlbumNickname)
@@ -943,7 +1026,7 @@ class UploadRepository(
                     "Uploads $currentMonth"
                 } else {
                     val folders = settingsRepository.getFoldersForAccount(accountEmail)
-                    val f = folders.firstOrNull { filePath.startsWith(it.path) || File(filePath).parentFile?.absolutePath == File(it.path).absolutePath }
+                    val f = folders.firstOrNull { com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(filePath, it) }
                     f?.displayName ?: "Uploads"
                 }
             }
@@ -964,8 +1047,18 @@ class UploadRepository(
                     settingsRepository.markAlbumMissing(accountEmail, rawTitle)
                 }
                 synchronized(_queue) {
+                    val folders = settingsRepository.getFoldersForAccount(accountEmail)
                     _queue.value = _queue.value.map { qItem ->
-                        if (qItem.customAlbumName == rawTitle || qItem.customAlbumNickname == rawTitle) {
+                        val sameAccount = (qItem.accountEmail ?: accountEmail).equals(accountEmail, ignoreCase = true)
+                        val isPending = qItem.status == UploadStatus.QUEUED
+                        val matchesDirect = qItem.customAlbumName == rawTitle || qItem.customAlbumNickname == rawTitle
+                        val qCheckPath = qItem.originalFilePath ?: qItem.filePath
+                        val matchesFolder = qItem.targetAlbumMode == com.reiux.lumen.data.model.AlbumTargetMode.NONE &&
+                            folders.any { f ->
+                                f.enabled && (f.customAlbumName == rawTitle || f.customAlbumNickname == rawTitle) &&
+                                    (qCheckPath.startsWith(f.path) || File(qCheckPath).parentFile?.absolutePath == File(f.path).absolutePath)
+                            }
+                        if (sameAccount && isPending && (matchesDirect || matchesFolder)) {
                             qItem.copy(
                                 status = UploadStatus.STOPPED,
                                 error = "Album not found in Google Photos"

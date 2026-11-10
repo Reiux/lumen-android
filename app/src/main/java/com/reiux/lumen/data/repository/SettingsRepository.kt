@@ -383,14 +383,21 @@ class SettingsRepository(
         return email1.equals(email2, ignoreCase = true)
     }
 
+    private fun matchesFolderPath(path1: String, path2: String): Boolean {
+        if (path1 == path2) return true
+        val norm1 = path1.removePrefix("/storage/emulated/0/").removePrefix("/sdcard/").trimEnd('/')
+        val norm2 = path2.removePrefix("/storage/emulated/0/").removePrefix("/sdcard/").trimEnd('/')
+        return norm1.equals(norm2, ignoreCase = true)
+    }
+
     fun toggleFolder(path: String, enabled: Boolean) = toggleFolder(path, null, enabled)
     fun toggleFolder(path: String, accountEmail: String?, enabled: Boolean) {
         val current = getAllFolders()
         val updated = current.map {
             val matches = if (accountEmail.isNullOrBlank()) {
-                it.path == path
+                matchesFolderPath(it.path, path)
             } else {
-                it.path == path && matchesAccount(it.accountEmail, accountEmail)
+                matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)
             }
             if (matches) it.copy(enabled = enabled) else it
         }
@@ -400,7 +407,7 @@ class SettingsRepository(
     fun addFolder(folder: BackupFolder) {
         val current = getAllFolders().toMutableList()
         val index = current.indexOfFirst {
-            it.path == folder.path && matchesAccount(it.accountEmail, folder.accountEmail)
+            matchesFolderPath(it.path, folder.path) && matchesAccount(it.accountEmail, folder.accountEmail)
         }
         if (index >= 0) {
             current[index] = folder
@@ -414,7 +421,7 @@ class SettingsRepository(
     fun removeFolder(path: String, accountEmail: String?) {
         val current = getAllFolders()
         val updated = current.filterNot {
-            it.path == path && matchesAccount(it.accountEmail, accountEmail)
+            matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)
         }
         saveFolders(updated)
     }
@@ -423,7 +430,7 @@ class SettingsRepository(
     fun setIncludeSubfolders(path: String, accountEmail: String?, includeSubfolders: Boolean) {
         val current = getAllFolders()
         val updated = current.map {
-            if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(includeSubfolders = includeSubfolders) else it
+            if (matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) it.copy(includeSubfolders = includeSubfolders) else it
         }
         saveFolders(updated)
     }
@@ -457,7 +464,7 @@ class SettingsRepository(
     fun toggleFolderForAccount(email: String?, path: String, enabled: Boolean) {
         val current = getAllFolders()
         val updated = current.map {
-            if (it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
+            if (matchesFolderPath(it.path, path) && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
                 it.copy(enabled = enabled)
             } else it
         }
@@ -467,7 +474,7 @@ class SettingsRepository(
     fun removeFolderForAccount(email: String?, path: String) {
         val current = getAllFolders()
         val updated = current.filterNot {
-            it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))
+            matchesFolderPath(it.path, path) && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))
         }
         saveFolders(updated)
     }
@@ -475,7 +482,7 @@ class SettingsRepository(
     fun setIncludeSubfoldersForAccount(email: String?, path: String, includeSubfolders: Boolean) {
         val current = getAllFolders()
         val updated = current.map {
-            if (it.path == path && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
+            if (matchesFolderPath(it.path, path) && (email.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))) {
                 it.copy(includeSubfolders = includeSubfolders)
             } else it
         }

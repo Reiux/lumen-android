@@ -38,24 +38,54 @@ class LumenApplication : Application() {
         instance = this
         settingsRepository = SettingsRepository(this)
         com.reiux.lumen.util.LumenLogger.init(this, settingsRepository.settings.value.saveLogsEnabled)
-        accountRepository = AccountRepository(this)
-        uploadRepository = UploadRepository(this, settingsRepository, accountRepository)
+        val authClient = com.reiux.lumen.data.network.GoogleAuthClient()
+        accountRepository = AccountRepository(this, authClient = authClient)
+        uploadRepository = UploadRepository(this, settingsRepository, accountRepository, authClient = authClient)
 
         // Clean stale account blocks for accounts that no longer exist
         val validAccountEmails = accountRepository.accounts.value.map { it.email }.toSet()
         settingsRepository.cleanStaleAccountBlocks(validAccountEmails)
+
+        // Clean leftover temporary staged files from any interrupted/killed previous sessions
+        appScope.launch {
+            try {
+                File(cacheDir, "staging").deleteRecursively()
+            } catch (_: Exception) {}
+        }
 
         // Continuous in-process folder watcher
         folderWatcher = FolderWatcherManager(
             context = this,
             settingsRepository = settingsRepository
         ) { newFiles ->
-            val account = accountRepository.selectedAccount.value ?: accountRepository.accounts.value.firstOrNull()
-            val autoBackup = settingsRepository.settings.value.autoBackupEnabled
-            if (account != null && autoBackup) {
-                val isStorageSaver = settingsRepository.settings.value.storageSaverQuality
-                val useQuota = settingsRepository.settings.value.useQuota
-                uploadRepository.enqueueFiles(newFiles, account, isStorageSaver, useQuota)
+            val currentSettings = settingsRepository.settings.value
+            if (!currentSettings.autoBackupEnabled) return@FolderWatcherManager
+
+            val allAccounts = accountRepository.accounts.value
+            if (allAccounts.isEmpty()) return@FolderWatcherManager
+
+            val enabledFolders = settingsRepository.getAllFolders().filter { it.enabled && !it.accountEmail.isNullOrBlank() }
+            if (enabledFolders.isEmpty()) return@FolderWatcherManager
+
+            val filesByAccount = mutableMapOf<String, MutableList<File>>()
+            for (file in newFiles) {
+                val matchingFolders = enabledFolders.filter {
+                    FolderWatcherManager.isPathMatchingFolder(file.absolutePath, it)
+                }
+                for (folder in matchingFolders) {
+                    val email = folder.accountEmail?.trim() ?: continue
+                    filesByAccount.getOrPut(email.lowercase()) { mutableListOf() }.add(file)
+                }
+            }
+
+            for ((emailLower, accountFiles) in filesByAccount) {
+                val account = allAccounts.firstOrNull { it.email.equals(emailLower, ignoreCase = true) } ?: continue
+                uploadRepository.enqueueFiles(
+                    files = accountFiles.distinctBy { it.absolutePath },
+                    account = account,
+                    storageSaver = currentSettings.storageSaverQuality,
+                    useQuota = currentSettings.useQuota
+                )
             }
         }
         folderWatcher.start()
@@ -159,7 +189,10 @@ class LumenApplication : Application() {
                         MediaStore.MediaColumns.DATA,
                         MediaStore.MediaColumns.DATE_ADDED
                     ).apply {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.MediaColumns.RELATIVE_PATH)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            add(MediaStore.MediaColumns.RELATIVE_PATH)
+                            add(MediaStore.MediaColumns.IS_PENDING)
+                        }
                         add(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
                     }.toTypedArray()
 
@@ -172,13 +205,17 @@ class LumenApplication : Application() {
                         selectionArgs = arrayOf(yesterdaySec.toString())
                     }
 
+                    val nowSec = System.currentTimeMillis() / 1000
+                    var firstNotReadyId: Long? = null
                     for (uri in queryUris) {
                         try {
-                            contentResolver.query(uri, projection, selection, selectionArgs, "${MediaStore.MediaColumns._ID} ASC")?.use { cursor ->
+                            FolderWatcherManager.queryIncludingPending(contentResolver, uri, projection, selection, selectionArgs, "${MediaStore.MediaColumns._ID} ASC")?.use { cursor ->
                                 val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
                                 val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                                 val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
                                 val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                                val pendingCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.IS_PENDING) else -1
+                                val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
 
                                 while (cursor.moveToNext()) {
                                     val mediaId = if (idCol >= 0) cursor.getLong(idCol) else 0L
@@ -187,12 +224,19 @@ class LumenApplication : Application() {
                                     val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) else null
 
                                     if (FolderWatcherManager.isMediaStoreItemInFolder(path, relPath, bucketName, folder)) {
+                                        val isPending = pendingCol >= 0 && cursor.getInt(pendingCol) == 1
+                                        val file = if (!path.isNullOrEmpty()) File(path) else null
+                                        val fileReady = !isPending && file != null && file.exists() && file.isFile && file.length() > 0
+                                        val dateAdded = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
+
+                                        // Don't move the watermark past files still being written
+                                        if (FolderWatcherManager.shouldHoldWatermark(fileReady, dateAdded, nowSec)) {
+                                            if (firstNotReadyId == null || mediaId < firstNotReadyId!!) firstNotReadyId = mediaId
+                                            continue
+                                        }
                                         if (mediaId > maxId) maxId = mediaId
-                                        if (!path.isNullOrEmpty()) {
-                                            val file = File(path)
-                                            if (file.exists() && file.isFile && file.length() > 0 && file.extension.lowercase() in supportedExts) {
-                                                folderNewFiles.add(file)
-                                            }
+                                        if (fileReady && file != null && file.extension.lowercase() in supportedExts) {
+                                            folderNewFiles.add(file)
                                         }
                                     }
                                 }
@@ -202,8 +246,9 @@ class LumenApplication : Application() {
                         }
                     }
 
-                    if (maxId > lastWatermarkId) {
-                        settingsRepository.saveFolderWatermarkId(account.email, folder.path, maxId)
+                    val newWatermark = FolderWatcherManager.computeSafeWatermark(lastWatermarkId, maxId, firstNotReadyId)
+                    if (newWatermark > lastWatermarkId) {
+                        settingsRepository.saveFolderWatermarkId(account.email, folder.path, newWatermark)
                     }
                     foundFiles.addAll(folderNewFiles)
                 }

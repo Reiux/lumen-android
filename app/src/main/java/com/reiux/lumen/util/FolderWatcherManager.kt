@@ -213,6 +213,7 @@ class FolderWatcherManager(
                 ).apply {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         add(MediaStore.MediaColumns.RELATIVE_PATH)
+                        add(MediaStore.MediaColumns.IS_PENDING)
                     }
                     add(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
                 }.toTypedArray()
@@ -239,9 +240,12 @@ class FolderWatcherManager(
                             selectionArgs = arrayOf(yesterdaySec.toString())
                         }
 
+                        val nowSec = System.currentTimeMillis() / 1000
+                        var firstNotReadyId: Long? = null
                         for (uri in queryUris) {
                             try {
-                                context.contentResolver.query(
+                                queryIncludingPending(
+                                    context.contentResolver,
                                     uri,
                                     projection,
                                     selection,
@@ -252,6 +256,8 @@ class FolderWatcherManager(
                                     val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                                     val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
                                     val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                                    val pendingCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.IS_PENDING) else -1
+                                    val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
 
                                     while (cursor.moveToNext()) {
                                         val mediaId = if (idCol >= 0) cursor.getLong(idCol) else 0L
@@ -260,16 +266,22 @@ class FolderWatcherManager(
                                         val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) else null
 
                                         if (isMediaStoreItemInFolder(path, relPath, bucketName, folder)) {
+                                            val isPending = pendingCol >= 0 && cursor.getInt(pendingCol) == 1
+                                            val file = if (!path.isNullOrEmpty()) File(path) else null
+                                            val fileReady = !isPending && file != null && file.exists() && file.length() > 0
+                                            val dateAdded = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
+
+                                            if (shouldHoldWatermark(fileReady, dateAdded, nowSec)) {
+                                                if (firstNotReadyId == null || mediaId < firstNotReadyId!!) firstNotReadyId = mediaId
+                                                continue
+                                            }
                                             if (mediaId > maxId) {
                                                 maxId = mediaId
                                             }
-                                            if (!path.isNullOrEmpty()) {
-                                                val file = File(path)
-                                                if (file.extension.lowercase() in supportedExts && file.exists() && file.length() > 0) {
-                                                    folderMatchedCount++
-                                                    totalMatchedCount++
-                                                    queueFileForBackup(file)
-                                                }
+                                            if (fileReady && file != null && file.extension.lowercase() in supportedExts) {
+                                                folderMatchedCount++
+                                                totalMatchedCount++
+                                                queueFileForBackup(file)
                                             }
                                         }
                                     }
@@ -279,9 +291,10 @@ class FolderWatcherManager(
                             }
                         }
 
-                        if (maxId > lastWatermarkId) {
-                            settingsRepository.saveFolderWatermarkId(accountEmail, folder.path, maxId)
-                            LumenLogger.d(TAG) { "Updated watermark for folder '${folder.displayName}' (account=$accountEmail) to $maxId (found $folderMatchedCount new item(s))" }
+                        val newWatermark = computeSafeWatermark(lastWatermarkId, maxId, firstNotReadyId)
+                        if (newWatermark > lastWatermarkId) {
+                            settingsRepository.saveFolderWatermarkId(accountEmail, folder.path, newWatermark)
+                            LumenLogger.d(TAG) { "Updated watermark for folder '${folder.displayName}' (account=$accountEmail) to $newWatermark (found $folderMatchedCount new item(s))" }
                         }
                     }
                 }
@@ -354,6 +367,57 @@ class FolderWatcherManager(
 
     companion object {
         private const val TAG = "FolderWatcher"
+
+        /**
+         * A not-ready item (still pending / empty) older than this is treated as abandoned, so a
+         * broken entry can't hold a folder's watermark back forever. Long enough for long recordings.
+         */
+        private const val NOT_READY_GRACE_SEC = 6 * 3600L
+
+        /**
+         * Queries MediaStore including items that are still pending (being written). Camera apps
+         * insert a pending row when a video recording *starts*, so without this a photo taken
+         * during recording could push the watermark past the video and it would never be backed up.
+         */
+        fun queryIncludingPending(
+            resolver: android.content.ContentResolver,
+            uri: android.net.Uri,
+            projection: Array<String>,
+            selection: String,
+            selectionArgs: Array<String>,
+            sortOrder: String
+        ): android.database.Cursor? {
+            return when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    val args = android.os.Bundle().apply {
+                        putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                        putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, selectionArgs)
+                        putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
+                        putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+                    }
+                    resolver.query(uri, projection, args, null)
+                }
+                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
+                    @Suppress("DEPRECATION")
+                    resolver.query(MediaStore.setIncludePending(uri), projection, selection, selectionArgs, sortOrder)
+                }
+                else -> resolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            }
+        }
+
+        /** True if a MediaStore item is still being written and should hold the watermark back. */
+        internal fun shouldHoldWatermark(fileReady: Boolean, dateAddedSec: Long, nowSec: Long): Boolean {
+            return !fileReady && (nowSec - dateAddedSec) < NOT_READY_GRACE_SEC
+        }
+
+        /**
+         * Never advance a folder's watermark past an item that isn't ready yet, otherwise that item
+         * is skipped forever once it finishes writing.
+         */
+        internal fun computeSafeWatermark(lastWatermark: Long, maxSeenId: Long, firstNotReadyId: Long?): Long {
+            val capped = if (firstNotReadyId == null) maxSeenId else minOf(maxSeenId, firstNotReadyId - 1)
+            return maxOf(lastWatermark, capped)
+        }
 
         fun isPathMatchingFolder(filePath: String, folder: BackupFolder): Boolean {
             val folderCanonical = try { File(folder.path).canonicalPath } catch (_: Exception) { folder.path }.trimEnd('/')

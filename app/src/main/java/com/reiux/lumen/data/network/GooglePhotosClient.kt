@@ -52,6 +52,9 @@ data class GoogleAlbum(
 
 class GooglePhotosClient(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
         .dispatcher(okhttp3.Dispatcher().apply {
             maxRequests = 64
             maxRequestsPerHost = 20
@@ -392,9 +395,8 @@ class GooglePhotosClient(
             }
         } catch (_: Exception) {}
 
-        val fallbackKey = "uploaded_${System.currentTimeMillis()}"
-        LumenLogger.d(TAG, opId = opId) { "commitUpload fallback generated key: $fallbackKey" }
-        fallbackKey
+        LumenLogger.e(TAG, opId = opId) { "commitUpload response did not contain a valid mediaKey (respSize=${respBytes.size}B)" }
+        throw IOException("CommitUpload failed: response missing mediaKey")
     }
 
     suspend fun createAlbum(
@@ -505,16 +507,16 @@ class GooglePhotosClient(
         true
     }
 
-    suspend fun resolveAlbumInput(input: String): String = withContext(Dispatchers.IO) {
+    fun resolveAlbumInput(input: String): String {
         val trimmed = input.trim()
-        if (trimmed.isBlank()) return@withContext ""
+        if (trimmed.isBlank()) return ""
 
         val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
         
         // 1. Direct raw media key check
         if (trimmed.startsWith("AF1Qip") || keyRegex.matches(trimmed)) {
             val match = keyRegex.find(trimmed)
-            if (match != null) return@withContext match.value
+            if (match != null) return match.value
         }
 
         // 2. Extracted from a URL
@@ -522,11 +524,11 @@ class GooglePhotosClient(
             val match = keyRegex.find(trimmed)
             if (match != null) {
                 LumenLogger.d(TAG) { "Extracted album key from URL: ${match.value}" }
-                return@withContext match.value
+                return match.value
             }
         }
 
-        trimmed
+        return trimmed
     }
 
 

@@ -160,15 +160,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addAlbum(keyOrUrl: String, nickname: String?, targetAccountEmail: String? = null): com.reiux.lumen.data.network.GoogleAlbum {
         val accountEmail = targetAccountEmail ?: selectedAccount.value?.email ?: ""
-        val titleToSave = nickname?.ifBlank { null } ?: keyOrUrl.trim()
+        val resolvedKey = com.reiux.lumen.data.network.GooglePhotosClient().resolveAlbumInput(keyOrUrl)
+        val titleToSave = nickname?.ifBlank { null } ?: resolvedKey.ifBlank { keyOrUrl.trim() }
 
-        viewModelScope.launch {
-            val client = com.reiux.lumen.data.network.GooglePhotosClient()
-            val resolvedKey = client.resolveAlbumInput(keyOrUrl)
-
-            settingsRepo.saveAlbumMediaKey(accountEmail, titleToSave, resolvedKey)
-        }
-        return com.reiux.lumen.data.network.GoogleAlbum(mediaKey = keyOrUrl.trim(), title = titleToSave, accountEmail = accountEmail)
+        settingsRepo.saveAlbumMediaKey(accountEmail, titleToSave, resolvedKey)
+        return com.reiux.lumen.data.network.GoogleAlbum(mediaKey = resolvedKey, title = titleToSave, accountEmail = accountEmail)
     }
 
     private val _updateDownloadProgress = MutableStateFlow(-1)
@@ -462,6 +458,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        connectivityObserver.unregister()
         mockSimJob?.cancel()
         scanJob?.cancel()
     }
@@ -1373,6 +1370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        uploadRepo.clearAccountBlock(email)
         accountRepo.removeAccount(email)
     }
 
@@ -1391,6 +1389,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             accountRepo.addAccountFromOAuthToken(token)
                 .onSuccess {
                     LumenLogger.i("AccountsUI", "Successfully added account via OAuth token: ${it.email}")
+                    uploadRepo.clearAccountBlock(it.email)
                     _isAddingAccount.value = false
                 }
                 .onFailure {
@@ -1416,6 +1415,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             accountRepo.importCredentialString(credential)
                 .onSuccess {
                     LumenLogger.i("AccountsUI", "Successfully imported credential for: ${it.email}")
+                    uploadRepo.clearAccountBlock(it.email)
                     _isAddingAccount.value = false
                 }
                 .onFailure {

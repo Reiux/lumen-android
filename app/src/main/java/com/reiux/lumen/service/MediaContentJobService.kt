@@ -10,8 +10,10 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import com.reiux.lumen.LumenApplication
+import kotlinx.coroutines.launch
 
 class MediaContentJobService : JobService() {
+    private var watchJob: kotlinx.coroutines.Job? = null
 
     override fun onStartJob(params: JobParameters?): Boolean {
         Log.d(TAG, "MediaContentJobService triggered by OS content URI change")
@@ -20,10 +22,21 @@ class MediaContentJobService : JobService() {
 
         // Reschedule to continuously observe subsequent media additions
         scheduleMediaWatcher(this)
-        return false
+
+        // Hold the JobService execution lease while the background upload runs so the OS
+        // doesn't freeze the process before all new media items finish uploading.
+        watchJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            kotlinx.coroutines.delay(1500L)
+            while (app.uploadRepository.isUploading.value) {
+                kotlinx.coroutines.delay(1000L)
+            }
+            jobFinished(params, false)
+        }
+        return true
     }
 
     override fun onStopJob(params: JobParameters?): Boolean {
+        watchJob?.cancel()
         return false
     }
 

@@ -6,6 +6,8 @@ import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.util.AuthFailureException
 import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -20,6 +22,7 @@ class GoogleAuthClient(
     private val httpClient: OkHttpClient = OkHttpClient.Builder().build()
 ) {
     private val tokenCache = ConcurrentHashMap<String, CachedToken>()
+    private val refreshLocks = ConcurrentHashMap<String, Mutex>()
 
     data class CachedToken(
         val bearerToken: String,
@@ -100,73 +103,86 @@ class GoogleAuthClient(
     }
 
     suspend fun getBearerToken(account: GoogleAccount): String = withContext(Dispatchers.IO) {
-        val cached = tokenCache[account.email]
-        val now = System.currentTimeMillis() / 1000
-        if (cached != null && cached.expiresAtEpochSec > now + 60) {
-            return@withContext cached.bearerToken
+        val cacheKey = account.email.lowercase()
+        val fastCached = tokenCache[cacheKey]
+        val fastNow = System.currentTimeMillis() / 1000
+        if (fastCached != null && fastCached.expiresAtEpochSec > fastNow + 60) {
+            return@withContext fastCached.bearerToken
         }
 
-        LumenLogger.d("Auth", "Refreshing Google Photos bearer token for ${account.email}...")
-        val formValues = parseQueryString(account.credentialString)
-        val formBuilder = FormBody.Builder()
-        for ((k, v) in formValues) {
-            if (k != "it_caveat_types" && k != "assertion_jwt" && k != "token_binding_alias") {
-                formBuilder.add(k, v)
+        val mutex = refreshLocks.computeIfAbsent(cacheKey) { Mutex() }
+        mutex.withLock {
+            val cached = tokenCache[cacheKey]
+            val now = System.currentTimeMillis() / 1000
+            if (cached != null && cached.expiresAtEpochSec > now + 60) {
+                return@withLock cached.bearerToken
             }
+
+            LumenLogger.d("Auth", "Refreshing Google Photos bearer token for ${account.email}...")
+            val formValues = parseQueryString(account.credentialString)
+            val formBuilder = FormBody.Builder()
+            for ((k, v) in formValues) {
+                if (k != "it_caveat_types" && k != "assertion_jwt" && k != "token_binding_alias") {
+                    formBuilder.add(k, v)
+                }
+            }
+            formBuilder.add("app", GOOGLE_PHOTOS_PKG)
+            formBuilder.add("callerPkg", GOOGLE_PHOTOS_PKG)
+
+            val request = Request.Builder()
+                .url(AUTH_ENDPOINT)
+                .post(formBuilder.build())
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("device", account.androidId.ifEmpty { formValues["androidId"] ?: "" })
+                .header("User-Agent", "GoogleAuth/1.4 (Pixel XL PQ2A.190205.001); gzip")
+                .build()
+
+            val start = System.currentTimeMillis()
+            val response = httpClient.newCall(request).execute()
+            val duration = System.currentTimeMillis() - start
+            val respBytes = response.body?.bytes() ?: ByteArray(0)
+            val body = respBytes.decodeToString()
+            val parsed = parseKeyValueResponse(body)
+            val googleError = parsed["Error"] ?: parsed["Info"]
+
+            if (response.isSuccessful) {
+                LumenLogger.d("Network") {
+                    "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+                }
+            } else {
+                LumenLogger.w("Network") {
+                    "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+                }
+            }
+
+            // Transient server errors (5xx) should be retried as network failures, not permanent blocks
+            if (response.code in 500..599 && googleError.isNullOrEmpty()) {
+                throw IOException("Failed to obtain Photos bearer token: HTTP ${response.code}")
+            }
+
+            if (!response.isSuccessful || !googleError.isNullOrEmpty()) {
+                val errCode = response.code
+                val rawDetail = "HTTP $errCode: ${googleError ?: "Auth error"}"
+                val kind = when (googleError) {
+                    "NeedsBrowser", "NeedsVerification", "CaptchaRequired", "DeviceManagementRequired", "BadAuthentication", "NeedPermission", "TermsOfServiceNotAccepted" -> AuthFailureKind.SIGN_IN_REQUIRED
+                    "AccountDisabled", "AccountDeleted", "ServiceDisabled", "AccessNotConfigured", "GoogleAccountDataDeletion", "AccountLocked" -> AuthFailureKind.ACCOUNT_RESTRICTED
+                    else -> if (errCode == 429) AuthFailureKind.RATE_LIMITED else AuthFailureKind.SIGN_IN_REQUIRED
+                }
+                LumenLogger.w("Auth") { "getBearerToken failed ($kind): $rawDetail" }
+                throw com.reiux.lumen.util.AuthFailureException(kind = kind, rawDetail = rawDetail)
+            }
+
+            val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response")
+            val expirySec = parsed["Expiry"]?.toLongOrNull() ?: (now + 3600)
+
+            tokenCache[cacheKey] = CachedToken(bearerToken, expirySec)
+            LumenLogger.d("Auth", "Acquired Photos bearer token for ${account.email} (expires in ${expirySec - now}s)")
+            bearerToken
         }
-        formBuilder.add("app", GOOGLE_PHOTOS_PKG)
-        formBuilder.add("callerPkg", GOOGLE_PHOTOS_PKG)
-
-        val request = Request.Builder()
-            .url(AUTH_ENDPOINT)
-            .post(formBuilder.build())
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("device", account.androidId.ifEmpty { formValues["androidId"] ?: "" })
-            .header("User-Agent", "GoogleAuth/1.4 (Pixel XL PQ2A.190205.001); gzip")
-            .build()
-
-        val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = response.body?.bytes() ?: ByteArray(0)
-
-        if (response.isSuccessful) {
-            LumenLogger.d("Network") {
-                "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
-            }
-        } else {
-            LumenLogger.w("Network") {
-                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
-            }
-            throw IOException("Failed to obtain Photos bearer token: HTTP ${response.code}")
-        }
-
-        val body = respBytes.decodeToString()
-        val parsed = parseKeyValueResponse(body)
-        val googleError = parsed["Error"] ?: parsed["Info"]
-
-        if (!response.isSuccessful || !googleError.isNullOrEmpty()) {
-            val errCode = response.code
-            val rawDetail = "HTTP $errCode: ${googleError ?: "Auth error"}"
-            val kind = when (googleError) {
-                "NeedsBrowser", "NeedsVerification", "CaptchaRequired", "DeviceManagementRequired", "BadAuthentication", "NeedPermission", "TermsOfServiceNotAccepted" -> AuthFailureKind.SIGN_IN_REQUIRED
-                "AccountDisabled", "AccountDeleted", "ServiceDisabled", "AccessNotConfigured", "GoogleAccountDataDeletion", "AccountLocked" -> AuthFailureKind.ACCOUNT_RESTRICTED
-                else -> if (errCode == 429) AuthFailureKind.RATE_LIMITED else AuthFailureKind.SIGN_IN_REQUIRED
-            }
-            LumenLogger.w("Auth") { "getBearerToken failed ($kind): $rawDetail" }
-            throw com.reiux.lumen.util.AuthFailureException(kind = kind, rawDetail = rawDetail)
-        }
-
-        val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response")
-        val expirySec = parsed["Expiry"]?.toLongOrNull() ?: (now + 3600)
-
-        tokenCache[account.email] = CachedToken(bearerToken, expirySec)
-        LumenLogger.d("Auth", "Acquired Photos bearer token for ${account.email} (expires in ${expirySec - now}s)")
-        bearerToken
     }
 
     fun invalidateCache(email: String) {
-        tokenCache.remove(email)
+        tokenCache.remove(email.lowercase())
         LumenLogger.d("Auth", "Invalidated token cache for $email")
     }
 
