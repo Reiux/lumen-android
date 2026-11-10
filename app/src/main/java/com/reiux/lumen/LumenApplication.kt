@@ -13,6 +13,7 @@ import com.reiux.lumen.util.FolderWatcherManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -139,13 +140,21 @@ class LumenApplication : Application() {
                 }
         }
 
-        // Foreground notification ONLY runs while files are actively uploading, and dismisses when finished
+        // Foreground notification ONLY runs while files are actively uploading, and dismisses when finished.
+        // Never call context.stopService() externally here: if isUploading flips true -> false quickly
+        // (e.g. instant local-cache deduplication), calling stopService() while startForegroundService()
+        // is still in-flight prevents UploadForegroundService from calling startForeground() in time and
+        // crashes with ForegroundServiceDidNotStartInTimeException. UploadForegroundService stops itself
+        // via stopSelf() after calling startForeground().
         appScope.launch {
-            uploadRepository.isUploading.collect { isUploading ->
+            uploadRepository.isUploading.collectLatest { isUploading ->
                 if (isUploading) {
-                    UploadForegroundService.startOrUpdate(this@LumenApplication)
+                    kotlinx.coroutines.delay(150L)
+                    if (uploadRepository.isUploading.value && settingsRepository.settings.value.notificationsEnabled) {
+                        UploadForegroundService.startOrUpdate(this@LumenApplication)
+                    }
                 } else {
-                    UploadForegroundService.stop(this@LumenApplication)
+                    com.reiux.lumen.service.BackgroundUploadWorker.cancel(this@LumenApplication)
                 }
             }
         }

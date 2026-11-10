@@ -38,11 +38,11 @@ class UploadForegroundService : Service() {
         LumenLogger.d("Service") { "UploadForegroundService onCreate" }
         ensureNotificationChannel(this)
         promoteToForeground(createInitialNotification(this))
-        startObserving()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LumenLogger.d("Service") { "UploadForegroundService onStartCommand flags=$flags startId=$startId" }
+        ensureNotificationChannel(this)
         promoteToForeground(createInitialNotification(this))
         startObserving()
         return START_NOT_STICKY
@@ -96,20 +96,17 @@ class UploadForegroundService : Service() {
     private fun startObserving() {
         if (observeJob != null && observeJob?.isActive == true) return
 
-        val app = applicationContext as? LumenApplication ?: return
+        val app = applicationContext as? LumenApplication
+        if (app == null) {
+            scope.launch { stopForegroundAndDismiss(reason = "no_app_context") }
+            return
+        }
         val uploadRepo = app.uploadRepository
         val settingsRepo = app.settingsRepository
 
-        // If not uploading or notifications disabled, dismiss immediately
-        if (!uploadRepo.isUploading.value) {
-            stopForegroundAndDismiss(reason = "upload_engine_idle")
-            return
-        }
-        if (!settingsRepo.settings.value.notificationsEnabled) {
-            stopForegroundAndDismiss(reason = "notifications_disabled_in_settings")
-            return
-        }
-
+        // Defer stopForegroundAndDismiss into `scope.launch` (Main looper post) so that
+        // onStartCommand() always finishes in the foreground state first, satisfying Android's
+        // startForegroundService() contract before stopForeground()/stopSelf() is called.
         observeJob = scope.launch {
             combine(
                 combine(uploadRepo.isUploading, uploadRepo.currentUploadingItem, uploadRepo.queue) { u, c, q -> Triple(u, c, q) },
@@ -570,11 +567,6 @@ class UploadForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            try {
-                context.stopService(Intent(context, UploadForegroundService::class.java))
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
             BackgroundUploadWorker.cancel(context)
         }
     }
