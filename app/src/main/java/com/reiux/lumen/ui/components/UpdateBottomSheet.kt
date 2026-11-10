@@ -258,6 +258,44 @@ private fun extractSigningDigests(pkgInfo: android.content.pm.PackageInfo): Set<
     }.toSet()
 }
 
+fun stripDownloadsSection(rawText: String): String {
+    val hrRegex = Regex("^(-{3,}|\\*{3,}|_{3,})$")
+    val headerRegex = Regex("^#{1,6}\\s+.*")
+    val downloadsHeaderRegex = Regex("^#{1,6}\\s+downloads\\b.*", RegexOption.IGNORE_CASE)
+
+    val keptLines = mutableListOf<String>()
+    var skippingDownloads = false
+
+    for (rawLine in rawText.lines()) {
+        val trimmed = rawLine.trim()
+        if (downloadsHeaderRegex.matches(trimmed)) {
+            skippingDownloads = true
+            continue
+        }
+        if (skippingDownloads) {
+            if (headerRegex.matches(trimmed)) {
+                skippingDownloads = false
+            } else {
+                // Skip lines inside the Downloads section (including its trailing --- divider)
+                continue
+            }
+        }
+        keptLines.add(rawLine)
+    }
+
+    // Trim trailing blank lines and trailing horizontal rules so the sheet ends cleanly
+    while (keptLines.isNotEmpty()) {
+        val last = keptLines.last().trim()
+        if (last.isEmpty() || hrRegex.matches(last)) {
+            keptLines.removeAt(keptLines.lastIndex)
+        } else {
+            break
+        }
+    }
+
+    return keptLines.joinToString("\n")
+}
+
 fun parseSimpleMarkdown(
     text: String,
     primaryColor: androidx.compose.ui.graphics.Color,
@@ -267,8 +305,9 @@ fun parseSimpleMarkdown(
 ): androidx.compose.ui.text.AnnotatedString {
     val builder = androidx.compose.ui.text.AnnotatedString.Builder()
     val hrRegex = Regex("^(-{3,}|\\*{3,}|_{3,})$")
+    val cleanedText = stripDownloadsSection(text)
     
-    text.lines().forEach { rawLine ->
+    cleanedText.lines().forEach { rawLine ->
         val line = rawLine.trim()
         
         when {
