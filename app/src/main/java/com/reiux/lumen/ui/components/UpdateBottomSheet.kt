@@ -293,7 +293,23 @@ fun stripDownloadsSection(rawText: String): String {
         }
     }
 
-    return keptLines.joinToString("\n")
+    // Remove blank lines immediately before or after horizontal rules (---) so dividers
+    // don't render with large empty gaps above and below them
+    val compactLines = mutableListOf<String>()
+    for (i in keptLines.indices) {
+        val curr = keptLines[i].trim()
+        if (curr.isEmpty()) {
+            val prevIsHr = compactLines.lastOrNull()?.trim()?.let { hrRegex.matches(it) } == true
+            val nextNonEmpty = keptLines.subList(i + 1, keptLines.size).firstOrNull { it.trim().isNotEmpty() }?.trim()
+            val nextIsHr = nextNonEmpty != null && hrRegex.matches(nextNonEmpty)
+            if (prevIsHr || nextIsHr) {
+                continue
+            }
+        }
+        compactLines.add(keptLines[i])
+    }
+
+    return compactLines.joinToString("\n")
 }
 
 fun parseSimpleMarkdown(
@@ -313,7 +329,6 @@ fun parseSimpleMarkdown(
         when {
             // Horizontal rule separator (---, ***, ___)
             line.matches(hrRegex) -> {
-                builder.append("\n")
                 builder.withStyle(
                     androidx.compose.ui.text.SpanStyle(
                         color = dividerColor,
@@ -323,7 +338,7 @@ fun parseSimpleMarkdown(
                 ) {
                     append("────────────────────────────────────────")
                 }
-                builder.append("\n\n")
+                builder.append("\n")
             }
             line.startsWith("###### ") -> {
                 builder.withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryColor)) {
