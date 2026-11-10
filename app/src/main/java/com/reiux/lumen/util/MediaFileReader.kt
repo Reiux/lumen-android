@@ -440,11 +440,56 @@ object MediaFileReader {
         return null
     }
 
-    fun resolveRealFilePathFromUri(context: Context, uri: Uri): String? {
-        if (uri.scheme == "file") {
-            return uri.path
+    fun isSafeExternalMediaPath(context: Context, rawPath: String?): String? {
+        if (rawPath.isNullOrBlank()) return null
+        return try {
+            val canonicalFile = File(rawPath).canonicalFile
+            val canonicalPath = canonicalFile.path
+
+            val blockedRoots = buildList {
+                add(try { File(context.applicationInfo.dataDir).canonicalPath } catch (_: Exception) { context.applicationInfo.dataDir })
+                add(try { context.filesDir.canonicalPath } catch (_: Exception) { context.filesDir.absolutePath })
+                add(try { context.cacheDir.canonicalPath } catch (_: Exception) { context.cacheDir.absolutePath })
+                context.externalCacheDir?.let {
+                    add(try { it.canonicalPath } catch (_: Exception) { it.absolutePath })
+                }
+                context.getExternalFilesDir(null)?.let {
+                    add(try { it.canonicalPath } catch (_: Exception) { it.absolutePath })
+                }
+                add("/data/data/")
+                add("/data/user/")
+                add("/data/user_de/")
+            }
+
+            if (blockedRoots.any { root ->
+                    val normalizedRoot = root.trimEnd('/')
+                    canonicalPath == normalizedRoot || canonicalPath.startsWith("$normalizedRoot/")
+                }
+            ) {
+                LumenLogger.w(TAG) { "Blocked access to internal app path: $canonicalPath" }
+                return null
+            }
+
+            if (!canonicalFile.exists() || !canonicalFile.isFile) return null
+            val ext = canonicalFile.extension.lowercase()
+            if (ext !in supportedExts) return null
+            canonicalPath
+        } catch (_: Exception) {
+            null
         }
-        if (uri.scheme != "content") return null
+    }
+
+    fun resolveRealFilePathFromUri(context: Context, uri: Uri): String? {
+        val scheme = uri.scheme?.lowercase()
+        if (scheme == "file") {
+            return isSafeExternalMediaPath(context, uri.path)
+        }
+        if (scheme != "content") return null
+
+        val authority = uri.authority?.lowercase() ?: return null
+        if (authority == "${context.packageName}.fileprovider".lowercase()) {
+            return null
+        }
 
         val id = uri.lastPathSegment?.toLongOrNull()
         val projection = arrayOf(MediaStore.MediaColumns.DATA)
@@ -462,9 +507,9 @@ object MediaFileReader {
                         if (cursor.moveToFirst()) {
                             val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                             if (idx >= 0) {
-                                val path = cursor.getString(idx)
-                                if (!path.isNullOrBlank() && File(path).exists()) {
-                                    return path
+                                val safePath = isSafeExternalMediaPath(context, cursor.getString(idx))
+                                if (safePath != null) {
+                                    return safePath
                                 }
                             }
                         }
@@ -473,19 +518,23 @@ object MediaFileReader {
             }
         }
 
-        try {
-            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                    if (idx >= 0) {
-                        val path = cursor.getString(idx)
-                        if (!path.isNullOrBlank() && File(path).exists()) {
-                            return path
+        // Only trust _data column directly when queried from the system MediaStore provider
+        val isTrustedMediaProvider = authority == "media" || authority == "com.android.providers.media.documents"
+        if (isTrustedMediaProvider) {
+            try {
+                context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                        if (idx >= 0) {
+                            val safePath = isSafeExternalMediaPath(context, cursor.getString(idx))
+                            if (safePath != null) {
+                                return safePath
+                            }
                         }
                     }
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
         return null
     }
@@ -727,6 +776,12 @@ object MediaFileReader {
     }
 
     fun stageUriFile(context: Context, uri: Uri, fileName: String, occurrenceIndex: Int = 0): File? {
+        val scheme = uri.scheme?.lowercase()
+        val authority = uri.authority?.lowercase()
+        if (scheme != "content" || authority.isNullOrBlank() || authority == "${context.packageName}.fileprovider".lowercase()) {
+            Log.w(TAG, "Refusing to stage untrusted URI: $uri")
+            return null
+        }
         return try {
             val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
             val tempFile = createDistinctStagingFile(stagingDir, fileName, occurrenceIndex)

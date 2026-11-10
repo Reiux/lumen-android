@@ -122,9 +122,18 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (extracted.isNotEmpty()) {
-            com.reiux.lumen.util.LumenLogger.i("ShareTarget") { "Received ${extracted.size} shared media URIs via share sheet" }
-            incomingShareUris.value = extracted
+        val selfAuthority = "${packageName}.fileprovider"
+        val safeUris = extracted.filter { uri ->
+            val scheme = uri.scheme?.lowercase()
+            val authority = uri.authority?.lowercase()
+            scheme == "content" && !authority.isNullOrBlank() && authority != selfAuthority.lowercase()
+        }
+
+        if (safeUris.isNotEmpty()) {
+            com.reiux.lumen.util.LumenLogger.i("ShareTarget") { "Received ${safeUris.size} shared media URIs via share sheet" }
+            incomingShareUris.value = safeUris
+        } else if (extracted.isNotEmpty()) {
+            com.reiux.lumen.util.LumenLogger.w("ShareTarget") { "Rejected ${extracted.size} untrusted share URI(s)" }
         }
     }
 

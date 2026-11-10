@@ -193,8 +193,15 @@ fun launchApkInstall(context: Context, apkFile: File) {
             return
         }
 
-        // Verify package archive integrity and package name matching
-        val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+        // Verify package archive integrity, package name, and signing certificate matching
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            android.content.pm.PackageManager.GET_SIGNATURES
+        }
+        val archiveInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
         if (archiveInfo == null) {
             android.widget.Toast.makeText(context, "Downloaded update is corrupt or invalid", android.widget.Toast.LENGTH_SHORT).show()
             return
@@ -203,6 +210,14 @@ fun launchApkInstall(context: Context, apkFile: File) {
         val archivePackage = archiveInfo.packageName.removeSuffix(".dev")
         if (archivePackage != expectedPackage) {
             android.widget.Toast.makeText(context, "Security check failed: Package name mismatch", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val installedInfo = pm.getPackageInfo(context.packageName, flags)
+        val archiveDigests = extractSigningDigests(archiveInfo)
+        val installedDigests = extractSigningDigests(installedInfo)
+        if (archiveDigests.isEmpty() || archiveDigests.intersect(installedDigests).isEmpty()) {
+            android.widget.Toast.makeText(context, "Security check failed: APK signature mismatch", android.widget.Toast.LENGTH_LONG).show()
             return
         }
 
@@ -218,6 +233,29 @@ fun launchApkInstall(context: Context, apkFile: File) {
         e.printStackTrace()
         android.widget.Toast.makeText(context, "Could not launch package installer: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
+}
+
+private fun extractSigningDigests(pkgInfo: android.content.pm.PackageInfo): Set<String> {
+    val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val signingInfo = pkgInfo.signingInfo ?: return emptySet()
+        if (signingInfo.hasMultipleSigners()) {
+            signingInfo.apkContentsSigners
+        } else {
+            signingInfo.signingCertificateHistory
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        pkgInfo.signatures
+    } ?: return emptySet()
+
+    val md = java.security.MessageDigest.getInstance("SHA-256")
+    return signatures.mapNotNull { sig ->
+        try {
+            md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            null
+        }
+    }.toSet()
 }
 
 fun parseSimpleMarkdown(

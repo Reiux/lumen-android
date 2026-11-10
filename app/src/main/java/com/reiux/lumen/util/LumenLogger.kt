@@ -661,8 +661,8 @@ object LumenLogger {
                             writer.appendLine("==========================================")
                             writer.appendLine("LUMEN CRASH: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
                             writer.appendLine("Thread: ${thread.name} (id=${thread.id})")
-                            writer.appendLine("Message: ${throwable.message}")
-                            writer.appendLine(buildStackTraceString(throwable))
+                            writer.appendLine("Message: ${redact(throwable.message ?: "null")}")
+                            writer.appendLine(redact(buildStackTraceString(throwable)))
                             writer.appendLine("==========================================")
                         }
                     }
@@ -709,7 +709,7 @@ object LumenLogger {
                 FileWriter(exportFile, false).use { writer ->
                     dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
                         writer.appendLine("--- FILE: ${logFile.name} ---")
-                        writer.append(logFile.readText())
+                        writer.append(redact(logFile.readText()))
                         writer.appendLine()
                     }
                 }

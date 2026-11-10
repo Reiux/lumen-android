@@ -65,7 +65,28 @@ class GooglePhotosClient(
     private fun uncompressIfNeeded(bytes: ByteArray): ByteArray {
         if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
             return try {
-                GZIPInputStream(ByteArrayInputStream(bytes)).use { it.readBytes() }
+                GZIPInputStream(ByteArrayInputStream(bytes)).use { gzip ->
+                    val out = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var totalRead = 0
+                    val maxDecompressedBytes = 16 * 1024 * 1024 // 16 MB limit against zip bombs
+                    while (true) {
+                        val read = gzip.read(buffer)
+                        if (read == -1) break
+                        totalRead += read
+                        if (totalRead > maxDecompressedBytes) {
+                            throw IOException("GZIP response exceeded maximum allowed size ($maxDecompressedBytes bytes)")
+                        }
+                        out.write(buffer, 0, read)
+                    }
+                    out.toByteArray()
+                }
+            } catch (e: IOException) {
+                if (e.message?.contains("exceeded maximum allowed size") == true) {
+                    throw e
+                }
+                LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
+                bytes
             } catch (e: Exception) {
                 LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
                 bytes

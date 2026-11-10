@@ -62,7 +62,12 @@ android {
             if (signingConfigs.release.storeFile != null) {
                 signingConfig signingConfigs.release
             } else {
-                signingConfig signingConfigs.debug
+                def isReleaseBuildRequested = gradle.startParameter.taskNames.any {
+                    it.toLowerCase().contains("release")
+                }
+                if (isReleaseBuildRequested) {
+                    throw new GradleException("Release keystore is not configured. Refusing to sign release build with debug keystore.")
+                }
             }
         }
     }

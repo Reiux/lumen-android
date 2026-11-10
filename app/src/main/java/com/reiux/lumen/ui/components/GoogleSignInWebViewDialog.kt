@@ -56,6 +56,17 @@ fun GoogleSignInWebViewDialog(
     var isLoading by remember { mutableStateOf(true) }
     var captured by remember { mutableStateOf(false) }
 
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            try {
+                CookieManager.getInstance().apply {
+                    removeAllCookies(null)
+                    flush()
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isWideLayout = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
@@ -185,14 +196,19 @@ fun GoogleSignInWebViewDialog(
                                         private fun checkCookie(currentUrl: String?) {
                                             if (captured) return
 
-                                            // Check URL parameters first
+                                            // Check URL parameters first (strictly from accounts.google.com)
                                             if (currentUrl != null && (currentUrl.contains("oauth_token=") || currentUrl.contains("Token="))) {
-                                                val queryToken = extractFromUrl(currentUrl)
-                                                if (!queryToken.isNullOrEmpty()) {
-                                                    captured = true
-                                                    onTokenCaptured(queryToken)
-                                                    onDismiss()
-                                                    return
+                                                val parsedHost = try { android.net.Uri.parse(currentUrl).host?.lowercase() } catch (_: Exception) { null }
+                                                if (parsedHost == "accounts.google.com") {
+                                                    val queryToken = extractFromUrl(currentUrl)
+                                                    if (!queryToken.isNullOrEmpty()) {
+                                                        captured = true
+                                                        cookieManager.removeAllCookies(null)
+                                                        cookieManager.flush()
+                                                        onTokenCaptured(queryToken)
+                                                        onDismiss()
+                                                        return
+                                                    }
                                                 }
                                             }
 
@@ -201,6 +217,8 @@ fun GoogleSignInWebViewDialog(
                                             val token = extractOAuthTokenFromCookies(cookieString)
                                             if (!token.isNullOrEmpty()) {
                                                 captured = true
+                                                cookieManager.removeAllCookies(null)
+                                                cookieManager.flush()
                                                 onTokenCaptured(token)
                                                 onDismiss()
                                             }
