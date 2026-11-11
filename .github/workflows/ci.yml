@@ -36,6 +36,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: lumen-dev-debug
+          name: lumen-test-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7

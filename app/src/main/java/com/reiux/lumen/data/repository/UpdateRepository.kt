@@ -39,12 +39,12 @@ class UpdateRepository(
             val assets = release.optJSONArray("assets") ?: JSONArray()
             var downloadUrl = ""
             
-            val expectedApk = if (BuildConfig.DEBUG) "lumen-dev-debug.apk" else "lumen-release.apk"
+            val expectedApk = if (BuildConfig.DEBUG) "lumen-test-debug.apk" else "lumen-release.apk"
             
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
                 val name = asset.optString("name", "")
-                if (name == expectedApk) {
+                if (name == expectedApk || (BuildConfig.DEBUG && name == "lumen-dev-debug.apk")) {
                     downloadUrl = asset.optString("browser_download_url", "")
                     break
                 }

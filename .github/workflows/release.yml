@@ -137,7 +137,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/lumen-release.apk
-          cp app/build/outputs/apk/debug/app-debug.apk dist/lumen-dev-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/lumen-test-debug.apk
 
       - name: Write release notes
         run: |
@@ -165,7 +165,7 @@ jobs:
           echo "" >> dist/notes.md
           echo "### Verification" >> dist/notes.md
           echo "- **Release APK Certificate SHA-256:** \`$CERT_SHA256\`" >> dist/notes.md
-          echo "- \`lumen-dev-debug.apk\` is signed with a CI debug key and is for testing only." >> dist/notes.md
+          echo "- \`lumen-test-debug.apk\` is signed with a CI debug key and is for testing only." >> dist/notes.md
 
       - name: Publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -175,7 +175,7 @@ jobs:
           body_path: dist/notes.md
           files: |
             dist/lumen-release.apk
-            dist/lumen-dev-debug.apk
+            dist/lumen-test-debug.apk
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true

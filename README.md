@@ -78,7 +78,7 @@ When you sign in, Google gives the app an **OAuth token**.
 
 Get the latest APK on the [Releases](https://github.com/Reiux/lumen-android/releases) page:
 - `lumen-release.apk` (Standard app)
-- `lumen-dev-debug.apk` (Developer build with debug tools)
+- `lumen-test-debug.apk` (Developer build with debug tools)
 
 ---
 
