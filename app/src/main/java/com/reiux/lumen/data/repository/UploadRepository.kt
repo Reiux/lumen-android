@@ -1182,6 +1182,7 @@ class UploadRepository(
             _queue.value = _queue.value.map {
                 if (it.id == id) it.copy(bytesUploaded = bytesUploaded) else it
             }
+            _currentUploadingItem.value = getActiveUploadingItem()
         }
     }
 

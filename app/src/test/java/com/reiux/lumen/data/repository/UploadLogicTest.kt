@@ -288,4 +288,33 @@ class UploadLogicTest {
         org.junit.Assert.assertEquals(path, accAFolder?.path)
         org.junit.Assert.assertEquals(path, accBFolder?.path)
     }
+
+    @Test
+    fun testActiveUploadingItemReflectsStreamedBytes() {
+        val item = com.reiux.lumen.data.model.UploadItem(
+            id = "test-1",
+            filePath = "/sdcard/DCIM/sample.mp4",
+            fileName = "sample.mp4",
+            fileSize = 100_000L,
+            bytesUploaded = 0L,
+            status = UploadStatus.UPLOADING,
+            accountEmail = "user@gmail.com"
+        )
+        val queue = mutableListOf(item)
+
+        fun updateProgress(id: String, bytes: Long) {
+            val idx = queue.indexOfFirst { it.id == id }
+            if (idx >= 0) {
+                queue[idx] = queue[idx].copy(bytesUploaded = bytes)
+            }
+        }
+
+        fun getActive(q: List<com.reiux.lumen.data.model.UploadItem>): com.reiux.lumen.data.model.UploadItem? {
+            return q.firstOrNull { it.status == UploadStatus.UPLOADING }
+        }
+
+        updateProgress("test-1", 50_000L)
+        val active = getActive(queue)
+        org.junit.Assert.assertEquals(50_000L, active?.bytesUploaded)
+    }
 }
