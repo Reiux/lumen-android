@@ -12,33 +12,25 @@
 
 ## Screenshots
 
-<p align="center">
-  <img src=".github/assets/screenshots/backup-active.jpg" width="23%" alt="Active Backup" />
-  <img src=".github/assets/screenshots/folders.jpg" width="23%" alt="Folder Mapping" />
-  <img src=".github/assets/screenshots/accounts.jpg" width="23%" alt="Accounts" />
-  <img src=".github/assets/screenshots/settings-themes.jpg" width="23%" alt="Settings and Themes" />
-</p>
+| Active Backup | Folder Mapping | Accounts | Settings & Themes |
+| :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/backup-active.jpg" width="220" alt="Active Backup" /> | <img src=".github/assets/screenshots/folders.jpg" width="220" alt="Folder Mapping" /> | <img src=".github/assets/screenshots/accounts.jpg" width="220" alt="Accounts" /> | <img src=".github/assets/screenshots/settings-themes.jpg" width="220" alt="Settings & Themes" /> |
 
 <details>
 <summary><b>View All Screenshots (Onboarding & Extra Screens)</b></summary>
 <br>
 
-<p align="center">
-  <b>Onboarding Flow</b><br>
-  <img src=".github/assets/screenshots/onboarding-1-welcome.jpg" width="19%" alt="Welcome" />
-  <img src=".github/assets/screenshots/onboarding-2-permissions.jpg" width="19%" alt="Permissions" />
-  <img src=".github/assets/screenshots/onboarding-3-account.jpg" width="19%" alt="Account Sign-in" />
-  <img src=".github/assets/screenshots/onboarding-4-preferences.jpg" width="19%" alt="Preferences" />
-  <img src=".github/assets/screenshots/onboarding-5-ready.jpg" width="19%" alt="Setup Complete" />
-</p>
+### Onboarding Flow
 
-<p align="center">
-  <b>Additional Screens</b><br>
-  <img src=".github/assets/screenshots/backup-idle.jpg" width="23%" alt="Backup Idle" />
-  <img src=".github/assets/screenshots/albums.jpg" width="23%" alt="Album Manager" />
-  <img src=".github/assets/screenshots/settings-storage.jpg" width="23%" alt="Storage Settings" />
-  <img src=".github/assets/screenshots/about.jpg" width="23%" alt="About Screen" />
-</p>
+| 1. Welcome | 2. Permissions | 3. Connect Account | 4. Preferences | 5. You're All Set |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/onboarding-1-welcome.jpg" width="180" alt="Welcome" /> | <img src=".github/assets/screenshots/onboarding-2-permissions.jpg" width="180" alt="Permissions" /> | <img src=".github/assets/screenshots/onboarding-3-account.jpg" width="180" alt="Connect Account" /> | <img src=".github/assets/screenshots/onboarding-4-preferences.jpg" width="180" alt="Preferences" /> | <img src=".github/assets/screenshots/onboarding-5-ready.jpg" width="180" alt="Setup Complete" /> |
+
+### Additional Screens
+
+| Idle State | Album Manager | Storage Cleanup | About Lumen |
+| :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/backup-idle.jpg" width="220" alt="Backup Idle" /> | <img src=".github/assets/screenshots/albums.jpg" width="220" alt="Album Manager" /> | <img src=".github/assets/screenshots/settings-storage.jpg" width="220" alt="Storage Settings" /> | <img src=".github/assets/screenshots/about.jpg" width="220" alt="About Screen" /> |
 
 </details>
 
