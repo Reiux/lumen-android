@@ -10,6 +10,38 @@
   <img src=".github/assets/banner.png" alt="Lumen Android Banner">
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src=".github/assets/screenshots/backup-active.jpg" width="23%" alt="Active Backup" />
+  <img src=".github/assets/screenshots/folders.jpg" width="23%" alt="Folder Mapping" />
+  <img src=".github/assets/screenshots/accounts.jpg" width="23%" alt="Accounts" />
+  <img src=".github/assets/screenshots/settings-themes.jpg" width="23%" alt="Settings and Themes" />
+</p>
+
+<details>
+<summary><b>View All Screenshots (Onboarding & Extra Screens)</b></summary>
+<br>
+
+<p align="center">
+  <b>Onboarding Flow</b><br>
+  <img src=".github/assets/screenshots/onboarding-1-welcome.jpg" width="19%" alt="Welcome" />
+  <img src=".github/assets/screenshots/onboarding-2-permissions.jpg" width="19%" alt="Permissions" />
+  <img src=".github/assets/screenshots/onboarding-3-account.jpg" width="19%" alt="Account Sign-in" />
+  <img src=".github/assets/screenshots/onboarding-4-preferences.jpg" width="19%" alt="Preferences" />
+  <img src=".github/assets/screenshots/onboarding-5-ready.jpg" width="19%" alt="Setup Complete" />
+</p>
+
+<p align="center">
+  <b>Additional Screens</b><br>
+  <img src=".github/assets/screenshots/backup-idle.jpg" width="23%" alt="Backup Idle" />
+  <img src=".github/assets/screenshots/albums.jpg" width="23%" alt="Album Manager" />
+  <img src=".github/assets/screenshots/settings-storage.jpg" width="23%" alt="Storage Settings" />
+  <img src=".github/assets/screenshots/about.jpg" width="23%" alt="About Screen" />
+</p>
+
+</details>
+
 > [!NOTE]
 > **Disclaimer:** Lumen is an independent open-source project and is not affiliated with, endorsed by, or supported by Google LLC. Google Photos is a trademark of Google LLC.
 >
