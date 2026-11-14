@@ -15,6 +15,8 @@
 >
 > **No root or mods needed.** Works on standard Android phones (Android 8.0+).  
 > *Looking for the desktop version? Check out **[Lumen for Desktop](https://github.com/Reiux/Lumen)**.*
+>
+> *Product website & screenshots: **[reiux.github.io/lumen-site](https://reiux.github.io/lumen-site/)**.*
 
 Lumen is an open-source Android app that backs up your camera roll directly to Google Photos in original quality.
 
