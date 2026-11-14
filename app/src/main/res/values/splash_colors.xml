@@ -5,8 +5,8 @@
     <color name="brand_blade_2">#50606E</color> <!-- Secondary -->
     <color name="brand_blade_3">#65587B</color> <!-- Tertiary -->
     <color name="brand_blade_4">#CBE6FF</color> <!-- PrimaryContainer -->
-    <color name="brand_center_core">#FFFFFF</color> <!-- Pure White Core -->
-    <color name="brand_background">#121212</color>
+    <color name="brand_center_core">#001E30</color>
+    <color name="brand_background">#FFFFFF</color>
 
     <!-- Backward compatibility for splash animation -->
     <color name="splash_background">#FFFFFF</color>

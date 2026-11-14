@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="brand_background">#141218</color>
+    <color name="brand_center_core">#FFFFFF</color>
+    <color name="brand_blade_1">#8FCDFF</color>
+    <color name="brand_blade_2">#B7C9D9</color>
+    <color name="brand_blade_3">#CFC0E8</color>
+    <color name="brand_blade_4">#004B72</color>
     <color name="splash_background">#141218</color>
     <color name="splash_icon">#D0BCFF</color>
     <color name="splash_branding">#E6E0E9</color>
-    <color name="splash_blade_1">#8FCDFF</color> <!-- Primary Dark -->
-    <color name="splash_blade_2">#B7C9D9</color> <!-- Secondary Dark -->
-    <color name="splash_blade_3">#CFC0E8</color> <!-- Tertiary Dark -->
-    <color name="splash_blade_4">#004B72</color> <!-- PrimaryContainer Dark -->
-    <color name="splash_center_core">#FFFFFF</color>
+    <color name="splash_blade_1">@color/brand_blade_1</color>
+    <color name="splash_blade_2">@color/brand_blade_2</color>
+    <color name="splash_blade_3">@color/brand_blade_3</color>
+    <color name="splash_blade_4">@color/brand_blade_4</color>
+    <color name="splash_center_core">@color/brand_center_core</color>
 </resources>
