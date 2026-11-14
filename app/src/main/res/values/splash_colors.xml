@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Default Static Brand Colors for App Icon & Splash Screen (Used by Android 11 and below) -->
-    <color name="brand_blade_1">#38BDF8</color> <!-- Sky Cyan -->
-    <color name="brand_blade_2">#60A5FA</color> <!-- Vibrant Blue -->
-    <color name="brand_blade_3">#818CF8</color> <!-- Electric Indigo -->
-    <color name="brand_blade_4">#A78BFA</color> <!-- Soft Purple -->
+    <color name="brand_blade_1">#006495</color> <!-- Primary -->
+    <color name="brand_blade_2">#50606E</color> <!-- Secondary -->
+    <color name="brand_blade_3">#65587B</color> <!-- Tertiary -->
+    <color name="brand_blade_4">#CBE6FF</color> <!-- PrimaryContainer -->
     <color name="brand_center_core">#FFFFFF</color> <!-- Pure White Core -->
     <color name="brand_background">#121212</color>
 
