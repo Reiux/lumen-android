@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -177,19 +178,23 @@ fun AccountsScreen(
         LumenTimeCapsuleDialog(onDismiss = { showTimeCapsule = false })
     }
 
+    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+
     if (showAddDialog || isAddingAccount || addAccountError != null) {
         AddAccountDialog(
             onDismiss = {
-                showAddDialog = false
-                onClearError()
+                if (!isAddingAccount) {
+                    showAddDialog = false
+                    onClearError()
+                }
             },
             onSubmitToken = {
+                isAddSubmitInFlight = true
                 onAddAccountToken(it)
-                showAddDialog = false
             },
             onSubmitCredential = {
+                isAddSubmitInFlight = true
                 onAddAccountCredential(it)
-                showAddDialog = false
             },
             onClearError = onClearError,
             isLoading = isAddingAccount,
@@ -197,6 +202,18 @@ fun AccountsScreen(
             hasAcknowledgedAccountRisk = hasAcknowledgedAccountRisk,
             onAcknowledgeRisk = onAcknowledgeRisk
         )
+    }
+
+    // The dialog stays mounted for the whole submit so the pasted token / credential
+    // survives a failed attempt (Tap "Try Again", fix the input, resubmit). It only
+    // closes itself once the ViewModel reports a finished, error-free submit.
+    LaunchedEffect(isAddingAccount, addAccountError, isAddSubmitInFlight) {
+        if (!isAddSubmitInFlight || isAddingAccount) return@LaunchedEffect
+        isAddSubmitInFlight = false
+        if (addAccountError == null) {
+            showAddDialog = false
+            onClearError()
+        }
     }
 
     if (accountToRename != null) {
@@ -314,7 +331,7 @@ fun AccountsScreen(
                             )
                         },
                         onRename = { accountToRename = selectedAccount },
-                        onRemove = { accountToRemove = selectedAccount },
+                        onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
                 }
@@ -421,7 +438,7 @@ fun AccountsScreen(
                             )
                         },
                         onRename = { accountToRename = selectedAccount },
-                        onRemove = { accountToRemove = selectedAccount },
+                        onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
                 }

@@ -166,17 +166,25 @@ fun OnboardingScreen(
         )
     }
 
+    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+
     if (showManualTokenDialog) {
         AddAccountDialog(
-            onDismiss = { showManualTokenDialog = false },
+            onDismiss = {
+                if (!isAddingAccount) {
+                    showManualTokenDialog = false
+                    viewModel.clearAddAccountError()
+                }
+            },
             onSubmitToken = { token ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithToken(token)
-                showManualTokenDialog = false
             },
             onSubmitCredential = { credential ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithCredential(credential)
-                showManualTokenDialog = false
             },
+            onClearError = { viewModel.clearAddAccountError() },
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             isManualOnly = true,
@@ -187,21 +195,39 @@ fun OnboardingScreen(
 
     if (showAddAccountDialog) {
         AddAccountDialog(
-            onDismiss = { showAddAccountDialog = false },
+            onDismiss = {
+                if (!isAddingAccount) {
+                    showAddAccountDialog = false
+                    viewModel.clearAddAccountError()
+                }
+            },
             onSubmitToken = { token ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithToken(token)
-                showAddAccountDialog = false
             },
             onSubmitCredential = { credential ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithCredential(credential)
-                showAddAccountDialog = false
             },
+            onClearError = { viewModel.clearAddAccountError() },
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             isManualOnly = false,
             hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() }
         )
+    }
+
+    // Keep the dialog mounted while the submit is in flight (the pasted token / credential
+    // must survive a failed attempt). Only close once the ViewModel finishes an error-free
+    // submit; a failed submit leaves the error card visible for a retry.
+    LaunchedEffect(isAddingAccount, addAccountError, isAddSubmitInFlight) {
+        if (!isAddSubmitInFlight || isAddingAccount) return@LaunchedEffect
+        isAddSubmitInFlight = false
+        if (addAccountError == null) {
+            showManualTokenDialog = false
+            showAddAccountDialog = false
+        }
     }
 
     val configuration = LocalConfiguration.current

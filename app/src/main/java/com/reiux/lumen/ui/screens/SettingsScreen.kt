@@ -124,6 +124,8 @@ fun SettingsScreen(
     var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
     var showConfirmDeleteAfterBackupDialog by remember { mutableStateOf(false) }
     var showAllFilesPermissionDialog by remember { mutableStateOf(false) }
+    var pendingDeleteAfterBackup by remember { mutableStateOf(false) }
+    var returningFromAllFilesPermission by remember { mutableStateOf(false) }
     var isBatteryOptimizedExempt by remember {
         mutableStateOf(DeviceConditions.isIgnoringBatteryOptimizations(context))
     }
@@ -181,8 +183,13 @@ fun SettingsScreen(
                 ExpressiveButton(
                     onClick = {
                         showConfirmDeleteAfterBackupDialog = false
-                        onUpdateDeleteAfterBackup(true)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+                            onUpdateDeleteAfterBackup(true)
+                        } else {
+                            // Don't arm the destructive flag yet: the permission screen opens
+                            // next and the user may decline. The flag is only applied in the
+                            // ON_RESUME handler once the grant is verified.
+                            pendingDeleteAfterBackup = true
                             showAllFilesPermissionDialog = true
                         }
                     },
@@ -204,8 +211,21 @@ fun SettingsScreen(
 
     if (showAllFilesPermissionDialog) {
         com.reiux.lumen.ui.components.AllFilesPermissionDialog(
-            onDismiss = { showAllFilesPermissionDialog = false },
-            onConfirm = { showAllFilesPermissionDialog = false }
+            onDismiss = {
+                // The dialog fires onConfirm() and then onDismiss() on confirm, so only
+                // treat this as a cancel when we didn't just confirm.
+                showAllFilesPermissionDialog = false
+                if (!returningFromAllFilesPermission) {
+                    // User declined the permission flow — leave the destructive flag off.
+                    pendingDeleteAfterBackup = false
+                }
+            },
+            onConfirm = {
+                // The system permission screen opens right after this; keep the pending
+                // flag alive so ON_RESUME can apply it once the grant is verified.
+                returningFromAllFilesPermission = true
+                showAllFilesPermissionDialog = false
+            }
         )
     }
 
@@ -278,6 +298,19 @@ fun SettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isBatteryOptimizedExempt = DeviceConditions.isIgnoringBatteryOptimizations(context)
+
+                // Returned from the All-Files permission screen: apply the destructive flag
+                // only if the grant actually went through, otherwise back off and tell the
+                // user — never leave a silently-armed delete setting.
+                if (pendingDeleteAfterBackup) {
+                    pendingDeleteAfterBackup = false
+                    returningFromAllFilesPermission = false
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+                        onUpdateDeleteAfterBackup(true)
+                    } else {
+                        Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

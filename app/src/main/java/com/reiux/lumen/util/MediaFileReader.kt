@@ -207,7 +207,10 @@ object MediaFileReader {
                     if (size > 0L) {
                         val file = File(path)
                         val name = file.name
-                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending")) {
+                        // Match the recursive scanner: skip files whose extension isn't
+                        // supported, or they get enqueued and then fail one by one.
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending") && ext in supportedExts) {
                             list.add(ScannedFile(file, size))
                         }
                     }
@@ -229,7 +232,10 @@ object MediaFileReader {
                     if (size > 0L) {
                         val file = File(path)
                         val name = file.name
-                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending")) {
+                        // Match the recursive scanner: skip files whose extension isn't
+                        // supported, or they get enqueued and then fail one by one.
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        if (!name.startsWith(".") && !name.startsWith(".trash") && !name.startsWith(".pending") && ext in supportedExts) {
                             list.add(ScannedFile(file, size))
                         }
                     }

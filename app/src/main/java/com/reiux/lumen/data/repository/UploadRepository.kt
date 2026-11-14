@@ -36,6 +36,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 class UploadSpeedTracker {
@@ -178,6 +179,9 @@ class UploadRepository(
 
     private val _currentUploadingItem = MutableStateFlow<UploadItem?>(null)
     val currentUploadingItem: StateFlow<UploadItem?> = _currentUploadingItem.asStateFlow()
+
+    /** Per-item wall clock of the last queue progress emission (client reports per 32KB chunk). */
+    private val lastProgressEmitAt = ConcurrentHashMap<String, Long>()
 
     private val _completedCount = MutableStateFlow(0)
     val completedCount: StateFlow<Int> = _completedCount.asStateFlow()
@@ -375,7 +379,12 @@ class UploadRepository(
                     customAlbumName = customAlbumName,
                     customAlbumNickname = customAlbumNickname,
                     accountEmail = account.email,
-                    originalFilePath = sf.originalFilePath ?: sf.file.absolutePath
+                    originalFilePath = sf.originalFilePath ?: sf.file.absolutePath,
+                    // Capture the policy per item: a second account's items can join a queue
+                    // that was started for a first account (startQueue early-returns then),
+                    // so workers must read the flags from the item, not the queue args.
+                    storageSaver = storageSaver,
+                    useQuota = useQuota
                 )
             }
 
@@ -413,6 +422,7 @@ class UploadRepository(
 
             _completedCount.value = 0
             _skippedCount.value = 0
+            lastProgressEmitAt.clear()
 
             LumenLogger.i("UploadEngine") {
                 "Starting upload queue for ${LumenLogger.redact(account.email)} (StorageSaver: $storageSaver, UseQuota: $useQuota)"
@@ -617,7 +627,7 @@ class UploadRepository(
                         val tokenProvider: suspend () -> String = { authClient.getBearerToken(itemAccount) }
 
                         try {
-                            uploadSingleItem(nextItem, tokenProvider, storageSaver, useQuota, itemAccountEmail, opId, workerIndex)
+                            uploadSingleItem(nextItem, tokenProvider, nextItem.storageSaver, nextItem.useQuota, itemAccountEmail, opId, workerIndex)
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
                             LumenLogger.e("UploadEngine", opId = opId, tr = e) {
@@ -1161,16 +1171,24 @@ class UploadRepository(
 
     private fun updateItemProgress(id: String, bytesUploaded: Long) {
         synchronized(_queue) {
+            // Called once per 32KB chunk by the upload client. Rebuilding the whole queue
+            // (O(N) .map + active-item scan + StateFlow re-emit) per chunk made the UI jank
+            // on large batches, so throttle to one emission per item per ~250ms. Status
+            // transitions still go through updateItemStatus(), which emits immediately.
+            val now = System.currentTimeMillis()
+            val last = lastProgressEmitAt[id] ?: 0L
+            if (now - last < 250L) return
+            lastProgressEmitAt[id] = now
             _queue.value = _queue.value.map {
                 if (it.id == id) it.copy(bytesUploaded = bytesUploaded) else it
             }
-            _currentUploadingItem.value = getActiveUploadingItem()
         }
     }
 
     private fun updateItemCompleted(id: String, mediaKey: String, isSkipped: Boolean) {
         val status = if (isSkipped) UploadStatus.SKIPPED else UploadStatus.COMPLETED
         synchronized(_queue) {
+            lastProgressEmitAt.remove(id)
             _queue.value = _queue.value.map {
                 if (it.id == id) it.copy(status = status, mediaKey = mediaKey, bytesUploaded = it.fileSize) else it
             }
@@ -1185,6 +1203,7 @@ class UploadRepository(
 
     private fun updateItemError(id: String, error: String) {
         synchronized(_queue) {
+            lastProgressEmitAt.remove(id)
             _queue.value = _queue.value.map {
                 if (it.id == id) it.copy(status = UploadStatus.FAILED, error = error) else it
             }

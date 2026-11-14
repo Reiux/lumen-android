@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
@@ -91,6 +95,9 @@ fun FoldersScreen(
     var showAllFilesDialog by remember { mutableStateOf(false) }
     var pendingFolderToAdd by remember { mutableStateOf<BackupFolder?>(null) }
     var pendingFolderToToggle by remember { mutableStateOf<BackupFolder?>(null) }
+    // (path, accountEmail) pairs to enable once All-Files access is confirmed granted.
+    var pendingEnableAfterPermission by remember { mutableStateOf<List<Pair<String, String?>>>(emptyList()) }
+    var returningFromPermission by remember { mutableStateOf(false) }
 
     if (folderToEdit != null) {
         com.reiux.lumen.ui.components.EditFolderDialog(
@@ -111,18 +118,53 @@ fun FoldersScreen(
     if (showAllFilesDialog) {
         com.reiux.lumen.ui.components.AllFilesPermissionDialog(
             onConfirm = {
-                pendingFolderToAdd?.let { onAddFolder(it) }
-                pendingFolderToToggle?.let { onToggleFolder(it.path, it.accountEmail, true) }
+                // The system permission screen opens right after this callback, so never
+                // add/enable a folder that can't be read yet: save the new folder DISABLED
+                // and defer all enables until the grant is verified on return.
+                pendingFolderToAdd?.let { onAddFolder(it.copy(enabled = false)) }
+                pendingEnableAfterPermission = buildList {
+                    pendingFolderToAdd?.let { add(it.path to it.accountEmail) }
+                    pendingFolderToToggle?.let { add(it.path to it.accountEmail) }
+                }
                 pendingFolderToAdd = null
                 pendingFolderToToggle = null
+                returningFromPermission = true
             },
             onDismiss = {
+                // The dialog fires onConfirm() and then onDismiss() on confirm, so only
+                // treat this as a cancel when we didn't just confirm.
                 showAllFilesDialog = false
-                pendingFolderToAdd = null
-                pendingFolderToToggle = null
-                Toast.makeText(context, context.getString(R.string.toast_all_files_permission_denied), Toast.LENGTH_SHORT).show()
+                if (!returningFromPermission) {
+                    pendingFolderToAdd = null
+                    pendingFolderToToggle = null
+                    Toast.makeText(context, context.getString(R.string.toast_all_files_permission_denied), Toast.LENGTH_SHORT).show()
+                }
             }
         )
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && returningFromPermission) {
+                val allGranted = pendingEnableAfterPermission.none { (path, _) ->
+                    com.reiux.lumen.ui.components.requiresAllFilesPermission(context, path)
+                }
+                if (allGranted) {
+                    pendingEnableAfterPermission.forEach { (path, email) ->
+                        onToggleFolder(path, email, true)
+                    }
+                } else {
+                    Toast.makeText(context, context.getString(R.string.toast_all_files_permission_denied), Toast.LENGTH_SHORT).show()
+                }
+                pendingEnableAfterPermission = emptyList()
+                returningFromPermission = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     if (folderToRemove != null) {
