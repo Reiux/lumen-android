@@ -10,30 +10,6 @@
   <img src=".github/assets/banner.png" alt="Lumen Android Banner">
 </p>
 
-## Screenshots
-
-| Active Backup | Folder Mapping | Accounts | Settings & Themes |
-| :---: | :---: | :---: | :---: |
-| <img src=".github/assets/screenshots/backup-active.jpg" width="220" alt="Active Backup" /> | <img src=".github/assets/screenshots/folders.jpg" width="220" alt="Folder Mapping" /> | <img src=".github/assets/screenshots/accounts.jpg" width="220" alt="Accounts" /> | <img src=".github/assets/screenshots/settings-themes.jpg" width="220" alt="Settings & Themes" /> |
-
-<details>
-<summary><b>View All Screenshots (Onboarding & Extra Screens)</b></summary>
-<br>
-
-### Onboarding Flow
-
-| 1. Welcome | 2. Permissions | 3. Connect Account | 4. Preferences | 5. You're All Set |
-| :---: | :---: | :---: | :---: | :---: |
-| <img src=".github/assets/screenshots/onboarding-1-welcome.jpg" width="180" alt="Welcome" /> | <img src=".github/assets/screenshots/onboarding-2-permissions.jpg" width="180" alt="Permissions" /> | <img src=".github/assets/screenshots/onboarding-3-account.jpg" width="180" alt="Connect Account" /> | <img src=".github/assets/screenshots/onboarding-4-preferences.jpg" width="180" alt="Preferences" /> | <img src=".github/assets/screenshots/onboarding-5-ready.jpg" width="180" alt="Setup Complete" /> |
-
-### Additional Screens
-
-| Idle State | Album Manager | Storage Cleanup | About Lumen |
-| :---: | :---: | :---: | :---: |
-| <img src=".github/assets/screenshots/backup-idle.jpg" width="220" alt="Backup Idle" /> | <img src=".github/assets/screenshots/albums.jpg" width="220" alt="Album Manager" /> | <img src=".github/assets/screenshots/settings-storage.jpg" width="220" alt="Storage Settings" /> | <img src=".github/assets/screenshots/about.jpg" width="220" alt="About Screen" /> |
-
-</details>
-
 > [!NOTE]
 > **Disclaimer:** Lumen is an independent open-source project and is not affiliated with, endorsed by, or supported by Google LLC. Google Photos is a trademark of Google LLC.
 >
@@ -73,6 +49,32 @@ When you sign in, Google gives the app an **OAuth token**.
 - **Background Sync**: Pauses and resumes automatically when connected to Wi-Fi or a charger.
 - **Self-Diagnostics & Logs**: Built-in test suite, battery setup guides for Xiaomi, Samsung, and OnePlus devices, and live activity logs.
 - **Hidden Features**: A few hidden surprises tucked around the app to find.
+
+---
+
+## Screenshots
+
+| Active Backup | Folder Mapping | Accounts | Settings & Themes |
+| :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/backup-active.jpg" width="220" alt="Active Backup" /> | <img src=".github/assets/screenshots/folders.jpg" width="220" alt="Folder Mapping" /> | <img src=".github/assets/screenshots/accounts.jpg" width="220" alt="Accounts" /> | <img src=".github/assets/screenshots/settings-themes.jpg" width="220" alt="Settings & Themes" /> |
+
+<details>
+<summary><b>View All Screenshots (Onboarding & Extra Screens)</b></summary>
+<br>
+
+### Onboarding Flow
+
+| 1. Welcome | 2. Permissions | 3. Connect Account | 4. Preferences | 5. You're All Set |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/onboarding-1-welcome.jpg" width="180" alt="Welcome" /> | <img src=".github/assets/screenshots/onboarding-2-permissions.jpg" width="180" alt="Permissions" /> | <img src=".github/assets/screenshots/onboarding-3-account.jpg" width="180" alt="Connect Account" /> | <img src=".github/assets/screenshots/onboarding-4-preferences.jpg" width="180" alt="Preferences" /> | <img src=".github/assets/screenshots/onboarding-5-ready.jpg" width="180" alt="Setup Complete" /> |
+
+### Additional Screens
+
+| Idle State | Album Manager | Storage Cleanup | About Lumen |
+| :---: | :---: | :---: | :---: |
+| <img src=".github/assets/screenshots/backup-idle.jpg" width="220" alt="Backup Idle" /> | <img src=".github/assets/screenshots/albums.jpg" width="220" alt="Album Manager" /> | <img src=".github/assets/screenshots/settings-storage.jpg" width="220" alt="Storage Settings" /> | <img src=".github/assets/screenshots/about.jpg" width="220" alt="About Screen" /> |
+
+</details>
 
 ---
 
