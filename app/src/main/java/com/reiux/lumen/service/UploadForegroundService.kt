@@ -84,8 +84,8 @@ class UploadForegroundService : Service() {
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Lumen Backup")
-            .setContentText("Initializing upload service...")
+            .setContentTitle(getString(com.reiux.lumen.R.string.notif_backup_title))
+            .setContentText(getString(com.reiux.lumen.R.string.notif_init))
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -344,10 +344,10 @@ class UploadForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Lumen Upload Service",
+                getString(com.reiux.lumen.R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows live upload progress for photos and videos"
+                description = getString(com.reiux.lumen.R.string.notif_channel_desc)
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
@@ -364,10 +364,10 @@ class UploadForegroundService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "Lumen Upload Service",
+                    context.getString(com.reiux.lumen.R.string.notif_channel_name),
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "Shows live upload progress for photos and videos"
+                    description = context.getString(com.reiux.lumen.R.string.notif_channel_desc)
                     setShowBadge(false)
                     lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 }
@@ -383,8 +383,8 @@ class UploadForegroundService : Service() {
             val pendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
             return NotificationCompat.Builder(context, CHANNEL_ID)
-                .setContentTitle("Lumen Backup")
-                .setContentText("Initializing upload service...")
+                .setContentTitle(context.getString(com.reiux.lumen.R.string.notif_backup_title))
+                .setContentText(context.getString(com.reiux.lumen.R.string.notif_init))
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
@@ -428,12 +428,12 @@ class UploadForegroundService : Service() {
             var progressIndeterminate = false
 
             if (conditionNotice != null) {
-                title = "Lumen Backup"
-                text = "Paused: $conditionNotice"
+                title = context.getString(com.reiux.lumen.R.string.notif_backup_title)
+                text = context.getString(com.reiux.lumen.R.string.notif_paused, conditionNotice)
                 subText = if (totalInQueue > 0) "$fileIndex/$totalInQueue" else null
                 progressCurrent = batchPercentByCount
             } else {
-                title = "Uploading $currentName"
+                title = context.getString(com.reiux.lumen.R.string.notif_uploading, currentName)
 
                 val countPrefix = if (totalInQueue > 1) "$fileIndex/$totalInQueue" else ""
                 val speedSuffix = if (!uploadSpeed.isNullOrEmpty()) " • $uploadSpeed" else ""
@@ -447,29 +447,29 @@ class UploadForegroundService : Service() {
 
                 when (currentItem?.status) {
                     UploadStatus.HASHING -> {
-                        text = "Checking file..."
+                        text = context.getString(com.reiux.lumen.R.string.notif_checking_file)
                         progressCurrent = batchPercentByCount
                         progressIndeterminate = true
                     }
                     UploadStatus.CHECKING -> {
-                        text = "Checking Google Photos for duplicates..."
+                        text = context.getString(com.reiux.lumen.R.string.notif_checking_duplicates)
                         progressCurrent = batchPercentByCount
                         progressIndeterminate = true
                     }
                     UploadStatus.UPLOADING -> {
                         val uploadedStr = formatBytesStatic(currentFileUploaded)
                         val totalStr = formatBytesStatic(currentFileSize)
-                        text = "$uploadedStr of $totalStr • $filePercent%"
+                        text = context.getString(com.reiux.lumen.R.string.notif_upload_progress, uploadedStr, totalStr, filePercent)
                         progressCurrent = if (totalInQueue > 1) batchPercentByCount else filePercent
                         progressIndeterminate = false
                     }
                     UploadStatus.COMMITTING -> {
-                        text = "Saving to Google Photos..."
+                        text = context.getString(com.reiux.lumen.R.string.notif_saving)
                         progressCurrent = batchPercentByCount
                         progressIndeterminate = false
                     }
                     else -> {
-                        text = "Preparing..."
+                        text = context.getString(com.reiux.lumen.R.string.notif_preparing)
                         progressCurrent = batchPercentByCount
                         progressIndeterminate = totalInQueue == 0
                     }
@@ -495,7 +495,7 @@ class UploadForegroundService : Service() {
                 .setContentIntent(openIntent)
 
             val livePillText = if (conditionNotice != null) {
-                "Paused"
+                context.getString(com.reiux.lumen.R.string.notif_paused_chip)
             } else {
                 if (isUploading && batchPercentByCount >= 0) "$batchPercentByCount%" else "Backup"
             }

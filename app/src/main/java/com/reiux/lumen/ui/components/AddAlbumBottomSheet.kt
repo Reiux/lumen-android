@@ -39,9 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.network.GoogleAlbum
 
@@ -98,7 +100,7 @@ fun AddAlbumBottomSheet(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                text = "Add Album",
+                text = stringResource(R.string.album_sheet_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -111,14 +113,14 @@ fun AddAlbumBottomSheet(
                     onClick = { selectedSegment = 0 },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                 ) {
-                    Text("Paste Link or Key", fontSize = 12.sp)
+                    Text(stringResource(R.string.album_segment_paste), fontSize = 12.sp)
                 }
                 SegmentedButton(
                     selected = selectedSegment == 1,
                     onClick = { selectedSegment = 1 },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                 ) {
-                    Text("Create New Album", fontSize = 12.sp)
+                    Text(stringResource(R.string.album_segment_create), fontSize = 12.sp)
                 }
             }
 
@@ -135,12 +137,12 @@ fun AddAlbumBottomSheet(
                 OutlinedTextField(
                     value = newAlbumNameInput,
                     onValueChange = { newAlbumNameInput = it },
-                    label = { Text("Album Name") },
-                    placeholder = { Text("e.g. Vacation 2026") },
+                    label = { Text(stringResource(R.string.album_label_name)) },
+                    placeholder = { Text(stringResource(R.string.album_hint_name)) },
                     isError = isDuplicate,
                     supportingText = {
                         if (isDuplicate) {
-                            Text("An album with this name already exists.")
+                            Text(stringResource(R.string.album_err_exists))
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -153,14 +155,14 @@ fun AddAlbumBottomSheet(
                     onValueChange = { newValue ->
                         keyOrUrlInput = extractKeyFromPastedUrl(newValue)
                     },
-                    label = { Text("Link or Key") },
-                    placeholder = { Text("e.g. photos.google.com/album/AF1Qip...") },
+                    label = { Text(stringResource(R.string.album_label_link_key)) },
+                    placeholder = { Text(stringResource(R.string.album_hint_link_key)) },
                     isError = (keyOrUrlInput.isNotBlank() && !isValidKeyOrUrl) || isDuplicate,
                     supportingText = {
                         if (isDuplicate) {
-                            Text("This album key or nickname already exists.")
+                            Text(stringResource(R.string.album_err_key_exists))
                         } else if (keyOrUrlInput.isNotBlank() && !isValidKeyOrUrl) {
-                            Text("Please enter a valid Google Photos album link or key.")
+                            Text(stringResource(R.string.album_err_invalid_key))
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -171,8 +173,8 @@ fun AddAlbumBottomSheet(
                 OutlinedTextField(
                     value = nicknameInput,
                     onValueChange = { nicknameInput = it },
-                    label = { Text("Album Nickname") },
-                    placeholder = { Text("e.g. Family Vacation") },
+                    label = { Text(stringResource(R.string.album_label_nickname)) },
+                    placeholder = { Text(stringResource(R.string.album_hint_nickname)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     singleLine = true
@@ -191,7 +193,7 @@ fun AddAlbumBottomSheet(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("How do I find my album link or key?")
+                        Text(stringResource(R.string.album_btn_how_find))
                     }
                 }
             }
@@ -201,7 +203,7 @@ fun AddAlbumBottomSheet(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 ExpressiveButton(
@@ -217,7 +219,7 @@ fun AddAlbumBottomSheet(
                     },
                     enabled = canSave
                 ) {
-                    Text("Save Album")
+                    Text(stringResource(R.string.album_btn_save))
                 }
             }
 
@@ -300,7 +302,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {
             Text(
-                text = "Find your album link",
+                text = stringResource(R.string.album_help_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -309,10 +311,10 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                HelpStepRow(number = 1, text = "Tap \"Open Google Photos\" below. Your albums page opens in your browser. Sign in with the same Google account if it asks.")
-                HelpStepRow(number = 2, text = "Tap the album you want Lumen to use.")
-                HelpStepRow(number = 3, text = "Tap the address bar at the top of the browser and copy the whole link.")
-                HelpStepRow(number = 4, text = "Come back to Lumen and paste it into \"Link or Key\".")
+                HelpStepRow(number = 1, text = stringResource(R.string.album_help_step_1))
+                HelpStepRow(number = 2, text = stringResource(R.string.album_help_step_2))
+                HelpStepRow(number = 3, text = stringResource(R.string.album_help_step_3))
+                HelpStepRow(number = 4, text = stringResource(R.string.album_help_step_4))
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -331,7 +333,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
                 }
 
                 Text(
-                    text = "The nickname is only for you. Pick anything you will recognize.",
+                    text = stringResource(R.string.album_help_nickname_tip),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -353,7 +355,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
                             val viewIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://photos.google.com/albums"))
                             context.startActivity(viewIntent)
                         } catch (_: Exception) {
-                            android.widget.Toast.makeText(context, "Could not open web browser", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.album_help_err_browser), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -364,12 +366,12 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Open Google Photos")
+                Text(stringResource(R.string.album_help_btn_open))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Got it")
+                Text(stringResource(R.string.btn_got_it))
             }
         }
     )

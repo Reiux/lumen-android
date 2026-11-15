@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 
 @Composable
 fun EditDisplayNameDialog(
@@ -44,7 +46,7 @@ fun EditDisplayNameDialog(
             .padding(horizontal = 16.dp),
         title = {
             Text(
-                text = "Change Display Name",
+                text = stringResource(R.string.dialog_edit_display_name_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -52,7 +54,7 @@ fun EditDisplayNameDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Give this Google account a custom label for easy identification.",
+                    text = stringResource(R.string.dialog_edit_display_name_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -60,7 +62,7 @@ fun EditDisplayNameDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Display Name") },
+                    label = { Text(stringResource(R.string.accounts_display_name_label)) },
                     placeholder = { Text("e.g. Personal or Work") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -73,12 +75,12 @@ fun EditDisplayNameDialog(
                 onClick = { onSave(name.trim()) },
                 shape = ButtonDefaults.shape
             ) {
-                Text("Save")
+                Text(stringResource(R.string.btn_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         },
         shape = RoundedCornerShape(28.dp),

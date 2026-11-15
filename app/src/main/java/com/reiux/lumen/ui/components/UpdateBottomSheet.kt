@@ -32,11 +32,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.UpdateInfo
 import com.reiux.lumen.util.LumenLogger
 import java.io.File
@@ -83,13 +85,13 @@ fun UpdateBottomSheet(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "Update Available",
+                        text = stringResource(R.string.update_dialog_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Version ${updateInfo.versionName}",
+                        text = stringResource(R.string.update_dialog_subtitle, updateInfo.versionName),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -108,7 +110,8 @@ fun UpdateBottomSheet(
                         .padding(16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    val releaseNotes = updateInfo.releaseNotes.takeIf { it.isNotBlank() } ?: "Bug fixes and improvements."
+                    val defaultNotes = stringResource(R.string.update_dialog_default_notes)
+                    val releaseNotes = updateInfo.releaseNotes.takeIf { it.isNotBlank() } ?: defaultNotes
                     val annotatedText = parseSimpleMarkdown(
                         text = releaseNotes,
                         primaryColor = MaterialTheme.colorScheme.primary,
@@ -135,7 +138,7 @@ fun UpdateBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Downloading update...",
+                            text = stringResource(R.string.update_downloading_progress),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -163,7 +166,7 @@ fun UpdateBottomSheet(
                     onClick = onDismiss,
                     enabled = !isDownloading
                 ) {
-                    Text("Later")
+                    Text(stringResource(R.string.update_btn_later))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 ExpressiveButton(
@@ -180,7 +183,7 @@ fun UpdateBottomSheet(
                     },
                     enabled = !isDownloading
                 ) {
-                    Text(if (isDownloading) "Downloading..." else "Update Now")
+                    Text(if (isDownloading) stringResource(R.string.update_btn_downloading) else stringResource(R.string.update_btn_update_now))
                 }
             }
         }

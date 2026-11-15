@@ -45,9 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.R
 
 @Composable
 fun AddAccountDialog(
@@ -89,7 +91,7 @@ fun AddAccountDialog(
             .padding(horizontal = 16.dp),
         title = {
             Text(
-                text = "Add Google Account",
+                text = stringResource(R.string.account_add_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -131,7 +133,7 @@ fun AddAccountDialog(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "Authentication Error",
+                                    text = stringResource(R.string.auth_error_title),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -158,7 +160,7 @@ fun AddAccountDialog(
                                 ) {
                                     Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Try Again")
+                                    Text(stringResource(R.string.btn_try_again))
                                 }
                             }
                         }
@@ -184,7 +186,7 @@ fun AddAccountDialog(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Sign In with Google",
+                            text = stringResource(R.string.btn_sign_in_google),
                             style = MaterialTheme.typography.titleMedium
                         )
                     }
@@ -197,7 +199,7 @@ fun AddAccountDialog(
                     ) {
                         HorizontalDivider(modifier = Modifier.weight(1f))
                         Text(
-                            text = "  OR  ",
+                            text = "  ${stringResource(R.string.divider_or)}  ",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -215,7 +217,7 @@ fun AddAccountDialog(
                         ) {
                             Icon(Icons.Rounded.Key, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Paste Token or Credential Manually")
+                            Text(stringResource(R.string.btn_paste_token_manual))
                         }
                     }
                 }
@@ -223,9 +225,9 @@ fun AddAccountDialog(
                 if (showManualInput) {
                     Text(
                         text = if (isRawCredential)
-                            "Paste a full Lumen credential string (androidId=...&Token=...)."
+                            stringResource(R.string.account_paste_credential_hint)
                         else
-                            "Enter the oauth_token cookie obtained from Google Embedded Setup.",
+                            stringResource(R.string.account_paste_token_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -240,7 +242,7 @@ fun AddAccountDialog(
                                 isRawCredential = true
                             }
                         },
-                        label = { Text(if (isRawCredential) "Credential string" else "OAuth Token") },
+                        label = { Text(if (isRawCredential) stringResource(R.string.account_field_credential) else stringResource(R.string.account_field_oauth)) },
                         placeholder = {
                             Text(if (isRawCredential) "androidId=...&Email=..." else "oauth_token=...")
                         },
@@ -257,7 +259,7 @@ fun AddAccountDialog(
                         modifier = Modifier.align(Alignment.End)
                     ) {
                         Text(
-                            text = if (isRawCredential) "Switch to OAuth Token" else "Switch to Credential String",
+                            text = if (isRawCredential) stringResource(R.string.account_switch_to_oauth) else stringResource(R.string.account_switch_to_credential),
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -284,7 +286,7 @@ fun AddAccountDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Text("Connect")
+                    Text(stringResource(R.string.account_btn_connect))
                 }
             }
         },
@@ -293,7 +295,7 @@ fun AddAccountDialog(
                 onClick = onDismiss,
                 enabled = !isLoading
             ) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         },
         shape = RoundedCornerShape(28.dp),

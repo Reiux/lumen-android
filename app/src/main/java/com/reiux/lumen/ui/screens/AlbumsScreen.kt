@@ -69,6 +69,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.network.GoogleAlbum
 import com.reiux.lumen.ui.components.AccountPickerRow
@@ -107,12 +109,12 @@ fun AlbumsScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Album Manager",
+                            text = stringResource(R.string.albums_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Manage saved Google Photos album links and keys",
+                            text = stringResource(R.string.albums_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -122,7 +124,7 @@ fun AlbumsScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = stringResource(R.string.nav_back)
                         )
                     }
                 },
@@ -135,7 +137,7 @@ fun AlbumsScreen(
             ExpressiveExtendedFloatingActionButton(
                 onClick = { showAddSheet = true },
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("Add Album", fontWeight = FontWeight.SemiBold) },
+                text = { Text(stringResource(R.string.albums_btn_add), fontWeight = FontWeight.SemiBold) },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -158,7 +160,7 @@ fun AlbumsScreen(
                         FilterChip(
                             selected = selectedFilterEmail == "ALL",
                             onClick = { selectedFilterEmail = "ALL" },
-                            label = { Text("All", fontSize = 12.sp) }
+                            label = { Text(stringResource(R.string.albums_filter_all), fontSize = 12.sp) }
                         )
                         accounts.forEach { acc ->
                             FilterChip(
@@ -205,14 +207,14 @@ fun AlbumsScreen(
                                 }
 
                                 Text(
-                                    text = "No Saved Albums Yet",
+                                    text = stringResource(R.string.albums_empty_title),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
 
                                 Text(
-                                    text = "Saved albums will appear here. Tap '+ Add Album' to save an album link or key.",
+                                    text = stringResource(R.string.albums_empty_desc),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
@@ -285,7 +287,7 @@ fun AlbumsScreen(
                                             color = MaterialTheme.colorScheme.errorContainer
                                         ) {
                                             Text(
-                                                text = "No account",
+                                                text = stringResource(R.string.albums_no_account),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -304,7 +306,7 @@ fun AlbumsScreen(
                                         IconButton(onClick = { menuExpanded = true }) {
                                             Icon(
                                                 imageVector = Icons.Rounded.MoreVert,
-                                                contentDescription = "Album options",
+                                                contentDescription = stringResource(R.string.albums_options_desc),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -317,7 +319,7 @@ fun AlbumsScreen(
                                             tonalElevation = 6.dp
                                         ) {
                                             DropdownMenuItem(
-                                                text = { Text("Rename") },
+                                                text = { Text(stringResource(R.string.btn_rename)) },
                                                 leadingIcon = {
                                                     Icon(
                                                         imageVector = Icons.Rounded.Edit,
@@ -332,7 +334,7 @@ fun AlbumsScreen(
                                                 modifier = Modifier.height(48.dp)
                                             )
                                             DropdownMenuItem(
-                                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                                text = { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) },
                                                 leadingIcon = {
                                                     Icon(
                                                         imageVector = Icons.Rounded.DeleteOutline,
@@ -368,8 +370,8 @@ fun AlbumsScreen(
             onDismissRequest = { albumToDelete = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Remove album?", fontWeight = FontWeight.Bold) },
-            text = { Text("This will remove '${target.title}' from Lumen. Photos in Google Photos won't be affected.") },
+            title = { Text(stringResource(R.string.dialog_remove_album_title), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.dialog_remove_album_msg, target.title)) },
             confirmButton = {
                 ExpressiveButton(
                     onClick = {
@@ -378,12 +380,12 @@ fun AlbumsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.btn_remove))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { albumToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -401,21 +403,21 @@ fun AlbumsScreen(
             onDismissRequest = { albumToRename = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Edit Album Settings", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.dialog_edit_album_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Enter a friendly nickname for this album:", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.dialog_edit_album_nickname_prompt), style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(
                         value = newNickname,
                         onValueChange = { newNickname = it },
-                        label = { Text("Album Nickname") },
+                        label = { Text(stringResource(R.string.dialog_edit_album_nickname_label)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
 
                     if (accounts.isNotEmpty()) {
-                        Text("Assign Google Account:", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.dialog_edit_album_assign_account), style = MaterialTheme.typography.bodyMedium)
                         AccountPickerRow(
                             accounts = accounts,
                             selectedAccount = targetAccount,
@@ -434,12 +436,12 @@ fun AlbumsScreen(
                     },
                     enabled = newNickname.isNotBlank()
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.btn_save))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { albumToRename = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -496,7 +498,7 @@ fun AlbumsScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    text = "Add Album",
+                    text = stringResource(R.string.albums_btn_add),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -509,14 +511,14 @@ fun AlbumsScreen(
                         onClick = { selectedSegment = 0 },
                         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                     ) {
-                        Text("Paste Link or Key", fontSize = 12.sp)
+                        Text(stringResource(R.string.albums_tab_paste_link), fontSize = 12.sp)
                     }
                     SegmentedButton(
                         selected = selectedSegment == 1,
                         onClick = { selectedSegment = 1 },
                         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                     ) {
-                        Text("Create New Album", fontSize = 12.sp)
+                        Text(stringResource(R.string.albums_tab_create_new), fontSize = 12.sp)
                     }
                 }
 
@@ -533,12 +535,12 @@ fun AlbumsScreen(
                     OutlinedTextField(
                         value = newAlbumNameInput,
                         onValueChange = { newAlbumNameInput = it },
-                        label = { Text("Album Name") },
+                        label = { Text(stringResource(R.string.albums_field_album_name)) },
                         placeholder = { Text("e.g. Vacation 2026") },
                         isError = isDuplicate,
                         supportingText = {
                             if (isDuplicate) {
-                                Text("An album with this name already exists.")
+                                Text(stringResource(R.string.albums_error_name_exists))
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -551,14 +553,14 @@ fun AlbumsScreen(
                         onValueChange = { newValue ->
                             keyOrUrlInput = extractKeyFromPastedUrl(newValue)
                         },
-                        label = { Text("Link or Key") },
+                        label = { Text(stringResource(R.string.albums_field_link_or_key)) },
                         placeholder = { Text("e.g. photos.google.com/album/AF1Qip...") },
                         isError = (keyOrUrlInput.isNotBlank() && !isValidKeyOrUrl) || isDuplicate,
                         supportingText = {
                             if (isDuplicate) {
-                                Text("This album key or nickname already exists.")
+                                Text(stringResource(R.string.albums_error_key_exists))
                             } else if (keyOrUrlInput.isNotBlank() && !isValidKeyOrUrl) {
-                                Text("Please enter a valid Google Photos album link or key.")
+                                Text(stringResource(R.string.albums_error_invalid_key))
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -569,7 +571,7 @@ fun AlbumsScreen(
                     OutlinedTextField(
                         value = nicknameInput,
                         onValueChange = { nicknameInput = it },
-                        label = { Text("Album Nickname") },
+                        label = { Text(stringResource(R.string.dialog_edit_album_nickname_label)) },
                         placeholder = { Text("e.g. Family Vacation") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
@@ -589,7 +591,7 @@ fun AlbumsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("How do I find my album link or key?")
+                            Text(stringResource(R.string.albums_link_help))
                         }
                     }
                 }
@@ -599,7 +601,7 @@ fun AlbumsScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = { showAddSheet = false }) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.btn_cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     ExpressiveButton(
@@ -615,7 +617,7 @@ fun AlbumsScreen(
                         },
                         enabled = canSave
                     ) {
-                        Text("Save Album")
+                        Text(stringResource(R.string.albums_btn_save_album))
                     }
                 }
 

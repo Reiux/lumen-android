@@ -149,7 +149,7 @@ fun SettingsScreen(
             },
             title = {
                 Text(
-                    text = "Delete Media After Backup?",
+                    text = stringResource(R.string.dialog_delete_after_backup_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -158,21 +158,19 @@ fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Enabling this option will permanently delete backed up photos and videos from your phone's storage to free up space.",
+                        text = stringResource(R.string.dialog_delete_after_backup_lead),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
                     )
                     Text(
-                        text = "• Photos and videos uploaded after enabling this will be removed from this device once Google Photos confirms the upload.\n" +
-                               "• If you delete a photo from Google Photos in the future, it will no longer exist on your phone.\n" +
-                               "• Files that failed to upload or haven't been backed up yet will never be deleted.",
+                        text = stringResource(R.string.dialog_delete_after_backup_bullets),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 18.sp
                     )
                     Text(
-                        text = "Are you sure you want to enable automatic local deletion?",
+                        text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -198,12 +196,12 @@ fun SettingsScreen(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("I Understand, Enable")
+                    Text(stringResource(R.string.dialog_delete_after_backup_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showConfirmDeleteAfterBackupDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -250,7 +248,7 @@ fun SettingsScreen(
             },
             title = {
                 Text(
-                    text = "Upload in Progress",
+                    text = stringResource(R.string.backup_upload_in_progress_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -258,9 +256,7 @@ fun SettingsScreen(
             },
             text = {
                 Text(
-                    text = "You cannot change the ${showUploadActiveBlockedDialog} while an upload is currently running.\n\n" +
-                            "Changing quota or compression profiles mid-transfer alters device emulation headers and will corrupt active file chunks or trigger Google storage quota lockouts.\n\n" +
-                            "Please wait for your uploads to finish or cancel the active backup first.",
+                    text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -269,7 +265,7 @@ fun SettingsScreen(
                 com.reiux.lumen.ui.components.ExpressiveButton(
                     onClick = { showUploadActiveBlockedDialog = null }
                 ) {
-                    Text("Got it")
+                    Text(stringResource(R.string.btn_got_it))
                 }
             }
         )
@@ -277,8 +273,8 @@ fun SettingsScreen(
 
     val handleStorageSaverToggle: (Boolean) -> Unit = { newValue ->
         if (isUploading) {
-            showUploadActiveBlockedDialog = "Storage Saver Quality"
-            Toast.makeText(context, "Cannot change quality while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = context.getString(R.string.pref_storage_saver_title)
+            Toast.makeText(context, context.getString(R.string.toast_cannot_change_quality_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onUpdateStorageSaver(newValue)
         }
@@ -286,8 +282,8 @@ fun SettingsScreen(
 
     val handleUseQuotaToggle: (Boolean) -> Unit = { newValue ->
         if (isUploading) {
-            showUploadActiveBlockedDialog = "Account Quota setting"
-            Toast.makeText(context, "Cannot change quota setting while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = context.getString(R.string.pref_use_quota_title)
+            Toast.makeText(context, context.getString(R.string.toast_cannot_change_quota_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onUpdateUseQuota(newValue)
         }
@@ -362,19 +358,19 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Settings",
+                    text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Upload preferences and app theme",
+                    text = stringResource(R.string.settings_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Text(
-                    text = "Theme Palette",
+                    text = stringResource(R.string.settings_theme_palette),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -387,13 +383,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Accent Palette",
+                            text = stringResource(R.string.settings_accent_palette),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Dynamic Monet color matches your wallpaper by default. Pick any preset to customize.",
+                            text = stringResource(R.string.settings_accent_palette_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -419,7 +415,7 @@ fun SettingsScreen(
 
                 if (settings.developerModeUnlocked) {
                     Text(
-                        text = "Developer Tools",
+                        text = stringResource(R.string.settings_dev_tools),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -433,8 +429,8 @@ fun SettingsScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         if (com.reiux.lumen.BuildConfig.DEBUG) {
                             SettingSwitchRow(
-                                title = "Gaussian Blur on Dialogs & Sheets",
-                                subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                title = stringResource(R.string.settings_blur_dialogs_title),
+                                subtitle = stringResource(R.string.settings_blur_dialogs_desc),
                                 checked = settings.enableBlurEffects,
                                 onCheckedChange = onUpdateEnableBlurEffects
                             )
@@ -443,8 +439,8 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingSwitchRow(
-                                title = "Screenshot Showcase Mode",
-                                subtitle = "Freeze UI into static sample data for banner screenshots",
+                                title = stringResource(R.string.settings_showcase_mode_title),
+                                subtitle = stringResource(R.string.settings_showcase_mode_desc),
                                 checked = isShowcaseMode,
                                 onCheckedChange = { onToggleShowcaseMode() }
                             )
@@ -453,16 +449,16 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingSwitchRow(
-                                title = "Frontend Mock Simulation",
-                                subtitle = "Run active background upload loops and timers",
+                                title = stringResource(R.string.settings_mock_sim_title),
+                                subtitle = stringResource(R.string.settings_mock_sim_desc),
                                 checked = isMockMode,
                                 onCheckedChange = { onToggleMockMode() }
                             )
                         }
                         SettingActionRow(
-                            title = "Run Diagnostics",
-                            subtitle = "Check endpoints, hashing speed, and permissions",
-                            actionLabel = "Run",
+                            title = stringResource(R.string.settings_run_diagnostics_title),
+                            subtitle = stringResource(R.string.settings_run_diagnostics_desc),
+                            actionLabel = stringResource(R.string.settings_action_run),
                             onClick = onOpenDevDiagnostics
                         )
                         HorizontalDivider(
@@ -470,9 +466,9 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingActionRow(
-                            title = "Replay Setup Walkthrough",
-                            subtitle = "Go through the initial setup screens again",
-                            actionLabel = "Replay",
+                            title = stringResource(R.string.settings_replay_walkthrough_title),
+                            subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
+                            actionLabel = stringResource(R.string.settings_action_replay),
                             onClick = onReplayOnboarding
                         )
                         HorizontalDivider(
@@ -482,13 +478,13 @@ fun SettingsScreen(
                         if (com.reiux.lumen.BuildConfig.DEBUG) {
                             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                 Text(
-                                    text = "Force Season Theme",
+                                    text = stringResource(R.string.settings_force_season_title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Override date-based seasonal tints",
+                                    text = stringResource(R.string.settings_force_season_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -527,9 +523,9 @@ fun SettingsScreen(
                             )
                         }
                             SettingActionRow(
-                                title = "Turn Off Developer Mode",
-                                subtitle = "Hide developer tools across the app",
-                                actionLabel = "Lock",
+                                title = stringResource(R.string.settings_disable_dev_mode_title),
+                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
+                                actionLabel = stringResource(R.string.settings_action_lock),
                                 onClick = { onToggleDeveloperMode(false) }
                             )
                         }
@@ -568,7 +564,7 @@ fun SettingsScreen(
                 )
 
                 Text(
-                    text = "Storage & Quality",
+                    text = stringResource(R.string.settings_storage_quality_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -581,8 +577,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Storage Saver Quality",
-                            subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
+                            title = stringResource(R.string.pref_storage_saver_title),
+                            subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
                             checked = settings.storageSaverQuality,
                             onCheckedChange = handleStorageSaverToggle
                         )
@@ -591,8 +587,8 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingSwitchRow(
-                            title = "Use Account Quota",
-                            subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
+                            title = stringResource(R.string.pref_use_quota_title),
+                            subtitle = stringResource(R.string.pref_use_quota_desc),
                             checked = settings.useQuota,
                             onCheckedChange = handleUseQuotaToggle
                         )
@@ -601,8 +597,8 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingSwitchRow(
-                            title = "Upload Notifications",
-                            subtitle = "Show upload progress in the notification shade",
+                            title = stringResource(R.string.pref_upload_notifs_title),
+                            subtitle = stringResource(R.string.pref_upload_notifs_desc),
                             checked = settings.notificationsEnabled,
                             onCheckedChange = onUpdateNotifications
                         )
@@ -613,14 +609,14 @@ fun SettingsScreen(
                         SettingActionRow(
                             title = stringResource(R.string.account_safety_title),
                             subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = "View",
+                            actionLabel = stringResource(R.string.settings_action_view),
                             onClick = { showAccountSafetyDialog = true }
                         )
                     }
                 }
 
                 Text(
-                    text = "Storage Cleanup",
+                    text = stringResource(R.string.settings_storage_cleanup_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -634,8 +630,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Delete photos from phone after backup",
-                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            title = stringResource(R.string.pref_delete_after_backup_title),
+                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
                             checked = settings.deleteAfterBackup,
                             onCheckedChange = { next ->
                                 if (next) {
@@ -649,7 +645,7 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "Updates",
+                    text = stringResource(R.string.settings_updates_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -671,7 +667,7 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.settings_about_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -705,7 +701,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "About Lumen",
+                                    text = stringResource(R.string.settings_about_lumen),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -721,7 +717,7 @@ fun SettingsScreen(
 
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Open About",
+                            contentDescription = stringResource(R.string.settings_about_lumen),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -744,13 +740,13 @@ fun SettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Settings",
+                    text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Upload preferences and app theme",
+                    text = stringResource(R.string.settings_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -759,7 +755,7 @@ fun SettingsScreen(
             // Appearance & Palette Style Presets
             item {
                 Text(
-                    text = "Theme",
+                    text = stringResource(R.string.settings_theme_palette),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -774,13 +770,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Accent Palette",
+                            text = stringResource(R.string.settings_accent_palette),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Dynamic Monet color matches your wallpaper by default. Pick any preset to customize.",
+                            text = stringResource(R.string.settings_accent_palette_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -808,7 +804,7 @@ fun SettingsScreen(
             // Network & Threads
             item {
                 Text(
-                    text = "Network & Upload Speed",
+                    text = stringResource(R.string.settings_network_speed_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -831,7 +827,7 @@ fun SettingsScreen(
             // Upload Quality & Quota
             item {
                 Text(
-                    text = "Storage & Quality",
+                    text = stringResource(R.string.settings_storage_quality_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -846,8 +842,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Storage Saver Quality",
-                            subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
+                            title = stringResource(R.string.pref_storage_saver_title),
+                            subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
                             checked = settings.storageSaverQuality,
                             onCheckedChange = handleStorageSaverToggle
                         )
@@ -856,8 +852,8 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingSwitchRow(
-                            title = "Use Account Quota",
-                            subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
+                            title = stringResource(R.string.pref_use_quota_title),
+                            subtitle = stringResource(R.string.pref_use_quota_desc),
                             checked = settings.useQuota,
                             onCheckedChange = handleUseQuotaToggle
                         )
@@ -866,8 +862,8 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingSwitchRow(
-                            title = "Upload Notifications",
-                            subtitle = "Show upload progress in the notification shade",
+                            title = stringResource(R.string.pref_upload_notifs_title),
+                            subtitle = stringResource(R.string.pref_upload_notifs_desc),
                             checked = settings.notificationsEnabled,
                             onCheckedChange = onUpdateNotifications
                         )
@@ -878,7 +874,7 @@ fun SettingsScreen(
                         SettingActionRow(
                             title = stringResource(R.string.account_safety_title),
                             subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = "View",
+                            actionLabel = stringResource(R.string.settings_action_view),
                             onClick = { showAccountSafetyDialog = true }
                         )
                     }
@@ -888,7 +884,7 @@ fun SettingsScreen(
             // Storage Cleanup (Red section)
             item {
                 Text(
-                    text = "Storage Cleanup",
+                    text = stringResource(R.string.settings_storage_cleanup_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -904,8 +900,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Delete photos from phone after backup",
-                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            title = stringResource(R.string.pref_delete_after_backup_title),
+                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
                             checked = settings.deleteAfterBackup,
                             onCheckedChange = { next ->
                                 if (next) {
@@ -923,7 +919,7 @@ fun SettingsScreen(
             if (settings.developerModeUnlocked) {
                 item {
                     Text(
-                        text = "Developer Tools",
+                        text = stringResource(R.string.settings_dev_tools),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -939,8 +935,8 @@ fun SettingsScreen(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (com.reiux.lumen.BuildConfig.DEBUG) {
                                 SettingSwitchRow(
-                                    title = "Gaussian Blur on Dialogs & Sheets",
-                                    subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                    title = stringResource(R.string.settings_blur_dialogs_title),
+                                    subtitle = stringResource(R.string.settings_blur_dialogs_desc),
                                     checked = settings.enableBlurEffects,
                                     onCheckedChange = onUpdateEnableBlurEffects
                                 )
@@ -949,8 +945,8 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                                 SettingSwitchRow(
-                                    title = "Screenshot Showcase Mode",
-                                    subtitle = "Freeze UI into static sample data for banner screenshots",
+                                    title = stringResource(R.string.settings_showcase_mode_title),
+                                    subtitle = stringResource(R.string.settings_showcase_mode_desc),
                                     checked = isShowcaseMode,
                                     onCheckedChange = { onToggleShowcaseMode() }
                                 )
@@ -959,8 +955,8 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                                 SettingSwitchRow(
-                                    title = "Frontend Mock Simulation",
-                                    subtitle = "Run active background upload loops and timers",
+                                    title = stringResource(R.string.settings_mock_sim_title),
+                                    subtitle = stringResource(R.string.settings_mock_sim_desc),
                                     checked = isMockMode,
                                     onCheckedChange = { onToggleMockMode() }
                                 )
@@ -970,9 +966,9 @@ fun SettingsScreen(
                                 )
                             }
                             SettingActionRow(
-                                title = "Run Diagnostics",
-                                subtitle = "Check endpoints, hashing speed, and permissions",
-                                actionLabel = "Run",
+                                title = stringResource(R.string.settings_run_diagnostics_title),
+                                subtitle = stringResource(R.string.settings_run_diagnostics_desc),
+                                actionLabel = stringResource(R.string.settings_action_run),
                                 onClick = onOpenDevDiagnostics
                             )
                             HorizontalDivider(
@@ -980,9 +976,9 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingActionRow(
-                                title = "Replay Setup Walkthrough",
-                                subtitle = "Go through the initial setup screens again",
-                                actionLabel = "Replay",
+                                title = stringResource(R.string.settings_replay_walkthrough_title),
+                                subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
+                                actionLabel = stringResource(R.string.settings_action_replay),
                                 onClick = onReplayOnboarding
                             )
                             HorizontalDivider(
@@ -992,13 +988,13 @@ fun SettingsScreen(
                             if (com.reiux.lumen.BuildConfig.DEBUG) {
                                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                     Text(
-                                        text = "Force Season Theme",
+                                        text = stringResource(R.string.settings_force_season_title),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Override date-based seasonal tints",
+                                        text = stringResource(R.string.settings_force_season_desc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1037,9 +1033,9 @@ fun SettingsScreen(
                                 )
                             }
                             SettingActionRow(
-                                title = "Turn Off Developer Mode",
-                                subtitle = "Hide developer tools across the app",
-                                actionLabel = "Lock",
+                                title = stringResource(R.string.settings_disable_dev_mode_title),
+                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
+                                actionLabel = stringResource(R.string.settings_action_lock),
                                 onClick = { onToggleDeveloperMode(false) }
                             )
                         }
@@ -1050,7 +1046,7 @@ fun SettingsScreen(
             // Updates
             item {
                 Text(
-                    text = "Updates",
+                    text = stringResource(R.string.settings_updates_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -1076,7 +1072,7 @@ fun SettingsScreen(
             // About
             item {
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.settings_about_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -1112,7 +1108,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "About Lumen",
+                                    text = stringResource(R.string.settings_about_lumen),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -1128,7 +1124,7 @@ fun SettingsScreen(
 
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Open About",
+                            contentDescription = stringResource(R.string.settings_about_lumen),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -1298,8 +1294,8 @@ private fun NetworkAndSpeedCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             // 1. Back up new photos and videos
             SettingSwitchRow(
-                title = "Back up new photos and videos",
-                subtitle = "Automatically back up new files in enabled folders",
+                title = stringResource(R.string.pref_auto_backup_title),
+                subtitle = stringResource(R.string.pref_auto_backup_desc),
                 checked = settings.autoBackupEnabled,
                 onCheckedChange = onUpdateAutoBackup
             )
@@ -1311,8 +1307,8 @@ private fun NetworkAndSpeedCard(
 
             // 2. Wi-Fi only
             SettingSwitchRow(
-                title = "Wi-Fi only",
-                subtitle = "Only upload when connected to Wi-Fi",
+                title = stringResource(R.string.pref_wifi_only_title),
+                subtitle = stringResource(R.string.pref_wifi_only_desc),
                 checked = settings.wifiOnly,
                 onCheckedChange = onUpdateWifiOnly
             )
@@ -1324,8 +1320,8 @@ private fun NetworkAndSpeedCard(
 
             // 3. While charging only
             SettingSwitchRow(
-                title = "While charging only",
-                subtitle = "Only upload when plugged in",
+                title = stringResource(R.string.pref_charging_only_title),
+                subtitle = stringResource(R.string.pref_charging_only_desc),
                 checked = settings.chargingOnly,
                 onCheckedChange = onUpdateChargingOnly
             )
@@ -1347,20 +1343,20 @@ private fun NetworkAndSpeedCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Simultaneous Uploads",
+                        text = stringResource(R.string.pref_upload_threads_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${settings.uploadThreads} threads",
+                        text = stringResource(R.string.pref_upload_threads_count, settings.uploadThreads),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Text(
-                    text = "Number of files to upload at the same time",
+                    text = stringResource(R.string.pref_upload_threads_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1388,14 +1384,14 @@ private fun NetworkAndSpeedCard(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
-                        text = "Allow Background Activity",
+                        text = stringResource(R.string.pref_background_activity_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Turn off battery optimization so backups keep running in the background",
+                        text = stringResource(R.string.pref_background_activity_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1417,7 +1413,7 @@ private fun NetworkAndSpeedCard(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Allowed",
+                                text = stringResource(R.string.status_allowed),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -1431,7 +1427,7 @@ private fun NetworkAndSpeedCard(
                         },
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                     ) {
-                        Text("Allow")
+                        Text(stringResource(R.string.btn_allow))
                     }
                 }
             }
@@ -1452,14 +1448,14 @@ private fun NetworkAndSpeedCard(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
-                        text = "Background Guide for Your Phone",
+                        text = stringResource(R.string.pref_oem_guide_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Steps for Xiaomi, Samsung, and other brands to keep backups alive",
+                        text = stringResource(R.string.pref_oem_guide_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1470,7 +1466,7 @@ private fun NetworkAndSpeedCard(
                 ) {
                     Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Guide")
+                    Text(stringResource(R.string.btn_guide))
                 }
             }
         }

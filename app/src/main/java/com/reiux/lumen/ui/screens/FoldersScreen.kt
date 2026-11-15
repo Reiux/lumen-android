@@ -174,8 +174,8 @@ fun FoldersScreen(
             onDismissRequest = { folderToRemove = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Remove backup folder?", fontWeight = FontWeight.Bold) },
-            text = { Text("Lumen will stop monitoring '${target.displayName}'. Your local files will stay safe on your device.") },
+            title = { Text(stringResource(R.string.dialog_remove_folder_title), fontWeight = FontWeight.Bold) },
+            text = { Text(stringResource(R.string.dialog_remove_folder_msg, target.displayName)) },
             confirmButton = {
                 com.reiux.lumen.ui.components.ExpressiveButton(
                     onClick = {
@@ -252,13 +252,13 @@ fun FoldersScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Backup Folders",
+                    text = stringResource(R.string.folders_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Photos and videos in enabled folders will be backed up automatically.",
+                    text = stringResource(R.string.folders_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -341,13 +341,13 @@ fun FoldersScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Backup Folders",
+                        text = stringResource(R.string.folders_title),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Photos and videos in enabled folders will be backed up",
+                        text = stringResource(R.string.folders_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -437,7 +437,7 @@ private fun AccountFilterChips(
                     try { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                     onSelectFilter(null)
                 },
-                label = { Text("All (${folders.size})", fontWeight = FontWeight.SemiBold) },
+                label = { Text(stringResource(R.string.filter_all, folders.size), fontWeight = FontWeight.SemiBold) },
                 modifier = Modifier.scale(scale)
             )
         }
@@ -478,7 +478,7 @@ private fun AccountFilterChips(
                         try { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                         onSelectFilter(if (isUnassignedSelected) null else "unassigned")
                     },
-                    label = { Text("Unassigned ($unassignedCount)", fontWeight = FontWeight.SemiBold) },
+                    label = { Text(stringResource(R.string.filter_unassigned, unassignedCount), fontWeight = FontWeight.SemiBold) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
@@ -575,7 +575,7 @@ private fun FolderRowItem(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = "Remove folder",
+                        contentDescription = stringResource(R.string.btn_delete),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
                     )
@@ -596,7 +596,7 @@ private fun FolderRowItem(
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "subfolders",
+                                text = stringResource(R.string.tag_subfolders),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -625,7 +625,7 @@ private fun FolderRowItem(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isMissing) "→ $albumNickname (Missing in Google Photos)" else "→ $albumNickname",
+                                text = if (isMissing) stringResource(R.string.folder_album_missing, albumNickname) else "→ $albumNickname",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isMissing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
@@ -660,7 +660,7 @@ private fun FolderRowItem(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Unassigned folder: Please choose an account",
+                            text = stringResource(R.string.folder_unassigned_warning),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )

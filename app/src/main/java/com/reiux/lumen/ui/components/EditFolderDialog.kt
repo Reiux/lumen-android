@@ -42,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
@@ -91,7 +93,7 @@ fun EditFolderDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {
             Text(
-                text = "Edit Folder Settings",
+                text = stringResource(R.string.edit_folder_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -108,7 +110,7 @@ fun EditFolderDialog(
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("Folder Name") },
+                    label = { Text(stringResource(R.string.add_folder_folder_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     singleLine = true
@@ -159,8 +161,8 @@ fun EditFolderDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Include Subfolders", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                            Text("Scan files in nested subfolders", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.edit_folder_include_subfolders), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.edit_folder_include_subfolders_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         ExpressiveSwitch(
                             checked = includeSubfolders,
@@ -199,12 +201,12 @@ fun EditFolderDialog(
                 },
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text("Save Changes")
+                Text(stringResource(R.string.edit_folder_save_changes))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         }
     )

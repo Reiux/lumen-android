@@ -581,7 +581,7 @@ class MainActivity : ComponentActivity() {
                                 forcedSeason = settings.forcedSeason,
                                 onCheckForUpdates = {
                                     viewModel.checkAndShowUpdate(this@MainActivity, forceShow = false) {
-                                        android.widget.Toast.makeText(this@MainActivity, "Lumen is up to date", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(this@MainActivity, getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 onForceUpdateDialog = {

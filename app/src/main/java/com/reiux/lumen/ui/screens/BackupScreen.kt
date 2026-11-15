@@ -208,17 +208,16 @@ fun BackupScreen(
             },
             title = {
                 Text(
-                    text = "Upload in Progress",
+                    text = stringResource(R.string.backup_upload_in_progress_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             },
             text = {
+                val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
                 Text(
-                    text = "You cannot switch accounts while a backup is actively uploading.\n\n" +
-                            "Files are currently streaming to ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your active account"}.\n\n" +
-                            "Please wait for active uploads to finish or cancel the backup first.",
+                    text = stringResource(R.string.backup_upload_in_progress_msg, accountName),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -227,7 +226,7 @@ fun BackupScreen(
                 com.reiux.lumen.ui.components.ExpressiveButton(
                     onClick = { showAccountSwitchBlockedDialog = false }
                 ) {
-                    Text("Got it")
+                    Text(stringResource(R.string.btn_got_it))
                 }
             }
         )
@@ -236,7 +235,7 @@ fun BackupScreen(
     val handleSelectAccount: (GoogleAccount) -> Unit = { targetAccount ->
         if (isUploading && targetAccount.email != selectedAccount?.email) {
             showAccountSwitchBlockedDialog = true
-            Toast.makeText(context, "Cannot switch accounts while uploading", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_cannot_switch_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onSelectAccount(targetAccount)
         }
@@ -259,18 +258,18 @@ fun BackupScreen(
     if (addAccountError != null) {
         com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = onClearAddAccountError,
-            title = { Text("Authentication Error", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            title = { Text(stringResource(R.string.dialog_auth_error_title), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = { Text(addAccountError) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     onClearAddAccountError()
                     showSignInDialog = true
                 }) {
-                    Text("Try Again")
+                    Text(stringResource(R.string.btn_try_again))
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = onClearAddAccountError) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = onClearAddAccountError) { Text(stringResource(R.string.btn_cancel)) }
             },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
             containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
@@ -280,10 +279,10 @@ fun BackupScreen(
     if (showRestrictedRemoveDialog && accountBlock != null) {
         com.reiux.lumen.ui.components.PredictiveAlertDialog(
             onDismissRequest = { showRestrictedRemoveDialog = false },
-            title = { Text("Remove Restricted Account", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.dialog_remove_restricted_title), fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    text = "This account has been restricted by Google. Removing it will clear the block in Lumen, but you must check the account's status directly with Google before trying to use it again.",
+                    text = stringResource(R.string.dialog_remove_restricted_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -297,11 +296,11 @@ fun BackupScreen(
                     },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.btn_remove))
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showRestrictedRemoveDialog = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { showRestrictedRemoveDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -504,7 +503,7 @@ fun BackupScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent Activity (${queue.size})",
+                        text = stringResource(R.string.backup_recent_activity, queue.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -520,7 +519,7 @@ fun BackupScreen(
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Retry Failed ($failedCount)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                         }
@@ -530,7 +529,7 @@ fun BackupScreen(
                                 onClick = onClearCompleted,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("Clear")
+                                Text(stringResource(R.string.btn_clear))
                             }
                         }
                     }
@@ -567,7 +566,7 @@ fun BackupScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Queue is empty",
+                                text = stringResource(R.string.backup_queue_empty_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -627,7 +626,7 @@ fun BackupScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
-                                        text = "No items match this filter",
+                                        text = stringResource(R.string.filter_no_items_match),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -760,7 +759,7 @@ fun BackupScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent Activity (${queue.size})",
+                        text = stringResource(R.string.backup_recent_activity, queue.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -776,7 +775,7 @@ fun BackupScreen(
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Retry Failed ($failedCount)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                         }
@@ -786,7 +785,7 @@ fun BackupScreen(
                                 onClick = onClearCompleted,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("Clear")
+                                Text(stringResource(R.string.btn_clear))
                             }
                         }
                     }
@@ -824,7 +823,7 @@ fun BackupScreen(
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = "Queue is empty",
+                                text = stringResource(R.string.backup_queue_empty_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -886,7 +885,7 @@ fun BackupScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
-                                        text = "No items match this filter",
+                                        text = stringResource(R.string.filter_no_items_match),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -986,7 +985,7 @@ private fun BackupTopHeader(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onUnlockPrismTheme()
                         showBurst = true
-                        Toast.makeText(context, "Unlocked Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.toast_unlocked_prism), Toast.LENGTH_SHORT).show()
                     },
                     onTap = {
                         onBrandTap()
@@ -1485,7 +1484,7 @@ private fun AccountStatusCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = selectedAccount?.displayName ?: selectedAccount?.email ?: "No Account Selected",
+                    text = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.account_no_selected),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1507,7 +1506,7 @@ private fun AccountStatusCard(
                 onClick = onNavigateToAccounts,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text(if (selectedAccount == null) "Connect" else "Switch")
+                Text(if (selectedAccount == null) stringResource(R.string.btn_connect) else stringResource(R.string.btn_switch))
             }
         }
     }
@@ -1578,9 +1577,9 @@ private fun HeroBackupCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 val countText = if (scanState.filesFound > 0) {
-                    "${String.format(Locale.US, "%,d", scanState.filesFound)} files found — ${scanState.currentFolderName}"
+                    stringResource(R.string.backup_scan_files_found, scanState.filesFound, scanState.currentFolderName)
                 } else {
-                    "Scanning enabled folders for photos & videos..."
+                    stringResource(R.string.backup_scanning_folders)
                 }
                 Text(
                     text = countText,
@@ -1662,12 +1661,12 @@ private fun HeroBackupCard(
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = when {
-                                isOffline -> "Backup Paused · No Internet"
-                                hasMissingAlbum -> "Album not found"
+                                isOffline -> stringResource(R.string.backup_paused_no_internet)
+                                hasMissingAlbum -> stringResource(R.string.title_album_not_found)
                                 conditionNotice != null -> conditionNotice
-                                isUploading -> "Uploading..."
-                                isDone -> "Backup Ready"
-                                else -> "Backup Ready"
+                                isUploading -> stringResource(R.string.backup_status_uploading)
+                                isDone -> stringResource(R.string.backup_status_ready)
+                                else -> stringResource(R.string.backup_status_ready)
                             },
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
@@ -1685,17 +1684,18 @@ private fun HeroBackupCard(
 
                 if (isOffline) {
                     Text(
-                        text = "An active internet connection is required to upload photos and videos to Google Photos. Uploads will resume automatically when connected.",
+                        text = stringResource(R.string.backup_offline_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 } else if (hasMissingAlbum) {
                     val albumNickname = missingAlbum?.title ?: "target album"
+                    val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
                     val hasCompletedFiles = completedCount > 0 || queue.any { it.status == UploadStatus.COMPLETED }
                     val bodyText = if (!hasCompletedFiles) {
-                        "The album \"$albumNickname\" in ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your account"} no longer exists in Google Photos. Uploads to it were stopped. Remove or replace it in Album Manager."
+                        stringResource(R.string.backup_missing_album_desc_uncompleted, albumNickname, accountName)
                     } else {
-                        "Photos were saved to your main Google Photos timeline, but the target album \"$albumNickname\" in ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your account"} no longer exists in Google Photos. Remove or replace it in Album Manager."
+                        stringResource(R.string.backup_missing_album_desc_completed, albumNickname, accountName)
                     }
                     Text(
                         text = bodyText,
@@ -1703,12 +1703,12 @@ private fun HeroBackupCard(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 } else if (conditionNotice != null) {
-                Text(
-                    text = "Backup is paused ($conditionNotice) and will resume automatically when ready.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-            } else if (isUploading && currentUploadingItem != null) {
+                    Text(
+                        text = stringResource(R.string.backup_paused_condition, conditionNotice),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                } else if (isUploading && currentUploadingItem != null) {
                 Text(
                     text = currentUploadingItem.fileName,
                     style = MaterialTheme.typography.bodyMedium,
@@ -1768,7 +1768,7 @@ private fun HeroBackupCard(
                 }
             } else {
                 Text(
-                    text = if (isDone) "Pick photos and videos to upload, or sync your folders." else "$totalInQueue items in queue.",
+                    text = if (isDone) stringResource(R.string.backup_idle_subtitle) else stringResource(R.string.backup_queue_count, totalInQueue),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1793,7 +1793,7 @@ private fun HeroBackupCard(
                     ) {
                         Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Cancel Backup", fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.btn_cancel_backup), fontWeight = FontWeight.SemiBold)
                     }
 
                     ExpressiveTonalButton(
@@ -1831,7 +1831,7 @@ private fun HeroBackupCard(
                     ) {
                         Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Open Album Manager")
+                        Text(stringResource(R.string.btn_open_album_manager))
                     }
                 }
             } else {
@@ -1849,7 +1849,7 @@ private fun HeroBackupCard(
                     ) {
                         Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sync Folders")
+                        Text(stringResource(R.string.btn_sync_folders))
                     }
                     ExpressiveTonalButton(
                         onClick = onPickPhotos,
@@ -1946,15 +1946,15 @@ fun UploadItemRow(item: UploadItem, accounts: List<GoogleAccount> = emptyList(),
                 }
                 Text(
                     text = when (item.status) {
-                        UploadStatus.COMPLETED -> "Backed up"
-                        UploadStatus.SKIPPED -> "Already in Google Photos"
-                        UploadStatus.FAILED -> item.error ?: "Failed"
-                        UploadStatus.STOPPED -> item.error ?: "Stopped"
-                        UploadStatus.UPLOADING -> "Uploading (${formatBytes(item.bytesUploaded)} / ${formatBytes(item.fileSize)})"
-                        UploadStatus.HASHING -> "Hashing..."
-                        UploadStatus.CHECKING -> "Checking library..."
-                        UploadStatus.COMMITTING -> "Committing..."
-                        UploadStatus.QUEUED -> "Queued"
+                        UploadStatus.COMPLETED -> stringResource(R.string.status_backed_up)
+                        UploadStatus.SKIPPED -> stringResource(R.string.status_already_in_photos)
+                        UploadStatus.FAILED -> item.error ?: stringResource(R.string.status_failed)
+                        UploadStatus.STOPPED -> item.error ?: stringResource(R.string.status_stopped)
+                        UploadStatus.UPLOADING -> stringResource(R.string.status_uploading_bytes, formatBytes(item.bytesUploaded), formatBytes(item.fileSize))
+                        UploadStatus.HASHING -> stringResource(R.string.status_hashing)
+                        UploadStatus.CHECKING -> stringResource(R.string.status_checking_library)
+                        UploadStatus.COMMITTING -> stringResource(R.string.status_committing)
+                        UploadStatus.QUEUED -> stringResource(R.string.status_queued)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (item.status == UploadStatus.FAILED || item.status == UploadStatus.STOPPED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
@@ -2036,7 +2036,7 @@ private fun QueueFilterChips(
             androidx.compose.material3.FilterChip(
                 selected = selectedFilter == null,
                 onClick = { onSelectFilter(null) },
-                label = { Text("All (${queue.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                label = { Text("${stringResource(R.string.albums_filter_all)} (${queue.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
             )
         }
         if (uploadingCount > 0) {
@@ -2045,7 +2045,7 @@ private fun QueueFilterChips(
                 androidx.compose.material3.FilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "uploading") },
-                    label = { Text("Uploading ($uploadingCount)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                    label = { Text(stringResource(R.string.filter_uploading, uploadingCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                 )
             }
         }
@@ -2055,7 +2055,7 @@ private fun QueueFilterChips(
                 androidx.compose.material3.FilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "failed") },
-                    label = { Text("Failed ($failedCount)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                    label = { Text(stringResource(R.string.filter_failed, failedCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                     colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
@@ -2069,7 +2069,7 @@ private fun QueueFilterChips(
                 androidx.compose.material3.FilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "done") },
-                    label = { Text("Done ($doneCount)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                    label = { Text(stringResource(R.string.filter_done, doneCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                 )
             }
         }
