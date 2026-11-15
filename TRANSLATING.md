@@ -12,7 +12,7 @@ You can translate Lumen directly in your web browser without setting up Android 
 
 [![Translation status](https://hosted.weblate.org/widgets/lumen-android/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/lumen-android/)
 
-👉 **[Translate Lumen on Hosted Weblate](https://hosted.weblate.org/engage/lumen-android/)**
+**[Translate Lumen on Hosted Weblate](https://hosted.weblate.org/engage/lumen-android/)**
 
 - Weblate automatically checks that placeholders like `%1$s` and XML tags stay intact.
 - Translated strings are automatically synced to our GitHub repository.
