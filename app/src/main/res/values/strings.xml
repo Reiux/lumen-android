@@ -79,4 +79,122 @@
     <string name="secure_storage_unavailable_warning">Secure storage is unavailable on this device. You will need to sign in again each time you open Lumen.</string>
     <string name="pick_files_button">Choose from Files</string>
     <string name="pick_photos_button">Pick Photos &amp; Videos</string>
+
+    <!-- Navigation Tabs -->
+    <string name="nav_backup">Backup</string>
+    <string name="nav_folders">Folders</string>
+    <string name="nav_accounts">Accounts</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Brand Header & Splash -->
+    <string name="app_tagline">Unlimited Cloud Backup</string>
+    <string name="status_counts_to_quota">Counts to Quota</string>
+    <string name="status_storage_saver">Storage Saver</string>
+    <string name="status_unlimited_original">Original Quality</string>
+
+    <!-- Backup Screen & Hero Card -->
+    <string name="btn_start_backup">Start Backup</string>
+    <string name="btn_stop_backup">Stop Backup</string>
+    <string name="btn_cancel_backup">Cancel Backup</string>
+    <string name="btn_cancel_scan">Cancel Indexing</string>
+    <string name="btn_pause_backup">Pause</string>
+    <string name="btn_resume_backup">Resume</string>
+    <string name="btn_retry_failed">Retry Failed</string>
+    <string name="btn_clear_completed">Clear Completed</string>
+    <string name="title_ready_to_backup">Ready to Back Up</string>
+    <string name="title_all_backed_up">All Backed Up!</string>
+    <string name="title_backing_up">Backing Up Media...</string>
+    <string name="title_indexing_folders">Indexing Media Folders...</string>
+    <string name="title_backup_paused">Backup Paused</string>
+    <string name="title_offline">Offline</string>
+    <string name="subtitle_offline">Waiting for internet connection to resume</string>
+    <string name="notice_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="notice_waiting_charger">Waiting for charger</string>
+    <string name="notice_waiting_network">Waiting for network</string>
+    <string name="subtitle_ready">%1$d items ready for backup</string>
+    <string name="subtitle_no_folders">No folders configured for backup</string>
+    <string name="subtitle_no_account">Sign in to a Google account to start backup</string>
+    <string name="items_remaining">%1$d items remaining</string>
+    <string name="items_completed">%1$d completed</string>
+    <string name="items_skipped">%1$d skipped</string>
+    <string name="items_failed">%1$d failed</string>
+    <string name="mock_mode_active">Mock Mode Active</string>
+    <string name="mock_mode_exit">Exit Mock</string>
+
+    <!-- Accounts Screen -->
+    <string name="accounts_title">Google Accounts</string>
+    <string name="accounts_subtitle">Manage linked accounts for photo uploads</string>
+    <string name="accounts_active_badge">Active</string>
+    <string name="accounts_btn_add">Add Account</string>
+    <string name="accounts_btn_remove">Remove Account</string>
+    <string name="accounts_btn_rename">Edit Display Name</string>
+    <string name="accounts_btn_switch">Switch Account</string>
+    <string name="accounts_btn_use">Use</string>
+    <string name="dialog_remove_account_title">Remove Account?</string>
+    <string name="dialog_remove_account_msg">Are you sure you want to remove %1$s? Any pending uploads for this account will be stopped.</string>
+    <string name="dialog_rename_account_title">Edit Display Name</string>
+    <string name="dialog_rename_hint">Display Name</string>
+
+    <!-- Folders Screen -->
+    <string name="folders_title">Backup Folders</string>
+    <string name="folders_subtitle">Choose which folders to back up automatically</string>
+    <string name="folders_btn_add">Add Folder</string>
+    <string name="folders_empty_title">No Folders Configured</string>
+    <string name="folders_empty_subtitle">Tap Add Folder to select directories with photos and videos to back up.</string>
+    <string name="folders_status_enabled">Enabled</string>
+    <string name="folders_status_disabled">Disabled</string>
+    <string name="folders_btn_scan">Scan Device</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_backup">Backup Preferences</string>
+    <string name="settings_section_network">Network &amp; Power</string>
+    <string name="settings_section_appearance">Appearance &amp; Theme</string>
+    <string name="settings_section_about">About &amp; Updates</string>
+    <string name="pref_storage_saver_title">Storage Saver Quality</string>
+    <string name="pref_storage_saver_desc">Compress photos to slightly reduce storage while maintaining high visual quality.</string>
+    <string name="pref_wifi_only_title">Back up over Wi-Fi only</string>
+    <string name="pref_wifi_only_desc">Avoid consuming mobile data for uploads.</string>
+    <string name="pref_charging_only_title">Back up only while charging</string>
+    <string name="pref_charging_only_desc">Conserve battery by only uploading when connected to power.</string>
+    <string name="pref_battery_opt_title">Battery Optimization</string>
+    <string name="pref_battery_opt_exempt">Exempted (Recommended)</string>
+    <string name="pref_battery_opt_desc">Allow Lumen to run background uploads without OS battery killing.</string>
+    <string name="pref_theme_title">Color Theme</string>
+    <string name="pref_blur_effects_title">Blur &amp; Transparency Effects</string>
+    <string name="pref_blur_effects_desc">Enable expressive background blurs on supported devices.</string>
+    <string name="pref_version_title">Version</string>
+    <string name="pref_licenses_title">Open Source Licenses</string>
+    <string name="pref_diagnostics_title">Developer Diagnostics</string>
+
+    <!-- About Screen -->
+    <string name="about_title">About Lumen</string>
+    <string name="about_subtitle">Unlimited, private Google Photos backup</string>
+    <string name="about_github">GitHub Repository</string>
+    <string name="about_report_issue">Report an Issue</string>
+    <string name="about_dev_unlocked">Developer mode unlocked</string>
+
+    <!-- Onboarding Screen -->
+    <string name="onboarding_welcome_title">Welcome to Lumen</string>
+    <string name="onboarding_welcome_desc">Unlimited, private Google Photos backup for your photos and videos.</string>
+    <string name="onboarding_btn_get_started">Get Started</string>
+    <string name="onboarding_btn_next">Next</string>
+    <string name="onboarding_btn_back">Back</string>
+    <string name="onboarding_btn_finish">Start Using Lumen</string>
+    <string name="onboarding_permissions_title">Grant Permissions</string>
+    <string name="onboarding_permissions_desc">Lumen needs access to storage and notifications to back up your media automatically.</string>
+    <string name="onboarding_account_title">Connect Account</string>
+    <string name="onboarding_folders_title">Choose Folders</string>
+    <string name="onboarding_folders_desc">Select which folders on your device to back up.</string>
+
+    <!-- General Common -->
+    <string name="btn_save">Save</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_done">Done</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="btn_try_again">Try Again</string>
+    <string name="btn_continue">Continue</string>
+    <string name="btn_album_manager">Album Manager</string>
 </resources>

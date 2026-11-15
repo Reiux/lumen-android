@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -183,12 +184,12 @@ fun FoldersScreen(
                     },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.btn_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { folderToRemove = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -309,7 +310,7 @@ fun FoldersScreen(
                         ) {
                             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add Folder")
+                            Text(stringResource(R.string.folders_btn_add))
                         }
 
                         ExpressiveTonalButton(
@@ -318,7 +319,7 @@ fun FoldersScreen(
                         ) {
                             Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Album Manager")
+                            Text(stringResource(R.string.btn_album_manager))
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -390,7 +391,7 @@ fun FoldersScreen(
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Add Folder")
+                        Text(stringResource(R.string.folders_btn_add))
                     }
 
                     ExpressiveTonalButton(
@@ -399,7 +400,7 @@ fun FoldersScreen(
                     ) {
                         Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Album Manager")
+                        Text(stringResource(R.string.btn_album_manager))
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))

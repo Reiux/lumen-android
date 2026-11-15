@@ -78,6 +78,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -603,9 +605,9 @@ private fun OnboardingActionButton(
             ) {
                 Text(
                     text = when (currentPage) {
-                        0 -> "Get Started"
-                        5 -> "Start Backing Up"
-                        else -> "Continue"
+                        0 -> stringResource(R.string.onboarding_btn_get_started)
+                        5 -> stringResource(R.string.onboarding_btn_finish)
+                        else -> stringResource(R.string.btn_continue)
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold

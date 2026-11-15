@@ -1,5 +1,6 @@
 package com.reiux.lumen.ui.components
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -21,18 +22,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.reiux.lumen.R
 import com.reiux.lumen.util.LumenLogger
 
 enum class NavDestination(
     val title: String,
+    @StringRes val labelRes: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    BACKUP("Backup", Icons.Rounded.CloudUpload, Icons.Outlined.CloudUpload),
-    FOLDERS("Folders", Icons.Rounded.FolderCopy, Icons.Outlined.FolderCopy),
-    ACCOUNTS("Accounts", Icons.Rounded.AccountCircle, Icons.Outlined.AccountCircle),
-    SETTINGS("Settings", Icons.Rounded.Settings, Icons.Outlined.Settings);
+    BACKUP("Backup", R.string.nav_backup, Icons.Rounded.CloudUpload, Icons.Outlined.CloudUpload),
+    FOLDERS("Folders", R.string.nav_folders, Icons.Rounded.FolderCopy, Icons.Outlined.FolderCopy),
+    ACCOUNTS("Accounts", R.string.nav_accounts, Icons.Rounded.AccountCircle, Icons.Outlined.AccountCircle),
+    SETTINGS("Settings", R.string.nav_settings, Icons.Rounded.Settings, Icons.Outlined.Settings);
 
     val icon: ImageVector get() = selectedIcon
 }
@@ -49,6 +53,7 @@ fun ExpressiveNavBar(
     ) {
         NavDestination.entries.forEach { destination ->
             val selected = destination == selectedDestination
+            val label = stringResource(destination.labelRes)
             val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
                 LumenLogger.i("NavBar", "Selected tab: ${destination.title}")
                 onDestinationSelected(destination)
@@ -60,12 +65,12 @@ fun ExpressiveNavBar(
                 icon = {
                     Icon(
                         imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                        contentDescription = destination.title
+                        contentDescription = label
                     )
                 },
                 label = {
                     Text(
-                        text = destination.title,
+                        text = label,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
                 },
@@ -87,6 +92,7 @@ fun ExpressiveNavRail(
     ) {
         NavDestination.entries.forEach { destination ->
             val selected = destination == selectedDestination
+            val label = stringResource(destination.labelRes)
             val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
                 LumenLogger.i("NavRail", "Selected tab: ${destination.title}")
                 onDestinationSelected(destination)
@@ -98,12 +104,12 @@ fun ExpressiveNavRail(
                 icon = {
                     Icon(
                         imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                        contentDescription = destination.title
+                        contentDescription = label
                     )
                 },
                 label = {
                     Text(
-                        text = destination.title,
+                        text = label,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
                 },

@@ -1015,17 +1015,17 @@ private fun BackupTopHeader(
 
         val (statusLabel, statusColor, statusContainer) = when {
             useQuota -> Triple(
-                "Counts to Quota",
+                stringResource(R.string.status_counts_to_quota),
                 MaterialTheme.colorScheme.error,
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
             )
             storageSaverQuality -> Triple(
-                "Storage Saver",
+                stringResource(R.string.status_storage_saver),
                 MaterialTheme.colorScheme.tertiary,
                 MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
             )
             else -> Triple(
-                "Unlimited",
+                stringResource(R.string.status_unlimited_original),
                 MaterialTheme.colorScheme.primary,
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             )
@@ -1571,7 +1571,7 @@ private fun HeroBackupCard(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Indexing Media Folders...",
+                    text = stringResource(R.string.title_indexing_folders),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1594,7 +1594,7 @@ private fun HeroBackupCard(
                     onClick = onCancelScan,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    Text("Cancel Indexing", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_cancel_scan), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

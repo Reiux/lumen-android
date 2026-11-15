@@ -1,0 +1,200 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lumen</string>
+    <string name="title_activity_main">Lumen</string>
+    <string name="package_name">com.reiux.lumen</string>
+    <string name="custom_url_scheme">com.reiux.lumen</string>
+
+    <!-- Scan & Folder Indexing Strings -->
+    <string name="toast_scan_cancelled">Pengindeksan folder dibatalkan</string>
+    <string name="toast_no_files_found">Tidak ada file media baru di folder yang aktif</string>
+    <string name="toast_forbidden_folder">Direktori sistem Android tidak dapat dipilih untuk pencadangan</string>
+    <string name="toast_all_files_permission_denied">Izin akses semua file diperlukan untuk mencadangkan folder di luar direktori media</string>
+
+    <string name="all_files_dialog_title">Akses Semua File Diperlukan</string>
+    <string name="all_files_dialog_message">Untuk memindai dan mencadangkan file di luar folder media standar (seperti Unduhan), Lumen memerlukan izin Akses Semua File.</string>
+    <string name="all_files_dialog_button">Berikan Izin</string>
+
+    <string name="broad_folder_dialog_title">Peringatan Folder Luas</string>
+    <string name="broad_folder_dialog_message">Mengaktifkan subfolder untuk direktori luas seperti penyimpanan utama dapat memindai ribuan file dan menghabiskan banyak memori. Lanjutkan?</string>
+
+    <string name="label_include_subfolders">Sertakan subfolder</string>
+    <string name="helper_include_subfolders">Cadangkan juga foto dan video di dalam subfolder</string>
+    <string name="tag_subfolders">+ subfolder</string>
+
+    <!-- Account Risk & Safety Strings -->
+    <string name="account_risk_title">Perhatian</string>
+    <string name="account_risk_body">Lumen adalah aplikasi tidak resmi dan mungkin melanggar Ketentuan Layanan Google. Google dapat membatasi atau menonaktifkan akun, yang juga dapat mengunci Anda dari Gmail dan Drive. Gunakan akun cadangan yang aman, dan selalu simpan foto asli Anda.</string>
+    <string name="account_risk_learn_more">Pelajari lebih lanjut</string>
+    <string name="account_risk_understand">Saya mengerti</string>
+    <string name="account_risk_acknowledged">Risiko dipahami — Pelajari lebih lanjut</string>
+
+    <string name="account_safety_title">Keamanan &amp; Risiko Akun</string>
+    <string name="account_safety_subtitle">Informasi penting mengenai pembatasan akun Google</string>
+
+    <!-- Circuit Breaker Cards & Toasts -->
+    <string name="breaker_sign_in_required_title">Perlu Masuk Lagi</string>
+    <string name="breaker_sign_in_required_msg">Google meminta Anda untuk masuk kembali. Pencadangan dijeda untuk melindungi akun Anda.</string>
+    <string name="breaker_sign_in_required_button">Masuk kembali</string>
+
+    <string name="breaker_restricted_title">Akun Dibatasi</string>
+    <string name="breaker_restricted_msg">Google telah membatasi akun ini. Pencadangan dihentikan. Periksa akun Google Anda secara langsung; jangan terus mencoba lagi.</string>
+    <string name="breaker_restricted_button">Hapus akun</string>
+
+    <string name="breaker_rate_limited_title">Batas Kecepatan Tercapai</string>
+    <string name="breaker_rate_limited_msg">Google meminta Lumen memperlambat permintaan. Batas waktu berakhir dalam %1$s.</string>
+
+    <string name="account_safety_button">Keamanan akun</string>
+
+    <string name="remove_account_device_warning">Menghapus dan menambahkan akun kembali akan memicu proses masuk baru, yang mendaftarkan perangkat lain di akun Google Anda. Lakukan hanya jika diperlukan.</string>
+
+    <string name="pref_auto_check_updates_title">Periksa pembaruan otomatis</string>
+    <string name="pref_auto_check_updates_subtitle">Periksa rilis baru secara berkala di GitHub Releases</string>
+
+    <!-- Light Puns -->
+    <string name="toast_bold_choice">Pilihan yang berani.</string>
+    <string name="completion_pun_1">Jadilah terang bersama Lumen.</string>
+    <string name="completion_pun_2">Beres tanpa beban.</string>
+    <string name="completion_pun_3">Foto Anda sudah aman tersimpan.</string>
+    <string name="completion_pun_4">Makin bersinar.</string>
+    <string name="completion_pun_5">Tercerahkan.</string>
+
+    <!-- Upload Moments -->
+    <string name="toast_late_night">Istirahatlah. Foto Anda tersimpan aman.</string>
+    <string name="toast_milestone_100">100 unggahan tersimpan! Galeri Anda mulai bersinar.</string>
+    <string name="toast_milestone_1000">1.000 foto dalam kualitas penuh. Luar biasa!</string>
+    <string name="toast_milestone_10000">10.000 kenangan terselamatkan! Benar-benar luar biasa.</string>
+
+    <!-- Empty State Variants -->
+    <string name="empty_state_variant_1">Semua tenang di antrean pencadangan.</string>
+    <string name="empty_state_variant_2">Belum ada foto baru untuk dicadangkan.</string>
+    <string name="empty_state_variant_3">Galeri kamera Anda sudah sepenuhnya tersimpan.</string>
+    <string name="empty_state_variant_4">Tidak ada foto baru yang terdeteksi.</string>
+    <string name="empty_state_variant_5">Antrean kosong. Waktunya memotret lagi!</string>
+
+    <!-- Seasonal Greetings -->
+    <string name="seasonal_greeting_halloween">Selamat Halloween dari Lumen!</string>
+    <string name="seasonal_greeting_christmas">Selamat Hari Natal dari Lumen!</string>
+    <string name="seasonal_greeting_new_year">Selamat Tahun Baru dari Lumen!</string>
+    <string name="secure_storage_unavailable_warning">Penyimpanan aman tidak tersedia di perangkat ini. Anda harus masuk kembali setiap kali membuka Lumen.</string>
+    <string name="pick_files_button">Pilih dari File</string>
+    <string name="pick_photos_button">Pilih Foto &amp; Video</string>
+
+    <!-- Navigation Tabs -->
+    <string name="nav_backup">Cadangan</string>
+    <string name="nav_folders">Folder</string>
+    <string name="nav_accounts">Akun</string>
+    <string name="nav_settings">Setelan</string>
+
+    <!-- Brand Header & Splash -->
+    <string name="app_tagline">Pencadangan Cloud Tanpa Batas</string>
+    <string name="status_counts_to_quota">Mengurangi Kuota</string>
+    <string name="status_storage_saver">Penghemat Penyimpanan</string>
+    <string name="status_unlimited_original">Kualitas Asli</string>
+
+    <!-- Backup Screen & Hero Card -->
+    <string name="btn_start_backup">Mulai Pencadangan</string>
+    <string name="btn_stop_backup">Hentikan Pencadangan</string>
+    <string name="btn_cancel_backup">Batalkan Pencadangan</string>
+    <string name="btn_cancel_scan">Batalkan Pengindeksan</string>
+    <string name="btn_pause_backup">Jeda</string>
+    <string name="btn_resume_backup">Lanjutkan</string>
+    <string name="btn_retry_failed">Coba Lagi yang Gagal</string>
+    <string name="btn_clear_completed">Bersihkan Selesai</string>
+    <string name="title_ready_to_backup">Siap Mencadangkan</string>
+    <string name="title_all_backed_up">Semua Sudah Dicadangkan!</string>
+    <string name="title_backing_up">Mencadangkan Media...</string>
+    <string name="title_indexing_folders">Mengindeks Folder Media...</string>
+    <string name="title_backup_paused">Pencadangan Dijeda</string>
+    <string name="title_offline">Offline</string>
+    <string name="subtitle_offline">Menunggu koneksi internet untuk melanjutkan</string>
+    <string name="notice_waiting_wifi">Menunggu Wi-Fi</string>
+    <string name="notice_waiting_charger">Menunggu pengisi daya</string>
+    <string name="notice_waiting_network">Menunggu jaringan</string>
+    <string name="subtitle_ready">%1$d item siap dicadangkan</string>
+    <string name="subtitle_no_folders">Belum ada folder yang dikonfigurasi</string>
+    <string name="subtitle_no_account">Masuk ke akun Google untuk mulai mencadangkan</string>
+    <string name="items_remaining">%1$d item tersisa</string>
+    <string name="items_completed">%1$d selesai</string>
+    <string name="items_skipped">%1$d dilewati</string>
+    <string name="items_failed">%1$d gagal</string>
+    <string name="mock_mode_active">Mode Mock Aktif</string>
+    <string name="mock_mode_exit">Keluar dari Mock</string>
+
+    <!-- Accounts Screen -->
+    <string name="accounts_title">Akun Google</string>
+    <string name="accounts_subtitle">Kelola akun yang terhubung untuk pencadangan foto</string>
+    <string name="accounts_active_badge">Aktif</string>
+    <string name="accounts_btn_add">Tambah Akun</string>
+    <string name="accounts_btn_remove">Hapus Akun</string>
+    <string name="accounts_btn_rename">Ubah Nama Tampilan</string>
+    <string name="accounts_btn_switch">Beralih ke Akun Ini</string>
+    <string name="accounts_btn_use">Gunakan</string>
+    <string name="dialog_remove_account_title">Hapus Akun?</string>
+    <string name="dialog_remove_account_msg">Apakah Anda yakin ingin menghapus %1$s? Semua pencadangan yang tertunda untuk akun ini akan dihentikan.</string>
+    <string name="dialog_rename_account_title">Ubah Nama Tampilan</string>
+    <string name="dialog_rename_hint">Nama Tampilan</string>
+
+    <!-- Folders Screen -->
+    <string name="folders_title">Folder Pencadangan</string>
+    <string name="folders_subtitle">Pilih folder yang ingin dicadangkan secara otomatis</string>
+    <string name="folders_btn_add">Tambah Folder</string>
+    <string name="folders_empty_title">Belum Ada Folder yang Dipilih</string>
+    <string name="folders_empty_subtitle">Ketuk Tambah Folder untuk memilih direktori foto dan video yang ingin dicadangkan.</string>
+    <string name="folders_status_enabled">Aktif</string>
+    <string name="folders_status_disabled">Nonaktif</string>
+    <string name="folders_btn_scan">Pindai Perangkat</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Setelan</string>
+    <string name="settings_section_backup">Preferensi Pencadangan</string>
+    <string name="settings_section_network">Jaringan &amp; Daya</string>
+    <string name="settings_section_appearance">Tampilan &amp; Tema</string>
+    <string name="settings_section_about">Tentang &amp; Pembaruan</string>
+    <string name="pref_storage_saver_title">Kualitas Penghemat Penyimpanan</string>
+    <string name="pref_storage_saver_desc">Kompresi foto untuk menghemat ruang penyimpanan dengan tetap mempertahankan kualitas visual yang baik.</string>
+    <string name="pref_wifi_only_title">Cadangkan hanya melalui Wi-Fi</string>
+    <string name="pref_wifi_only_desc">Hindari penggunaan kuota data seluler untuk mengunggah.</string>
+    <string name="pref_charging_only_title">Cadangkan hanya saat mengisi daya</string>
+    <string name="pref_charging_only_desc">Hemat baterai dengan mencadangkan hanya saat terhubung ke pengisi daya.</string>
+    <string name="pref_battery_opt_title">Optimalisasi Baterai</string>
+    <string name="pref_battery_opt_exempt">Dikecualikan (Disarankan)</string>
+    <string name="pref_battery_opt_desc">Izinkan Lumen menjalankan pencadangan di latar belakang tanpa dimatikan oleh sistem Android.</string>
+    <string name="pref_theme_title">Tema Warna</string>
+    <string name="pref_blur_effects_title">Efek Blur &amp; Transparansi</string>
+    <string name="pref_blur_effects_desc">Aktifkan efek blur latar belakang pada perangkat yang mendukung.</string>
+    <string name="pref_version_title">Versi</string>
+    <string name="pref_licenses_title">Lisensi Sumber Terbuka</string>
+    <string name="pref_diagnostics_title">Diagnostik Pengembang</string>
+
+    <!-- About Screen -->
+    <string name="about_title">Tentang Lumen</string>
+    <string name="about_subtitle">Pencadangan Google Foto tanpa batas &amp; privat</string>
+    <string name="about_github">Repositori GitHub</string>
+    <string name="about_report_issue">Laporkan Masalah</string>
+    <string name="about_dev_unlocked">Opsi pengembang telah aktif</string>
+
+    <!-- Onboarding Screen -->
+    <string name="onboarding_welcome_title">Selamat Datang di Lumen</string>
+    <string name="onboarding_welcome_desc">Pencadangan Google Foto tanpa batas dan privat untuk foto dan video Anda.</string>
+    <string name="onboarding_btn_get_started">Mulai</string>
+    <string name="onboarding_btn_next">Lanjut</string>
+    <string name="onboarding_btn_back">Kembali</string>
+    <string name="onboarding_btn_finish">Mulai Gunakan Lumen</string>
+    <string name="onboarding_permissions_title">Berikan Izin</string>
+    <string name="onboarding_permissions_desc">Lumen membutuhkan akses ke penyimpanan dan notifikasi untuk mencadangkan media Anda secara otomatis.</string>
+    <string name="onboarding_account_title">Hubungkan Akun</string>
+    <string name="onboarding_folders_title">Pilih Folder</string>
+    <string name="onboarding_folders_desc">Pilih folder di perangkat Anda yang ingin dicadangkan.</string>
+
+    <!-- General Common -->
+    <string name="btn_save">Simpan</string>
+    <string name="btn_cancel">Batal</string>
+    <string name="btn_close">Tutup</string>
+    <string name="btn_done">Selesai</string>
+    <string name="btn_delete">Hapus</string>
+    <string name="btn_confirm">Konfirmasi</string>
+    <string name="btn_try_again">Coba Lagi</string>
+    <string name="btn_continue">Lanjutkan</string>
+    <string name="btn_album_manager">Manajer Album</string>
+</resources>

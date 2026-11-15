@@ -275,12 +275,12 @@ fun AccountsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.btn_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { accountToRemove = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -344,7 +344,7 @@ fun AccountsScreen(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Google Account")
+                    Text(stringResource(R.string.accounts_btn_add))
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -472,7 +472,7 @@ fun AccountsScreen(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Google Account")
+                    Text(stringResource(R.string.accounts_btn_add))
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -716,7 +716,7 @@ private fun OtherAccountRowItem(
                 onClick = { onSelectAccount(account.email) },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Text("Use")
+                Text(stringResource(R.string.accounts_btn_use))
             }
 
             Spacer(modifier = Modifier.width(4.dp))
