@@ -72,9 +72,9 @@ Add your language's BCP-47 tag in `app/src/main/res/xml/locales_config.xml` so A
 ## Submitting Your Translation
 
 1. Fork the repository.
-2. Create a branch from `dev` (e.g., `translate/japanese`).
+2. Create a branch from `translations` (e.g., `translate/japanese`).
 3. Commit your changes:
    ```bash
    git commit -m "i18n: add Japanese translation"
    ```
-4. Open a Pull Request targeting the **`dev`** branch.
+4. Open a Pull Request targeting the **`translations`** branch.
