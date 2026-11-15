@@ -150,7 +150,7 @@ fun AccountsScreen(
     val handleSelectAccount: (String) -> Unit = { targetEmail ->
         if (isUploading && targetEmail != selectedAccount?.email) {
             showUploadActiveBlockedDialog = "switch accounts"
-            Toast.makeText(context, "Cannot switch accounts while uploading", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_cannot_switch_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onSelectAccount(targetEmail)
         }
@@ -159,7 +159,7 @@ fun AccountsScreen(
     val handleRemoveAccount: (GoogleAccount) -> Unit = { targetAccount ->
         if (isUploading) {
             showUploadActiveBlockedDialog = "remove an account"
-            Toast.makeText(context, "Cannot remove an account while uploading", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_cannot_remove_uploading), Toast.LENGTH_SHORT).show()
         } else {
             accountToRemove = targetAccount
         }
@@ -238,22 +238,22 @@ fun AccountsScreen(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = {
                 Text(
-                    text = "Remove Account",
+                    text = stringResource(R.string.accounts_btn_remove),
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Are you sure you want to remove ${targetAcc.displayName ?: targetAcc.email} from Lumen?",
+                        text = stringResource(R.string.dialog_remove_account_desc, targetAcc.displayName ?: targetAcc.email),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (attachedFolders > 0 || attachedAlbums > 0) {
                         Text(
-                            text = "This will affect $attachedFolders ${if (attachedFolders == 1) "folder" else "folders"} and $attachedAlbums ${if (attachedAlbums == 1) "album" else "albums"} attached to this account.",
+                            text = stringResource(R.string.dialog_remove_account_affects, attachedFolders, attachedAlbums),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.error
@@ -310,13 +310,13 @@ fun AccountsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Accounts",
+                    text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Manage your connected Google Photos accounts",
+                    text = stringResource(R.string.accounts_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -358,7 +358,7 @@ fun AccountsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 if (otherAccounts.isNotEmpty()) {
                     Text(
-                        text = "Other Accounts (${otherAccounts.size})",
+                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -415,13 +415,13 @@ fun AccountsScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Accounts",
+                    text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Manage your connected Google Photos accounts",
+                    text = stringResource(R.string.accounts_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -447,7 +447,7 @@ fun AccountsScreen(
             if (otherAccounts.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Other Accounts",
+                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -584,7 +584,7 @@ private fun ActiveAccountHeroCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = "Active",
+                            contentDescription = stringResource(R.string.accounts_active_badge),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
                         )
@@ -607,7 +607,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = "Remove account",
+                        contentDescription = stringResource(R.string.btn_delete),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(24.dp)
                     )
@@ -628,7 +628,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Change Avatar", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(R.string.accounts_btn_change_avatar), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
                 ExpressiveTonalButton(
@@ -638,7 +638,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Rename", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(R.string.accounts_btn_rename_short), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

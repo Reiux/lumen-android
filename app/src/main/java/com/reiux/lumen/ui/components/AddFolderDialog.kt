@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.sp
 import com.reiux.lumen.data.model.AlbumTargetMode
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -125,7 +127,7 @@ fun AddFolderDialog(
             .padding(horizontal = 16.dp),
         title = {
             Text(
-                text = "Add Backup Folder",
+                text = stringResource(R.string.add_folder_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -145,7 +147,7 @@ fun AddFolderDialog(
                     // Left Column: Presets & Path Summary
                     Column(modifier = Modifier.weight(0.5f)) {
                         Text(
-                            text = "Quick Presets",
+                            text = stringResource(R.string.add_folder_quick_presets),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -237,7 +239,7 @@ fun AddFolderDialog(
                         OutlinedTextField(
                             value = displayName,
                             onValueChange = { displayName = it },
-                            label = { Text("Folder Name") },
+                            label = { Text(stringResource(R.string.add_folder_folder_name)) },
                             placeholder = { Text("e.g. Vacation Photos") },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
@@ -253,7 +255,7 @@ fun AddFolderDialog(
                         .verticalScroll(scrollState)
                 ) {
                     Text(
-                        text = "Quick Presets",
+                        text = stringResource(R.string.add_folder_quick_presets),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -344,7 +346,7 @@ fun AddFolderDialog(
                     OutlinedTextField(
                         value = displayName,
                         onValueChange = { displayName = it },
-                        label = { Text("Folder Name") },
+                        label = { Text(stringResource(R.string.add_folder_folder_name)) },
                         placeholder = { Text("e.g. Vacation Photos") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -425,12 +427,12 @@ fun AddFolderDialog(
                 enabled = path.isNotBlank(),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text("Add Folder")
+                Text(stringResource(R.string.btn_add_folder))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         },
         shape = RoundedCornerShape(28.dp),

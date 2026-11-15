@@ -101,7 +101,7 @@ fun AccountBlockCard(
                         AuthFailureKind.SIGN_IN_REQUIRED -> stringResource(R.string.breaker_sign_in_required_title)
                         AuthFailureKind.ACCOUNT_RESTRICTED -> stringResource(R.string.breaker_restricted_title)
                         AuthFailureKind.RATE_LIMITED -> stringResource(R.string.breaker_rate_limited_title)
-                        else -> "Upload Paused"
+                        else -> stringResource(R.string.upload_paused)
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
@@ -115,7 +115,7 @@ fun AccountBlockCard(
                 AuthFailureKind.SIGN_IN_REQUIRED -> stringResource(R.string.breaker_sign_in_required_msg)
                 AuthFailureKind.ACCOUNT_RESTRICTED -> stringResource(R.string.breaker_restricted_msg)
                 AuthFailureKind.RATE_LIMITED -> stringResource(R.string.breaker_rate_limited_msg, countdownText)
-                else -> "Uploads are paused."
+                else -> stringResource(R.string.upload_paused_generic)
             }
 
             Text(

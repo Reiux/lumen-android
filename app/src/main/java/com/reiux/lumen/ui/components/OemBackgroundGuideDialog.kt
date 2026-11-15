@@ -44,10 +44,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.R
 import com.reiux.lumen.util.OemIntentHelper
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -78,7 +80,7 @@ fun OemBackgroundGuideDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Keep App Running in Background",
+                    text = stringResource(R.string.oem_guide_dialog_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -91,7 +93,7 @@ fun OemBackgroundGuideDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "Many phone brands (such as Xiaomi, Samsung, and OnePlus) kill background tasks when apps are swiped away from Recents unless battery restrictions are turned off.",
+                    text = stringResource(R.string.oem_guide_dialog_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -100,7 +102,7 @@ fun OemBackgroundGuideDialog(
 
                 // Selectable Brand Chips
                 Text(
-                    text = "Select Device Brand",
+                    text = stringResource(R.string.oem_guide_select_brand),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -118,7 +120,7 @@ fun OemBackgroundGuideDialog(
                             onClick = { selectedBrand = brand },
                             label = {
                                 Text(
-                                    text = if (brand == detectedBrand) "${brand.displayName} (Detected)" else brand.displayName,
+                                    text = if (brand == detectedBrand) stringResource(R.string.oem_guide_brand_detected, brand.displayName) else brand.displayName,
                                     fontSize = 12.sp,
                                     fontWeight = if (brand == detectedBrand) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -137,7 +139,7 @@ fun OemBackgroundGuideDialog(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = "Instructions for ${selectedBrand.displayName}",
+                            text = stringResource(R.string.oem_guide_brand_instructions, selectedBrand.displayName),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -194,7 +196,7 @@ fun OemBackgroundGuideDialog(
                 ) {
                     Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Open Device Settings / App Info")
+                    Text(stringResource(R.string.oem_guide_open_settings))
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -208,7 +210,7 @@ fun OemBackgroundGuideDialog(
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("View full guide on DontKillMyApp.com", fontSize = 12.sp)
+                    Text(stringResource(R.string.oem_guide_view_full), fontSize = 12.sp)
                 }
             }
         },
@@ -217,7 +219,7 @@ fun OemBackgroundGuideDialog(
                 onClick = onDismiss,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text("Got It")
+                Text(stringResource(R.string.btn_got_it))
             }
         },
         shape = RoundedCornerShape(28.dp),

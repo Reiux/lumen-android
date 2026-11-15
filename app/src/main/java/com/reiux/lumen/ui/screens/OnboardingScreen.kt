@@ -901,24 +901,24 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
 
         FeatureHighlightCard(
             icon = Icons.Rounded.AllInclusive,
-            title = "Unlimited Original Quality",
-            description = "Uses Pixel original quality so your uploads don't count against your Google One storage."
+            title = stringResource(R.string.onboarding_feat_unlimited_title),
+            description = stringResource(R.string.onboarding_feat_unlimited_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.Security,
-            title = "Direct and Private",
-            description = "Sends files straight from your device to Google. No third-party servers, proxies, or tracking."
+            title = stringResource(R.string.onboarding_feat_direct_title),
+            description = stringResource(R.string.onboarding_feat_direct_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.Sync,
-            title = "Background Backup",
-            description = "Uploads when charging or on Wi-Fi to keep your camera roll backed up without interruptions."
+            title = stringResource(R.string.onboarding_feat_background_title),
+            description = stringResource(R.string.onboarding_feat_background_desc)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1068,7 +1068,7 @@ private fun OnboardingPermissionsPage(
                     ) {
                         Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Configure $brandName Settings")
+                        Text(stringResource(R.string.onboarding_btn_configure_brand, brandName))
                     }
                 }
 
@@ -1078,7 +1078,7 @@ private fun OnboardingPermissionsPage(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("View All Phone Brands Guide", fontSize = 12.sp)
+                    Text(stringResource(R.string.onboarding_btn_view_brand_guide), fontSize = 12.sp)
                 }
             }
         }
@@ -1222,7 +1222,7 @@ private fun OnboardingAccountPage(
             Spacer(modifier = Modifier.height(16.dp))
 
             TextButton(onClick = onOpenSwitchOrAddAccount) {
-                Text("Switch or Add Another Account")
+                Text(stringResource(R.string.onboarding_switch_or_add_account))
             }
         } else {
             ExpressiveButton(
@@ -1234,7 +1234,7 @@ private fun OnboardingAccountPage(
             ) {
                 Icon(Icons.Rounded.AccountCircle, contentDescription = null, modifier = Modifier.size(22.dp))
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("Sign In with Google", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.btn_sign_in_google), style = MaterialTheme.typography.titleMedium)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1246,7 +1246,7 @@ private fun OnboardingAccountPage(
                     .fillMaxWidth()
                     .height(52.dp),
             ) {
-                Text("Paste Token or Credential Manually", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.btn_paste_token_manual), style = MaterialTheme.typography.titleSmall)
             }
         }
 
@@ -1768,7 +1768,7 @@ private fun PermissionItemCard(
                     onClick = onRequest,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text("Allow", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_allow), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

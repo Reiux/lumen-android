@@ -36,9 +36,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reiux.lumen.R
 import com.reiux.lumen.data.network.GoogleAlbum
 
 sealed class AlbumChoice {
@@ -47,11 +49,12 @@ sealed class AlbumChoice {
     object ByMonth : AlbumChoice()
     data class CustomAlbum(val album: GoogleAlbum) : AlbumChoice()
 
+    @Composable
     fun displayLabel(folderName: String? = null, monthName: String? = null): String {
         return when (this) {
-            is None -> "No album"
-            is AutoFolderName -> if (folderName != null) "Named after folder ($folderName)" else "Named after the folder"
-            is ByMonth -> if (monthName != null) "By month ($monthName)" else "By month"
+            is None -> stringResource(R.string.album_choice_none)
+            is AutoFolderName -> if (folderName != null) stringResource(R.string.album_choice_folder, folderName) else stringResource(R.string.album_choice_folder_generic)
+            is ByMonth -> if (monthName != null) stringResource(R.string.album_choice_month, monthName) else stringResource(R.string.album_choice_month_generic)
             is CustomAlbum -> album.title
         }
     }
@@ -108,7 +111,7 @@ fun AlbumPickerRow(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Album  ·  ${choice.displayLabel(folderDisplayName, currentMonthName)}",
+                    text = stringResource(R.string.album_row_prefix, choice.displayLabel(folderDisplayName, currentMonthName)),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -119,7 +122,7 @@ fun AlbumPickerRow(
 
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = "Select album",
+                contentDescription = stringResource(R.string.album_desc_select),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -141,7 +144,7 @@ fun AlbumPickerRow(
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = "Select Album Destination",
+                    text = stringResource(R.string.album_sheet_dest_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -156,8 +159,8 @@ fun AlbumPickerRow(
                     // Option 1: No album
                     item {
                         RadioChoiceRow(
-                            title = "No album",
-                            subtitle = "Save to main Google Photos timeline",
+                            title = stringResource(R.string.album_choice_none),
+                            subtitle = stringResource(R.string.album_choice_none_sub),
                             isSelected = choice is AlbumChoice.None,
                             onClick = {
                                 onChoiceSelected(AlbumChoice.None)
@@ -170,8 +173,8 @@ fun AlbumPickerRow(
                     if (!isManualUploadDialog) {
                         item {
                             RadioChoiceRow(
-                                title = "Named after the folder",
-                                subtitle = if (folderDisplayName != null) "Album name: '$folderDisplayName'" else null,
+                                title = stringResource(R.string.album_choice_folder_generic),
+                                subtitle = if (folderDisplayName != null) stringResource(R.string.album_choice_folder_sub, folderDisplayName) else null,
                                 isSelected = choice is AlbumChoice.AutoFolderName,
                                 onClick = {
                                     onChoiceSelected(AlbumChoice.AutoFolderName)
@@ -185,8 +188,8 @@ fun AlbumPickerRow(
                     if (isManualUploadDialog) {
                         item {
                             RadioChoiceRow(
-                                title = "By month",
-                                subtitle = if (currentMonthName != null) "Album name: 'Uploads $currentMonthName'" else null,
+                                title = stringResource(R.string.album_choice_month_generic),
+                                subtitle = if (currentMonthName != null) stringResource(R.string.album_choice_month_sub, currentMonthName) else null,
                                 isSelected = choice is AlbumChoice.ByMonth,
                                 onClick = {
                                     onChoiceSelected(AlbumChoice.ByMonth)
@@ -207,7 +210,7 @@ fun AlbumPickerRow(
                     if (accountAlbums.isEmpty()) {
                         item {
                             Text(
-                                text = "No albums yet",
+                                text = stringResource(R.string.album_empty_saved),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 8.dp)
@@ -253,7 +256,7 @@ fun AlbumPickerRow(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Add album",
+                                text = stringResource(R.string.album_btn_add_album),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -272,7 +275,7 @@ fun AlbumPickerRow(
                                     onOpenAlbumManager()
                                 }
                             ) {
-                                Text("Manage albums")
+                                Text(stringResource(R.string.album_btn_manage_albums))
                             }
                         }
                     }

@@ -67,7 +67,7 @@ fun AllFilesPermissionDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         },
         shape = RoundedCornerShape(28.dp),

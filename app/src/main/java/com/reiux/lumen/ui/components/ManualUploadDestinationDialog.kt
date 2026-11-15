@@ -37,9 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.AccountPickerRow
 import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.AlbumTargetMode
@@ -74,15 +76,20 @@ fun ManualUploadDestinationDialog(
             .padding(horizontal = 16.dp),
         title = {
             Column {
+                val fileWord = if (itemCount == 1) stringResource(R.string.manual_upload_word_file) else stringResource(R.string.manual_upload_word_files)
                 Text(
-                    text = "Upload Destination ($itemCount ${if (itemCount == 1) "file" else "files"})",
+                    text = stringResource(R.string.manual_upload_files_count, itemCount, fileWord),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 val accName = chosenAccount?.displayName ?: chosenAccount?.email
                 Text(
-                    text = if (accName != null && accounts.size <= 1) "Upload to Google Photos • $accName" else "Upload to Google Photos",
+                    text = if (accName != null && accounts.size <= 1) {
+                        stringResource(R.string.manual_upload_to_google_photos_account, accName)
+                    } else {
+                        stringResource(R.string.manual_upload_to_google_photos)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -95,7 +102,7 @@ fun ManualUploadDestinationDialog(
             ) {
                 if (accounts.size > 1) {
                     Text(
-                        text = "Upload to Account",
+                        text = stringResource(R.string.manual_upload_to_account_label),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -111,7 +118,7 @@ fun ManualUploadDestinationDialog(
                 }
 
                 Text(
-                    text = "Choose where these selected files should be saved in Google Photos:",
+                    text = stringResource(R.string.manual_upload_choose_destination),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -138,12 +145,12 @@ fun ManualUploadDestinationDialog(
             ExpressiveButton(
                 onClick = {
                     if (!isOnline) {
-                        android.widget.Toast.makeText(context, "No internet connection", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.manual_upload_no_internet_toast), android.widget.Toast.LENGTH_SHORT).show()
                         return@ExpressiveButton
                     }
                     val targetAcc = chosenAccount ?: activeAccount
                     if (targetAcc == null) {
-                        android.widget.Toast.makeText(context, "No Google account connected. Please sign in first.", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.manual_upload_no_account_toast), android.widget.Toast.LENGTH_LONG).show()
                         return@ExpressiveButton
                     }
                     val activeEmail = targetAcc.email
@@ -167,12 +174,12 @@ fun ManualUploadDestinationDialog(
                 },
                 enabled = isOnline
             ) {
-                Text(if (isOnline) "Start Upload" else "No Internet")
+                Text(if (isOnline) stringResource(R.string.manual_upload_btn_start) else stringResource(R.string.manual_upload_no_internet))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         }
     )

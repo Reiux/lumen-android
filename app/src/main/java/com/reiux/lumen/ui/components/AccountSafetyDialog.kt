@@ -29,23 +29,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import com.reiux.lumen.R
 
 @Composable
 fun AccountSafetyDialog(
     onDismiss: () -> Unit
 ) {
     val points = listOf(
-        "Lumen is unofficial and is not affiliated with Google. It uploads to Google Photos in a way Google did not design for third-party apps.",
-        "This may violate Google's Terms of Service. Google can sign you out, restrict, or disable an account at any time, and this has happened to users of similar tools.",
-        "A disabled Google account can also lock you out of Gmail, Drive, and everything else tied to it.",
-        "Use an account you can afford to lose access to. Avoid your main email, or accounts used for work, school or banking.",
-        "Do not treat Google Photos as your only copy. Keep your original photos until you have confirmed they are safe.",
-        "If Google signs you out or asks you to verify your account, stop and do not keep retrying. Lumen will pause uploads for you.",
-        "Each sign-in registers a device on your Google account. Avoid signing in and out repeatedly."
+        stringResource(R.string.account_safety_point_1),
+        stringResource(R.string.account_safety_point_2),
+        stringResource(R.string.account_safety_point_3),
+        stringResource(R.string.account_safety_point_4),
+        stringResource(R.string.account_safety_point_5),
+        stringResource(R.string.account_safety_point_6),
+        stringResource(R.string.account_safety_point_7)
     )
 
     val configuration = LocalConfiguration.current
@@ -67,7 +69,7 @@ fun AccountSafetyDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Account Safety & Disclosures",
+                    text = stringResource(R.string.account_safety_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -105,7 +107,7 @@ fun AccountSafetyDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.btn_close), fontWeight = FontWeight.Bold)
             }
         },
         shape = RoundedCornerShape(28.dp),

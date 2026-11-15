@@ -18,8 +18,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.reiux.lumen.R
 import com.reiux.lumen.data.network.GoogleAlbum
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,8 +46,8 @@ fun AlbumPickerDropdown(
             value = displayValue,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Select Target Album") },
-            placeholder = { Text("Choose an album...") },
+            label = { Text(stringResource(R.string.album_dropdown_label)) },
+            placeholder = { Text(stringResource(R.string.album_dropdown_placeholder)) },
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
@@ -73,7 +75,7 @@ fun AlbumPickerDropdown(
                 DropdownMenuItem(
                     text = {
                         Text(
-                            text = "No saved albums yet",
+                            text = stringResource(R.string.album_dropdown_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
