@@ -240,7 +240,7 @@ fun AccountsScreen(
                 Text(
                     text = stringResource(R.string.accounts_btn_remove),
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             },
@@ -312,7 +312,7 @@ fun AccountsScreen(
                 Text(
                     text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -417,7 +417,7 @@ fun AccountsScreen(
                 Text(
                     text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(

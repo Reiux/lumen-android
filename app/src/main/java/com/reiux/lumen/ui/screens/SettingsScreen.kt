@@ -360,7 +360,7 @@ fun SettingsScreen(
                 Text(
                     text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -742,7 +742,7 @@ fun SettingsScreen(
                 Text(
                     text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(

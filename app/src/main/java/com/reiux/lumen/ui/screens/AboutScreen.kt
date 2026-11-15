@@ -690,7 +690,7 @@ private fun BrandHeaderSection(
 
         val dynamicWeight = remember(wordmarkPunchScale.value) {
             val progress = ((wordmarkPunchScale.value - 1.0f) / 0.26f).coerceIn(0f, 1f)
-            FontWeight((500 + progress * 200f).toInt())
+            FontWeight((800 + progress * 150f).toInt())
         }
 
         Text(

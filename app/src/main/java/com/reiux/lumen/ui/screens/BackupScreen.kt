@@ -1002,7 +1002,7 @@ private fun BackupTopHeader(
             Text(
                 text = "Lumen",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.ExtraBold,
                 letterSpacing = (-0.5).sp,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.graphicsLayer {

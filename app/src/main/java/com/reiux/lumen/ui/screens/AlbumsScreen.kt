@@ -111,7 +111,7 @@ fun AlbumsScreen(
                         Text(
                             text = stringResource(R.string.albums_title),
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = stringResource(R.string.albums_subtitle),

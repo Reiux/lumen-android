@@ -174,7 +174,7 @@ fun FoldersScreen(
             onDismissRequest = { folderToRemove = null },
             shape = RoundedCornerShape(28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.dialog_remove_folder_title), fontWeight = FontWeight.Medium) },
+            title = { Text(stringResource(R.string.dialog_remove_folder_title), fontWeight = FontWeight.Bold) },
             text = { Text(stringResource(R.string.dialog_remove_folder_msg, target.displayName)) },
             confirmButton = {
                 com.reiux.lumen.ui.components.ExpressiveButton(
@@ -254,7 +254,7 @@ fun FoldersScreen(
                 Text(
                     text = stringResource(R.string.folders_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -343,7 +343,7 @@ fun FoldersScreen(
                     Text(
                         text = stringResource(R.string.folders_title),
                         style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
