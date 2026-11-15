@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -177,19 +178,23 @@ fun AccountsScreen(
         LumenTimeCapsuleDialog(onDismiss = { showTimeCapsule = false })
     }
 
+    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+
     if (showAddDialog || isAddingAccount || addAccountError != null) {
         AddAccountDialog(
             onDismiss = {
-                showAddDialog = false
-                onClearError()
+                if (!isAddingAccount) {
+                    showAddDialog = false
+                    onClearError()
+                }
             },
             onSubmitToken = {
+                isAddSubmitInFlight = true
                 onAddAccountToken(it)
-                showAddDialog = false
             },
             onSubmitCredential = {
+                isAddSubmitInFlight = true
                 onAddAccountCredential(it)
-                showAddDialog = false
             },
             onClearError = onClearError,
             isLoading = isAddingAccount,
@@ -197,6 +202,18 @@ fun AccountsScreen(
             hasAcknowledgedAccountRisk = hasAcknowledgedAccountRisk,
             onAcknowledgeRisk = onAcknowledgeRisk
         )
+    }
+
+    // The dialog stays mounted for the whole submit so the pasted token / credential
+    // survives a failed attempt (Tap "Try Again", fix the input, resubmit). It only
+    // closes itself once the ViewModel reports a finished, error-free submit.
+    LaunchedEffect(isAddingAccount, addAccountError, isAddSubmitInFlight) {
+        if (!isAddSubmitInFlight || isAddingAccount) return@LaunchedEffect
+        isAddSubmitInFlight = false
+        if (addAccountError == null) {
+            showAddDialog = false
+            onClearError()
+        }
     }
 
     if (accountToRename != null) {
@@ -258,12 +275,12 @@ fun AccountsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Remove")
+                    Text(stringResource(R.string.btn_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { accountToRemove = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -314,7 +331,7 @@ fun AccountsScreen(
                             )
                         },
                         onRename = { accountToRename = selectedAccount },
-                        onRemove = { accountToRemove = selectedAccount },
+                        onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
                 }
@@ -327,7 +344,7 @@ fun AccountsScreen(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Google Account")
+                    Text(stringResource(R.string.accounts_btn_add))
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -421,7 +438,7 @@ fun AccountsScreen(
                             )
                         },
                         onRename = { accountToRename = selectedAccount },
-                        onRemove = { accountToRemove = selectedAccount },
+                        onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
                 }
@@ -455,7 +472,7 @@ fun AccountsScreen(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Google Account")
+                    Text(stringResource(R.string.accounts_btn_add))
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -504,7 +521,9 @@ private fun ActiveAccountHeroCard(
                                 }
                             ),
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.20f)),
+                        tonalElevation = 2.dp
                     ) {
                         val avatarFile = selectedAccount.avatarPath?.let { File(it) }
                         if (avatarFile != null && avatarFile.exists()) {
@@ -522,7 +541,7 @@ private fun ActiveAccountHeroCard(
                                 Text(
                                     text = selectedAccount.email.take(1).uppercase(),
                                     style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -536,7 +555,7 @@ private fun ActiveAccountHeroCard(
                             .clickable { onPickAvatar() },
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primaryContainer),
+                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)),
                         tonalElevation = 4.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -566,7 +585,7 @@ private fun ActiveAccountHeroCard(
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
                             contentDescription = "Active",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -697,7 +716,7 @@ private fun OtherAccountRowItem(
                 onClick = { onSelectAccount(account.email) },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Text("Use")
+                Text(stringResource(R.string.accounts_btn_use))
             }
 
             Spacer(modifier = Modifier.width(4.dp))

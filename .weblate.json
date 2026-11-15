@@ -1,0 +1,16 @@
+{
+  "$schema": "https://weblate.org/schemas/weblate.json",
+  "version": 1,
+  "components": [
+    {
+      "name": "Android App",
+      "slug": "app",
+      "file_format": "android",
+      "filemask": "app/src/main/res/values-*/strings.xml",
+      "template": "app/src/main/res/values/strings.xml",
+      "base": "app/src/main/res/values/strings.xml",
+      "language_code_style": "android",
+      "repo": "weblate://lumen-android/app"
+    }
+  ]
+}

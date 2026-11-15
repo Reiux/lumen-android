@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -37,11 +38,13 @@ fun ColdStartSplashScreen(
     val rotation = remember { Animatable(0f) }
     val logoScale = remember { Animatable(0.7f) }
     val titleAlpha = remember { Animatable(0f) }
-    val titleOffsetY = remember { Animatable(20f) }
+    val titleScale = remember { Animatable(0.85f) }
+    val titleOffsetY = remember { Animatable(24f) }
+    val titleLetterSpacing = remember { Animatable(2.0f) }
     val splashAlpha = remember { Animatable(1f) }
 
     LaunchedEffect(Unit) {
-        // Phase 1: M3E Bouncy entrance spin for logo + slide-up fade-in for title
+        // Phase 1: M3E Bouncy entrance spin for logo + spring settle for title
         launch {
             rotation.animateTo(
                 targetValue = 360f,
@@ -70,11 +73,29 @@ fun ColdStartSplashScreen(
             )
         }
         launch {
+            titleScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.65f,
+                    stiffness = 380f
+                )
+            )
+        }
+        launch {
             titleOffsetY.animateTo(
                 targetValue = 0f,
                 animationSpec = spring(
-                    dampingRatio = 0.75f,
+                    dampingRatio = 0.70f,
                     stiffness = 350f
+                )
+            )
+        }
+        launch {
+            titleLetterSpacing.animateTo(
+                targetValue = -0.5f,
+                animationSpec = spring(
+                    dampingRatio = 0.70f,
+                    stiffness = 320f
                 )
             )
         }
@@ -131,20 +152,23 @@ fun ColdStartSplashScreen(
                     modifier = Modifier
                         .graphicsLayer {
                             alpha = titleAlpha.value
+                            scaleX = titleScale.value
+                            scaleY = titleScale.value
                             translationY = titleOffsetY.value.dp.toPx()
                         }
                 ) {
                     Text(
                         text = "Lumen",
                         style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = titleLetterSpacing.value.sp,
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Unlimited Cloud Backup",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                     )
                 }
             }

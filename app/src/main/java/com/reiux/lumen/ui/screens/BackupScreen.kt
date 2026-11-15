@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -20,12 +21,17 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -908,6 +914,8 @@ fun BackupScreen(
     }
 }
 
+private var hasPlayedBootAnimation = false
+
 @Composable
 private fun BackupTopHeader(
     storageSaverQuality: Boolean,
@@ -918,9 +926,35 @@ private fun BackupTopHeader(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    var tapCount by remember { mutableIntStateOf(0) }
-    var lastTapTime by remember { mutableLongStateOf(0L) }
+    val coroutineScope = rememberCoroutineScope()
     var showBurst by remember { mutableStateOf(false) }
+
+    var tapSpinAngle by remember { mutableFloatStateOf(0f) }
+    val animatedTapSpin by animateFloatAsState(
+        targetValue = tapSpinAngle,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 350f),
+        label = "iconTapSpin"
+    )
+    val wordmarkStretchX = remember { Animatable(1.0f) }
+
+    LaunchedEffect(Unit) {
+        if (!hasPlayedBootAnimation) {
+            hasPlayedBootAnimation = true
+            delay(250L) // Animate once on initial app boot
+            tapSpinAngle += 360f // Spin the logo 360 on boot
+            wordmarkStretchX.animateTo(1.35f, tween(340, easing = FastOutSlowInEasing))
+            wordmarkStretchX.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+        }
+    }
+
+    val onBrandTap: () -> Unit = {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        tapSpinAngle += 360f
+        coroutineScope.launch {
+            wordmarkStretchX.animateTo(1.35f, tween(340, easing = FastOutSlowInEasing))
+            wordmarkStretchX.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+        }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "prismSpin")
     val prismSpinAngle by infiniteTransition.animateFloat(
@@ -948,60 +982,50 @@ private fun BackupTopHeader(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.pointerInput(Unit) {
                 detectTapGestures(
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onUnlockPrismTheme()
+                        showBurst = true
+                        Toast.makeText(context, "Unlocked Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
+                    },
                     onTap = {
-                        val now = System.currentTimeMillis()
-                        if (now - lastTapTime > 1200L) {
-                            tapCount = 1
-                        } else {
-                            tapCount++
-                        }
-                        lastTapTime = now
-
-                        if (tapCount >= 3) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onUnlockPrismTheme()
-                            showBurst = true
-                            Toast.makeText(context, "Unlocked Prism Rainbow Theme!", Toast.LENGTH_SHORT).show()
-                            tapCount = 0
-                        }
+                        onBrandTap()
                     }
                 )
             }
         ) {
             DynamicLumenIcon(
-                size = 40.dp,
-                rotationAngle = if (unlockedPrismTheme) prismSpinAngle else 0f,
-                activeSeason = Season.NONE
+                size = 38.dp,
+                rotationAngle = animatedTapSpin + (if (unlockedPrismTheme) prismSpinAngle else 0f),
+                activeSeason = activeSeason
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "Lumen",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Unlimited Cloud Backup",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Lumen",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.5).sp,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = wordmarkStretchX.value
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
+            )
         }
 
         val (statusLabel, statusColor, statusContainer) = when {
             useQuota -> Triple(
-                "Counts to Quota",
+                stringResource(R.string.status_counts_to_quota),
                 MaterialTheme.colorScheme.error,
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
             )
             storageSaverQuality -> Triple(
-                "Storage Saver",
+                stringResource(R.string.status_storage_saver),
                 MaterialTheme.colorScheme.tertiary,
                 MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
             )
             else -> Triple(
-                "Unlimited",
+                stringResource(R.string.status_unlimited_original),
                 MaterialTheme.colorScheme.primary,
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             )
@@ -1063,7 +1087,8 @@ private fun MockModeCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         tonalElevation = 2.dp
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -1076,7 +1101,7 @@ private fun MockModeCard(
                     Icon(
                         Icons.Rounded.BugReport,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1084,21 +1109,21 @@ private fun MockModeCard(
                         text = "Mock Mode Active",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 TextButton(
                     onClick = onExitMockMode,
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("Exit Mock", color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold)
+                    Text("Exit Mock", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Using sample accounts, uploads, and network states to test the UI.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(10.dp))
             Row(
@@ -1148,14 +1173,14 @@ private fun MockModeCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = "Easter Egg Tester",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1299,14 +1324,14 @@ private fun MockModeCard(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = "Circuit Breaker & Scan Limits",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1542,11 +1567,11 @@ private fun HeroBackupCard(
             ) {
                 ExpressiveLoadingIndicator(
                     size = 52.dp,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Indexing Media Folders...",
+                    text = stringResource(R.string.title_indexing_folders),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1569,7 +1594,7 @@ private fun HeroBackupCard(
                     onClick = onCancelScan,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    Text("Cancel Indexing", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_cancel_scan), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1578,7 +1603,7 @@ private fun HeroBackupCard(
 
     val totalInQueue = queue.size
     val isDone = totalInQueue == 0 || queue.all { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
-    val completedRecently = !isOffline && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
+    val completedRecently = !isOffline && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED } && queue.none { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
 
     if (completedRecently || showMockCompletionCelebration) {
         PlayfulCompletionCelebration(
@@ -1629,7 +1654,7 @@ private fun HeroBackupCard(
                             tint = when {
                                 isOffline || conditionNotice != null -> MaterialTheme.colorScheme.onTertiaryContainer
                                 hasMissingAlbum -> MaterialTheme.colorScheme.onErrorContainer
-                                isUploading -> MaterialTheme.colorScheme.primary
+                                isUploading -> MaterialTheme.colorScheme.onPrimaryContainer
                                 else -> MaterialTheme.colorScheme.secondary
                             },
                             modifier = Modifier.size(32.dp)
@@ -1701,7 +1726,8 @@ private fun HeroBackupCard(
 
                 ExpressiveWavyLinearProgress(
                     progress = progress.coerceIn(0f, 1f),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.22f),
                     modifier = Modifier.fillMaxWidth()
                 )
 

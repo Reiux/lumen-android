@@ -78,6 +78,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -166,17 +168,25 @@ fun OnboardingScreen(
         )
     }
 
+    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+
     if (showManualTokenDialog) {
         AddAccountDialog(
-            onDismiss = { showManualTokenDialog = false },
+            onDismiss = {
+                if (!isAddingAccount) {
+                    showManualTokenDialog = false
+                    viewModel.clearAddAccountError()
+                }
+            },
             onSubmitToken = { token ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithToken(token)
-                showManualTokenDialog = false
             },
             onSubmitCredential = { credential ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithCredential(credential)
-                showManualTokenDialog = false
             },
+            onClearError = { viewModel.clearAddAccountError() },
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             isManualOnly = true,
@@ -187,21 +197,39 @@ fun OnboardingScreen(
 
     if (showAddAccountDialog) {
         AddAccountDialog(
-            onDismiss = { showAddAccountDialog = false },
+            onDismiss = {
+                if (!isAddingAccount) {
+                    showAddAccountDialog = false
+                    viewModel.clearAddAccountError()
+                }
+            },
             onSubmitToken = { token ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithToken(token)
-                showAddAccountDialog = false
             },
             onSubmitCredential = { credential ->
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithCredential(credential)
-                showAddAccountDialog = false
             },
+            onClearError = { viewModel.clearAddAccountError() },
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             isManualOnly = false,
             hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() }
         )
+    }
+
+    // Keep the dialog mounted while the submit is in flight (the pasted token / credential
+    // must survive a failed attempt). Only close once the ViewModel finishes an error-free
+    // submit; a failed submit leaves the error card visible for a retry.
+    LaunchedEffect(isAddingAccount, addAccountError, isAddSubmitInFlight) {
+        if (!isAddSubmitInFlight || isAddingAccount) return@LaunchedEffect
+        isAddSubmitInFlight = false
+        if (addAccountError == null) {
+            showManualTokenDialog = false
+            showAddAccountDialog = false
+        }
     }
 
     val configuration = LocalConfiguration.current
@@ -577,9 +605,9 @@ private fun OnboardingActionButton(
             ) {
                 Text(
                     text = when (currentPage) {
-                        0 -> "Get Started"
-                        5 -> "Start Backing Up"
-                        else -> "Continue"
+                        0 -> stringResource(R.string.onboarding_btn_get_started)
+                        5 -> stringResource(R.string.onboarding_btn_finish)
+                        else -> stringResource(R.string.btn_continue)
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
@@ -1167,7 +1195,7 @@ private fun OnboardingAccountPage(
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1299,7 +1327,7 @@ private fun OnboardingFoldersPage(
                         Surface(
                             modifier = Modifier.size(38.dp),
                             shape = RoundedCornerShape(12.dp),
-                            color = if (folder.enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                            color = if (folder.enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -1680,7 +1708,7 @@ private fun PermissionItemCard(
             Surface(
                 modifier = Modifier.size(44.dp),
                 shape = RoundedCornerShape(14.dp),
-                color = if (isGranted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                color = if (isGranted) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -1714,7 +1742,7 @@ private fun PermissionItemCard(
             if (isGranted) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),

@@ -1394,8 +1394,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure {
                     LumenLogger.e("AccountsUI", "Failed to authenticate account with OAuth token: ${it.message}", it)
-                    _isAddingAccount.value = false
+                    // Set the error BEFORE clearing the loading flag: the add-account dialog
+                    // closes on "finished + no error", so the error must be committed first
+                    // or a one-frame gap can be read as success.
                     _addAccountError.value = it.message ?: "Failed to authenticate account"
+                    _isAddingAccount.value = false
                 }
         }
     }
@@ -1420,8 +1423,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure {
                     LumenLogger.e("AccountsUI", "Failed to import credential string: ${it.message}", it)
-                    _isAddingAccount.value = false
+                    // Set the error BEFORE clearing the loading flag (see addAccountWithToken).
                     _addAccountError.value = it.message ?: "Failed to import credential"
+                    _isAddingAccount.value = false
                 }
         }
     }

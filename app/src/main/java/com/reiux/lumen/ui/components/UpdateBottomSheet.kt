@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.reiux.lumen.data.model.UpdateInfo
+import com.reiux.lumen.util.LumenLogger
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -201,9 +202,24 @@ fun launchApkInstall(context: Context, apkFile: File) {
             @Suppress("DEPRECATION")
             android.content.pm.PackageManager.GET_SIGNATURES
         }
-        val archiveInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+        val archiveInfo = getPackageArchiveInfoWithRetry(pm, apkFile, flags)
         if (archiveInfo == null) {
-            android.widget.Toast.makeText(context, "Downloaded update is corrupt or invalid", android.widget.Toast.LENGTH_SHORT).show()
+            // Some OEM builds return null here for perfectly valid APKs. If (and only if)
+            // the file was staged by our own updater in our private cache directory, defer
+            // to the system installer, which still enforces signature continuity for
+            // same-package updates. Anything else fails closed.
+            val updatesDir = runCatching { File(context.cacheDir, "updates").canonicalFile }.getOrNull()
+            val stagedByUs = updatesDir != null &&
+                runCatching { apkFile.canonicalFile.path.startsWith(updatesDir.path + File.separator) }.getOrDefault(false) &&
+                apkFile.name.startsWith("lumen_update_") &&
+                apkFile.name.endsWith(".apk")
+            if (!stagedByUs) {
+                LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath} outside the private updates dir; refusing to install" }
+                android.widget.Toast.makeText(context, "Security check failed: could not verify update package", android.widget.Toast.LENGTH_LONG).show()
+                return
+            }
+            LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath}; deferring to the system installer" }
+            launchInstaller(context, apkFile)
             return
         }
         val expectedPackage = context.packageName.removeSuffix(".dev")
@@ -221,18 +237,36 @@ fun launchApkInstall(context: Context, apkFile: File) {
             return
         }
 
-        android.widget.Toast.makeText(context, "Launching installer...", android.widget.Toast.LENGTH_SHORT).show()
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(intent)
+        launchInstaller(context, apkFile)
     } catch (e: Exception) {
         e.printStackTrace()
         android.widget.Toast.makeText(context, "Could not launch package installer: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
+}
+
+/**
+ * Parses an APK archive, retrying once with extra flag bits. Some OEM builds return
+ * null from getPackageArchiveInfo for perfectly valid APKs unless additional package
+ * metadata (e.g. GET_ACTIVITIES) is requested.
+ */
+private fun getPackageArchiveInfoWithRetry(
+    pm: android.content.pm.PackageManager,
+    apkFile: File,
+    flags: Int
+): android.content.pm.PackageInfo? {
+    pm.getPackageArchiveInfo(apkFile.absolutePath, flags)?.let { return it }
+    return pm.getPackageArchiveInfo(apkFile.absolutePath, flags or android.content.pm.PackageManager.GET_ACTIVITIES)
+}
+
+private fun launchInstaller(context: Context, apkFile: File) {
+    android.widget.Toast.makeText(context, "Launching installer...", android.widget.Toast.LENGTH_SHORT).show()
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(intent)
 }
 
 private fun extractSigningDigests(pkgInfo: android.content.pm.PackageInfo): Set<String> {

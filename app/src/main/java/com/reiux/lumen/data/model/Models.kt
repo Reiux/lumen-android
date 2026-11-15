@@ -82,7 +82,11 @@ data class UploadItem(
     val customAlbumName: String? = null,
     val customAlbumNickname: String? = null,
     val accountEmail: String? = null,
-    val originalFilePath: String? = null
+    val originalFilePath: String? = null,
+    // Upload policy captured at enqueue time so each item keeps its owning account's
+    // settings even when its items are processed by a queue started for another account.
+    val storageSaver: Boolean = false,
+    val useQuota: Boolean = false
 )
 
 enum class AuthFailureKind {

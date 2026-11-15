@@ -13,8 +13,8 @@ android {
         applicationId "com.reiux.lumen"
         minSdk 26
         targetSdk 37
-        versionCode 10301
-        versionName "1.3.1"
+        versionCode 10302
+        versionName "1.3.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -144,7 +144,7 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.7.0'
 
     // Security & Encryption
-    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'androidx.security:security-crypto:1.1.0'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'

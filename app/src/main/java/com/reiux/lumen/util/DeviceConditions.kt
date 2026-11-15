@@ -16,8 +16,14 @@ object DeviceConditions {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        val wifiTransport = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        // A captive-portal hotspot or a disconnected Wi-Fi network reports the transport
+        // but has no real internet; uploads against it just stall and fail, so require a
+        // validated connection as well.
+        return wifiTransport &&
+               caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+               caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     fun isInternetAvailable(context: Context): Boolean {

@@ -124,6 +124,12 @@ env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug assembleRelease
 
 ---
 
+## Contributing Translations
+
+Want to see Lumen in your native language or help improve existing translations? You can translate online via [Hosted Weblate](https://hosted.weblate.org/engage/lumen-android/) or check out [TRANSLATING.md](TRANSLATING.md) for guidelines.
+
+---
+
 ## Credits
 
 - **Developer**: [Reiux](https://github.com/Reiux)
