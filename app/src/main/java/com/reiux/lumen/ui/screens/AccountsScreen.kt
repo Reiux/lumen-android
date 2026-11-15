@@ -521,7 +521,9 @@ private fun ActiveAccountHeroCard(
                                 }
                             ),
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.20f)),
+                        tonalElevation = 2.dp
                     ) {
                         val avatarFile = selectedAccount.avatarPath?.let { File(it) }
                         if (avatarFile != null && avatarFile.exists()) {
@@ -539,7 +541,7 @@ private fun ActiveAccountHeroCard(
                                 Text(
                                     text = selectedAccount.email.take(1).uppercase(),
                                     style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -553,7 +555,7 @@ private fun ActiveAccountHeroCard(
                             .clickable { onPickAvatar() },
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primaryContainer),
+                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)),
                         tonalElevation = 4.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -583,7 +585,7 @@ private fun ActiveAccountHeroCard(
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
                             contentDescription = "Active",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
                         )
                     }

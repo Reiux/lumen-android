@@ -1193,7 +1193,7 @@ private fun OnboardingAccountPage(
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1325,7 +1325,7 @@ private fun OnboardingFoldersPage(
                         Surface(
                             modifier = Modifier.size(38.dp),
                             shape = RoundedCornerShape(12.dp),
-                            color = if (folder.enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                            color = if (folder.enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -1706,7 +1706,7 @@ private fun PermissionItemCard(
             Surface(
                 modifier = Modifier.size(44.dp),
                 shape = RoundedCornerShape(14.dp),
-                color = if (isGranted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                color = if (isGranted) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -1740,7 +1740,7 @@ private fun PermissionItemCard(
             if (isGranted) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),

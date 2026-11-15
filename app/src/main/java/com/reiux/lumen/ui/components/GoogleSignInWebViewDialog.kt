@@ -13,6 +13,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -80,21 +82,29 @@ fun GoogleSignInWebViewDialog(
         )
     ) {
         PredictiveBackDialogContainer(onDismiss = onDismiss) {
-            Surface(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .wrapContentWidth(Alignment.CenterHorizontally)
-                    .widthIn(max = if (isWideLayout) 860.dp else 540.dp)
-                    .padding(if (isWideLayout) 24.dp else 12.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(28.dp)
+                    .padding(
+                        horizontal = if (isWideLayout) 32.dp else 16.dp,
+                        vertical = if (isWideLayout) 24.dp else 18.dp
                     ),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                contentAlignment = Alignment.Center
             ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = if (isWideLayout) 760.dp else 500.dp)
+                        .fillMaxHeight(if (isWideLayout) 0.92f else 0.94f)
+                        .clip(RoundedCornerShape(28.dp))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(28.dp)
+                        ),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                 TopAppBar(
                     title = {
                         Text(
@@ -110,7 +120,8 @@ fun GoogleSignInWebViewDialog(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
+                    ),
+                    windowInsets = WindowInsets(0, 0, 0, 0)
                 )
 
                 if (disclaimerText != null) {
@@ -270,6 +281,7 @@ fun GoogleSignInWebViewDialog(
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -8,10 +8,14 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
+import com.reiux.lumen.util.RomDetector
 import com.reiux.lumen.util.Season
+import com.reiux.lumen.util.SystemFontProvider
 
 @Composable
 fun LumenTheme(
@@ -32,6 +36,20 @@ fun LumenTheme(
         else -> selectedPreset.lightScheme
     }
 
+    val isStock = remember { RomDetector.isStockOrAosp(context) }
+
+    val dynamicFont = remember {
+        SystemFontProvider.getGoogleSansFamily() ?: FontFamily.Default
+    }
+
+    val titleFont = remember(dynamicFont) {
+        SystemFontProvider.getGoogleSansRoundedFamily() ?: dynamicFont
+    }
+
+    val typography = remember(dynamicFont, titleFont) {
+        createLumenTypography(bodyFontFamily = dynamicFont, titleFontFamily = titleFont)
+    }
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -45,7 +63,7 @@ fun LumenTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         shapes = LumenShapes,
-        typography = LumenTypography,
+        typography = typography,
         content = content
     )
 }

@@ -5,12 +5,17 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,11 +68,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -76,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
@@ -605,11 +614,29 @@ private fun BrandHeaderSection(
     onShowMatrixDialog: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     var versionTapCount by remember { mutableIntStateOf(0) }
     var versionLastTapTime by remember { mutableLongStateOf(0L) }
 
     var manualRotation by remember { mutableFloatStateOf(0f) }
     var isHolding by remember { mutableStateOf(false) }
+
+    val wordmarkPunchScale = remember { Animatable(1.0f) }
+
+    val onBrandTap: () -> Unit = {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        manualRotation += 360f // Spin logo 360 clockwise!
+        coroutineScope.launch {
+            wordmarkPunchScale.animateTo(1.26f, tween(340, easing = FastOutSlowInEasing))
+            wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        delay(220L) // Wait for screen slide-in to finish before springing in
+        wordmarkPunchScale.animateTo(1.26f, tween(340, easing = FastOutSlowInEasing))
+        wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+    }
 
     val animatedRotation by animateFloatAsState(
         targetValue = manualRotation + (if (developerModeUnlocked) 360f else 0f),
@@ -644,7 +671,7 @@ private fun BrandHeaderSection(
                             isHolding = false
                         },
                         onTap = {
-                            manualRotation += 45f // Clockwise step!
+                            onBrandTap()
                         }
                     )
                 },
@@ -653,17 +680,35 @@ private fun BrandHeaderSection(
             DynamicLumenIcon(
                 size = 100.dp,
                 rotationAngle = animatedRotation,
-                activeSeason = com.reiux.lumen.util.Season.NONE
+                activeSeason = activeSeason
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val dynamicWeight = remember(wordmarkPunchScale.value) {
+            val progress = ((wordmarkPunchScale.value - 1.0f) / 0.26f).coerceIn(0f, 1f)
+            FontWeight((800 + progress * 150f).toInt())
+        }
+
         Text(
             text = "Lumen",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = dynamicWeight,
+            letterSpacing = (-0.5).sp,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = wordmarkPunchScale.value
+                    scaleY = wordmarkPunchScale.value
+                    transformOrigin = TransformOrigin.Center
+                }
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) {
+                    onBrandTap()
+                }
         )
 
         Spacer(modifier = Modifier.height(6.dp))
