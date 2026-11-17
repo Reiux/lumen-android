@@ -2,7 +2,7 @@
 
 **Fast, open-source Android backup client for Google Photos.**
 
-![Downloads](https://img.shields.io/github/downloads/Reiux/lumen-android/total?style=for-the-badge)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReiux%2Flumen-android%2Fmain%2F.github%2Fbadges%2Fdownloads.json&style=for-the-badge)](https://github.com/Reiux/lumen-android/releases)
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
 [![Android](https://img.shields.io/badge/Android-8.0%20or%20Later-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Translation status](https://hosted.weblate.org/widgets/lumen-android/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/lumen-android/)
