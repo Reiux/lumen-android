@@ -69,17 +69,19 @@ jobs:
           grand_total = total + OFFSET
 
           def fmt(n: int) -> str:
+              # Match the old shields.io github-downloads badge, which
+              # truncates to one decimal place (1956 -> "1.9k").
               if n >= 1_000_000:
-                  return f"{n / 1_000_000:.2f}m"
+                  return f"{int(n / 100_000) / 10:.1f}m"
               if n >= 1_000:
-                  return f"{n / 1_000:.2f}k"
+                  return f"{int(n / 100) / 10:.1f}k"
               return str(n)
 
           badge = {
               "schemaVersion": 1,
               "label": "downloads",
               "message": fmt(grand_total),
-              "color": "blue",
+              "color": "brightgreen",
           }
 
           path = ".github/badges/downloads.json"
