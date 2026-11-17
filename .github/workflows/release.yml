@@ -1,10 +1,12 @@
 name: Lumen Release Build
 
+# Releases are published exclusively from version tags (or manually).
+# Triggering on every push to `main` re-published the current release and
+# reset its download counters on unrelated merges (e.g. docs-only PRs);
+# regular build/test coverage for main pushes lives in ci.yml.
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
