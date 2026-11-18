@@ -239,8 +239,9 @@ class PredictiveBackDialogState(
     }
 
     @Composable
-    fun BackHandler() {
+    fun BackHandler(enabled: Boolean = true) {
         val view = LocalView.current
+        val blurEnabled = LocalBlurEffectsEnabled.current
 
         fun findDialogOwner(): OnBackPressedDispatcherOwner? {
             val dialogWindow = (view.parent as? DialogWindowProvider)?.window
@@ -277,7 +278,7 @@ class PredictiveBackDialogState(
 
         if (activeOwner != null) {
             CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides activeOwner) {
-                PredictiveBackHandler(enabled = true) { progressFlow: Flow<BackEventCompat> ->
+                PredictiveBackHandler(enabled = enabled) { progressFlow: Flow<BackEventCompat> ->
                     try {
                         progressFlow.collect { backEvent ->
                             val progress = backEvent.progress
@@ -308,6 +309,28 @@ class PredictiveBackDialogState(
                             launch { alpha.animateTo(0f, bouncySpringSpec) }
                         }
                         onDismiss()
+
+                        // Safety net: if onDismiss() was guarded and kept the dialog mounted,
+                        // restore visibility and blur instead of leaving an invisible blocker.
+                        kotlinx.coroutines.delay(50)
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurEnabled) {
+                                val dialogWindow = (view.parent as? DialogWindowProvider)?.window
+                                    ?: (view.context as? DialogWindowProvider)?.window
+                                    ?: (generateSequence(view.parent) { (it as? View)?.parent }
+                                        .mapNotNull { it as? DialogWindowProvider }
+                                        .firstOrNull()?.window)
+                                    ?: (view.context as? android.app.Dialog)?.window
+                                dialogWindow?.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                                dialogWindow?.attributes = dialogWindow?.attributes?.apply {
+                                    blurBehindRadius = 45
+                                }
+                            }
+                        } catch (_: Throwable) {}
+                        coroutineScope {
+                            launch { scale.animateTo(1f, bouncySpringSpec) }
+                            launch { alpha.animateTo(1f, bouncySpringSpec) }
+                        }
                     } catch (e: CancellationException) {
                         coroutineScope {
                             launch { scale.animateTo(1f, bouncySpringSpec) }
@@ -320,9 +343,9 @@ class PredictiveBackDialogState(
     }
 
     @Composable
-    fun Handler() {
+    fun Handler(enabled: Boolean = true) {
         StartEntrance()
-        BackHandler()
+        BackHandler(enabled = enabled)
     }
 
     val modifier: Modifier
@@ -372,7 +395,7 @@ fun PredictiveAlertDialog(
         properties = safeProperties
     ) {
         DialogBlurEffect()
-        state.BackHandler()
+        state.BackHandler(enabled = properties.dismissOnBackPress)
 
         Box(
             modifier = Modifier
@@ -469,6 +492,7 @@ fun PredictiveAlertDialog(
 fun PredictiveBackDialogContainer(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    dismissOnBackPress: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -476,7 +500,7 @@ fun PredictiveBackDialogContainer(
 
     Box(modifier = modifier.then(state.modifier)) {
         DialogBlurEffect()
-        state.Handler()
+        state.Handler(enabled = dismissOnBackPress)
         content()
     }
 }
@@ -492,6 +516,6 @@ fun rememberPredictiveBackDialogModifier(
 ): Modifier {
     val currentOnDismiss by rememberUpdatedState(onDismiss)
     val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = initialScale) }
-    state.Handler()
+    state.Handler(enabled = enabled)
     return state.modifier
 }

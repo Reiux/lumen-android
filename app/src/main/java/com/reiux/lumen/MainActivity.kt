@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -68,16 +69,23 @@ import com.reiux.lumen.ui.screens.AboutScreen
 import com.reiux.lumen.ui.screens.AccountsScreen
 import com.reiux.lumen.ui.screens.AlbumsScreen
 import com.reiux.lumen.ui.screens.BackupScreen
+import com.reiux.lumen.ui.screens.DeviceFoldersScreen
 import com.reiux.lumen.ui.screens.FoldersScreen
 import com.reiux.lumen.ui.screens.OnboardingScreen
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.reiux.lumen.ui.screens.SettingsScreen
 import com.reiux.lumen.ui.theme.LumenTheme
 
+data class ShareUploadBatch(
+    val batchId: String = java.util.UUID.randomUUID().toString(),
+    val uris: List<android.net.Uri>
+)
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
-    private val incomingShareUris = mutableStateOf<List<android.net.Uri>?>(null)
+    private val incomingShareBatch = mutableStateOf<ShareUploadBatch?>(null)
+    private val queuedShareReplacement = mutableStateOf<ShareUploadBatch?>(null)
     private val pendingShowUpdate = mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -90,9 +98,23 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
-        if (intent.getStringExtra("action") == "show_update") {
+        if (isValidInternalUpdateIntent(intent)) {
             pendingShowUpdate.value = true
         }
+    }
+
+    private fun isValidInternalUpdateIntent(intent: Intent?): Boolean {
+        if (intent?.getStringExtra("action") != "show_update") return false
+        val token = intent.getStringExtra("internal_token")
+        val isValid = (application as? LumenApplication)
+            ?.settingsRepository
+            ?.isValidInternalLaunchToken(token) == true
+        if (!isValid) {
+            com.reiux.lumen.util.LumenLogger.w("Updater") {
+                "Ignored unauthenticated show_update launch intent"
+            }
+        }
+        return isValid
     }
 
     private fun handleShareIntent(intent: Intent?) {
@@ -111,27 +133,52 @@ class MainActivity : ComponentActivity() {
         } else if (action == Intent.ACTION_SEND_MULTIPLE) {
             val streamUris = androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java)
             if (!streamUris.isNullOrEmpty()) {
-                extracted.addAll(streamUris)
+                for (item in (streamUris as List<*>)) {
+                    val uri = item as? android.net.Uri ?: continue
+                    extracted.add(uri)
+                    if (extracted.size > MAX_SHARE_URIS) break
+                }
             }
         }
         if (extracted.isEmpty() && intent.clipData != null) {
             val clipData = intent.clipData!!
             for (i in 0 until clipData.itemCount) {
                 val itemUri = clipData.getItemAt(i).uri
-                if (itemUri != null) extracted.add(itemUri)
+                if (itemUri != null) {
+                    extracted.add(itemUri)
+                    if (extracted.size > MAX_SHARE_URIS) break
+                }
             }
         }
 
+        val wasCapped = extracted.size > MAX_SHARE_URIS
         val selfAuthority = "${packageName}.fileprovider"
-        val safeUris = extracted.filter { uri ->
-            val scheme = uri.scheme?.lowercase()
-            val authority = uri.authority?.lowercase()
-            scheme == "content" && !authority.isNullOrBlank() && authority != selfAuthority.lowercase()
-        }
+        val safeUris = filterAndCapShareUris(extracted, selfAuthority, MAX_SHARE_URIS)
 
         if (safeUris.isNotEmpty()) {
-            com.reiux.lumen.util.LumenLogger.i("ShareTarget") { "Received ${safeUris.size} shared media URIs via share sheet" }
-            incomingShareUris.value = safeUris
+            if (wasCapped) {
+                com.reiux.lumen.util.LumenLogger.w("ShareTarget") {
+                    "Share intent exceeded $MAX_SHARE_URIS URIs; capped batch at ${safeUris.size}"
+                }
+                android.widget.Toast.makeText(
+                    this,
+                    getString(R.string.share_uris_capped_toast, MAX_SHARE_URIS),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            val batch = ShareUploadBatch(uris = safeUris)
+            val active = incomingShareBatch.value
+            if (active == null) {
+                com.reiux.lumen.util.LumenLogger.i("ShareTarget") {
+                    "Received ${safeUris.size} shared media URIs via share sheet (batch=${batch.batchId})"
+                }
+                incomingShareBatch.value = batch
+            } else if (batch.uris != active.uris) {
+                com.reiux.lumen.util.LumenLogger.w("ShareTarget") {
+                    "Queued replacement share batch (${safeUris.size} URIs, batch=${batch.batchId}) while active batch=${active.batchId} is awaiting confirmation"
+                }
+                queuedShareReplacement.value = batch
+            }
         } else if (extracted.isNotEmpty()) {
             com.reiux.lumen.util.LumenLogger.w("ShareTarget") { "Rejected ${extracted.size} untrusted share URI(s)" }
         }
@@ -141,7 +188,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         handleShareIntent(intent)
-        if (intent?.getStringExtra("action") == "show_update") {
+        if (isValidInternalUpdateIntent(intent)) {
             pendingShowUpdate.value = true
         }
         val isRestored = savedInstanceState != null
@@ -200,6 +247,7 @@ class MainActivity : ComponentActivity() {
                 if (showUpdateRequest) {
                     pendingShowUpdate.value = false
                     intent?.removeExtra("action")
+                    intent?.removeExtra("internal_token")
                     viewModel.checkAndShowUpdate(this@MainActivity)
                 }
             }
@@ -223,9 +271,10 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalBlurEffectsEnabled provides settings.enableBlurEffects
                 ) {
-                    var showDevDiagnostics by remember { mutableStateOf(false) }
-                var showAboutScreen by remember { mutableStateOf(false) }
-                var showAlbumsScreen by remember { mutableStateOf(false) }
+                    var showDevDiagnostics by rememberSaveable { mutableStateOf(false) }
+                var showAboutScreen by rememberSaveable { mutableStateOf(false) }
+                var showAlbumsScreen by rememberSaveable { mutableStateOf(false) }
+                var showDeviceFoldersScreen by rememberSaveable { mutableStateOf(false) }
                 var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
 
                 val selectedDestination by viewModel.selectedDestination.collectAsState()
@@ -238,7 +287,6 @@ class MainActivity : ComponentActivity() {
                 val completedCount by viewModel.completedCount.collectAsState()
                 val skippedCount by viewModel.skippedCount.collectAsState()
                 val conditionNotice by viewModel.conditionNotice.collectAsState()
-                val isMockMode by viewModel.isMockMode.collectAsState()
                 val isShowcaseMode by viewModel.isShowcaseMode.collectAsState()
                 val isAddingAccount by viewModel.isAddingAccount.collectAsState()
                 val addAccountError by viewModel.addAccountError.collectAsState()
@@ -248,6 +296,11 @@ class MainActivity : ComponentActivity() {
                 val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
                 val simulateMissingAlbum by viewModel.simulateMissingAlbum.collectAsState()
                 val simulateOffline by viewModel.simulateOffline.collectAsState()
+                val deviceFolders by viewModel.deviceFolders.collectAsState()
+                val isDiscoveringFolders by viewModel.isDiscoveringFolders.collectAsState()
+                val albumSyncState by viewModel.albumSyncState.collectAsState()
+                val mockSwipeNudgeNonce by viewModel.mockSwipeNudgeNonce.collectAsState()
+                val scrollToAccountForNudge by viewModel.scrollToAccountForNudge.collectAsState()
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -262,18 +315,20 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val isDarkNow = isSystemInDarkTheme()
-                val lastDarkState = remember { viewModel.getLastSeenDarkState() }
+                var lastDarkState by remember { mutableStateOf(viewModel.getLastSeenDarkState()) }
                 var playLightsOffAnim by remember { mutableStateOf(false) }
 
                 LaunchedEffect(isDarkNow) {
-                    if (lastDarkState != null) {
-                        if (!lastDarkState && isDarkNow) {
+                    val prevDark = lastDarkState
+                    if (prevDark != null) {
+                        if (!prevDark && isDarkNow) {
                             playLightsOffAnim = true
                             com.reiux.lumen.util.LumenLogger.i("EasterEgg") { "Triggered 'Lights off' radial dim overlay" }
-                        } else if (lastDarkState && !isDarkNow) {
+                        } else if (prevDark && !isDarkNow) {
                             com.reiux.lumen.util.EasterEggsManager.triggerLightsOffBoldChoice(this@MainActivity)
                         }
                     }
+                    lastDarkState = isDarkNow
                     viewModel.setLastSeenDarkState(isDarkNow)
                 }
 
@@ -285,8 +340,6 @@ class MainActivity : ComponentActivity() {
 
                 @Composable
                 fun ScreenContent(destination: NavDestination, screenModifier: Modifier = Modifier) {
-                    val remoteAlbums by viewModel.remoteAlbums.collectAsState()
-                    
                     when (destination) {
                         NavDestination.BACKUP -> BackupScreen(
                             selectedAccount = selectedAccount,
@@ -324,6 +377,12 @@ class MainActivity : ComponentActivity() {
                             onClearCompleted = { viewModel.clearCompleted() },
                             onRetryFailed = { viewModel.retryFailedUploads() },
                             onSelectAccount = { viewModel.selectAccount(it.email) },
+                            shouldShowAccountSwipeNudge = !settings.hasShownAccountSwipeNudge,
+                            accountSwipeNudgeNonce = mockSwipeNudgeNonce,
+                            scrollToAccountForNudge = scrollToAccountForNudge,
+                            onConsumedScrollToAccountForNudge = { viewModel.consumeScrollToAccountForNudge() },
+                            onAccountSwipeNudgeShown = { viewModel.markAccountSwipeNudgeShown() },
+                            onReplayAccountSwipeNudge = { viewModel.replayMockAccountSwipeNudge() },
                             onNavigateToAccounts = { 
                                 if (isMockMode && accountBlock != null) {
                                     viewModel.clearMockBlock()
@@ -341,6 +400,7 @@ class MainActivity : ComponentActivity() {
                             onSimulateUpdateAvailable = { viewModel.simulateUpdateAvailable() },
                             onSimulateBlock = { kind -> viewModel.simulateMockBlock(kind) },
                             onClearBlock = { viewModel.clearMockBlock() },
+                            isAlbumsScreenOpen = showAlbumsScreen,
                             modifier = screenModifier
                         )
 
@@ -349,12 +409,22 @@ class MainActivity : ComponentActivity() {
                             accounts = accounts,
                             activeAccount = selectedAccount,
                             remoteAlbums = remoteAlbums,
+                            albumSyncState = albumSyncState,
                             onToggleFolder = { path, email, enabled -> viewModel.toggleFolder(path, email, enabled) },
                             onSetIncludeSubfolders = { path, email, inc -> viewModel.setIncludeSubfolders(path, email, inc) },
                             onAddFolder = { viewModel.addFolder(it) },
                             onRemoveFolder = { path, email -> viewModel.removeFolder(path, email) },
                             onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                             onOpenAlbumManager = { showAlbumsScreen = true },
+                            onOpenDeviceFolders = {
+                                showDeviceFoldersScreen = true
+                            },
+                            onSyncAllAlbums = { viewModel.syncAllAlbums() },
+                            onSyncFolderToAlbum = { folder -> viewModel.syncFolderToAlbum(folder) },
+                            onCancelAlbumSync = { viewModel.cancelAlbumSync() },
+                            onDismissAlbumSync = { viewModel.dismissAlbumSyncState() },
+                            autoSyncAlbums = settings.autoSyncAlbums,
+                            isOnline = isOnline && !simulateOffline,
                             modifier = screenModifier
                         )
 
@@ -385,6 +455,10 @@ class MainActivity : ComponentActivity() {
                             isShowcaseMode = isShowcaseMode,
                             onToggleMockMode = { viewModel.toggleMockMode() },
                             onToggleShowcaseMode = { viewModel.toggleShowcaseMode() },
+                            onReplayAccountSwipeNudge = {
+                                viewModel.replayMockAccountSwipeNudge()
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                            },
                             onUpdateAutoBackup = { viewModel.updateAutoBackup(it) },
                             onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
                             onUpdateChargingOnly = { viewModel.updateChargingOnly(it) },
@@ -395,6 +469,7 @@ class MainActivity : ComponentActivity() {
                             onUpdateNotifications = { viewModel.updateNotifications(it) },
                             onUpdateDeleteAfterBackup = { viewModel.updateDeleteAfterBackup(it) },
                             onUpdateEnableBlurEffects = { viewModel.updateEnableBlurEffects(it) },
+                            onUpdateAutoSyncAlbums = { viewModel.updateAutoSyncAlbums(it) },
                             onUpdateAutoCheckUpdates = { viewModel.setAutoCheckUpdates(it) },
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
                             onUpdateForcedSeason = { viewModel.updateForcedSeason(it) },
@@ -597,6 +672,53 @@ class MainActivity : ComponentActivity() {
                     }
 
                     AnimatedVisibility(
+                        visible = showDeviceFoldersScreen,
+                        enter = slideInHorizontally(
+                            initialOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
+                        ) + fadeIn(animationSpec = spring(dampingRatio = 1f, stiffness = 800f)),
+                        exit = slideOutHorizontally(
+                            targetOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
+                        ) + fadeOut(animationSpec = spring(dampingRatio = 1f, stiffness = 800f))
+                    ) {
+                        PredictiveBackScreenContainer(
+                            enabled = showDeviceFoldersScreen && !showAlbumsScreen,
+                            onProgressUpdate = { predictiveBackProgress = it },
+                            onDismiss = {
+                                predictiveBackProgress = 0f
+                                com.reiux.lumen.util.LumenLogger.i("Navigation") { "Predictive back: Exiting Device Folders screen" }
+                                showDeviceFoldersScreen = false
+                            }
+                        ) {
+                            DeviceFoldersScreen(
+                                discoveredFolders = deviceFolders,
+                                isDiscovering = isDiscoveringFolders,
+                                configuredFolders = settings.folders,
+                                accounts = accounts,
+                                activeAccount = selectedAccount,
+                                remoteAlbums = remoteAlbums,
+                                isMockMode = isMockMode || isShowcaseMode,
+                                onRefresh = { viewModel.discoverDeviceFolders() },
+                                onBack = {
+                                    predictiveBackProgress = 0f
+                                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting Device Folders screen" }
+                                    showDeviceFoldersScreen = false
+                                },
+                                onToggleDiscoveredFolder = { folder, enabled, email ->
+                                    viewModel.toggleDiscoveredFolder(folder, enabled, email)
+                                },
+                                onAssignAlbum = { folder, mode, customName, customNick, email ->
+                                    viewModel.assignAlbumToDiscoveredFolder(folder, mode, customName, customNick, email)
+                                },
+                                onAddCustomFolder = { viewModel.addFolder(it) },
+                                onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
+                                onOpenAlbumManager = { showAlbumsScreen = true }
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(
                         visible = showAlbumsScreen,
                         enter = slideInHorizontally(
                             initialOffsetX = { fullWidth -> fullWidth },
@@ -639,33 +761,76 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    val sharedUris by incomingShareUris
-                    if (!sharedUris.isNullOrEmpty()) {
-                        val urisToUpload = sharedUris!!
-                        com.reiux.lumen.ui.components.ManualUploadDestinationDialog(
-                            itemCount = urisToUpload.size,
-                            accounts = accounts,
-                            activeAccount = selectedAccount,
-                            remoteAlbums = remoteAlbums,
-                            onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
-                            onOpenAlbumManager = { showAlbumsScreen = true },
-                            onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
-                                viewModel.uploadSelectedUris(
-                                    uris = urisToUpload,
-                                    context = this@MainActivity,
-                                    targetAlbumMode = albumMode,
-                                    customAlbumName = customName,
-                                    customAlbumNickname = customNickname,
-                                    targetAccount = targetAccount
-                                )
-                                incomingShareUris.value = null
-                                intent?.action = null
-                            },
-                            onDismiss = {
-                                incomingShareUris.value = null
-                                intent?.action = null
+                    val activeBatch by incomingShareBatch
+                    val pendingReplacement by queuedShareReplacement
+                    if (activeBatch != null && !showAlbumsScreen) {
+                        val batch = activeBatch!!
+                        androidx.compose.runtime.key(batch.batchId) {
+                            var resolvedFileNames by remember(batch.batchId) { mutableStateOf<List<String>>(emptyList()) }
+                            LaunchedEffect(batch.batchId) {
+                                resolvedFileNames = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    batch.uris.take(5).map { uri ->
+                                        com.reiux.lumen.util.MediaFileReader.getFileNameFromUri(this@MainActivity, uri)
+                                    }
+                                }
                             }
-                        )
+                            var replacementFileNames by remember(pendingReplacement?.batchId) { mutableStateOf<List<String>>(emptyList()) }
+                            LaunchedEffect(pendingReplacement?.batchId) {
+                                val replacement = pendingReplacement
+                                replacementFileNames = if (replacement == null) {
+                                    emptyList()
+                                } else {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        replacement.uris.take(3).map { uri ->
+                                            com.reiux.lumen.util.MediaFileReader.getFileNameFromUri(this@MainActivity, uri)
+                                        }
+                                    }
+                                }
+                            }
+
+                            com.reiux.lumen.ui.components.ManualUploadDestinationDialog(
+                                itemCount = batch.uris.size,
+                                fileNames = resolvedFileNames,
+                                pendingReplacementCount = pendingReplacement?.uris?.size ?: 0,
+                                pendingReplacementNames = replacementFileNames,
+                                onSwitchToReplacement = {
+                                    val nextBatch = queuedShareReplacement.value
+                                    if (nextBatch != null) {
+                                        incomingShareBatch.value = nextBatch
+                                        queuedShareReplacement.value = null
+                                    }
+                                },
+                                onDiscardReplacement = {
+                                    queuedShareReplacement.value = null
+                                },
+                                accounts = accounts,
+                                activeAccount = selectedAccount,
+                                remoteAlbums = remoteAlbums,
+                                isOnline = isOnline && !simulateOffline,
+                                onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
+                                onOpenAlbumManager = { showAlbumsScreen = true },
+                                onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
+                                    if (incomingShareBatch.value?.batchId == batch.batchId) {
+                                        viewModel.uploadSelectedUris(
+                                            uris = batch.uris,
+                                            context = this@MainActivity,
+                                            targetAlbumMode = albumMode,
+                                            customAlbumName = customName,
+                                            customAlbumNickname = customNickname,
+                                            targetAccount = targetAccount
+                                        )
+                                        incomingShareBatch.value = null
+                                        queuedShareReplacement.value = null
+                                        intent?.action = null
+                                    }
+                                },
+                                onDismiss = {
+                                    incomingShareBatch.value = null
+                                    queuedShareReplacement.value = null
+                                    intent?.action = null
+                                }
+                            )
+                        }
                     }
 
                     com.reiux.lumen.ui.components.FallingSnowOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.CHRISTMAS)
@@ -711,7 +876,19 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPermissions() {
         val permissions = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val hasMedia = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+            if (!hasMedia) {
+                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             }
@@ -729,6 +906,30 @@ class MainActivity : ComponentActivity() {
 
         if (permissions.isNotEmpty()) {
             requestPermissionLauncher.launch(permissions.toTypedArray())
+        }
+    }
+
+    companion object {
+        internal const val MAX_SHARE_URIS = 100
+
+        internal fun filterAndCapShareUris(
+            uris: List<android.net.Uri>,
+            selfAuthority: String,
+            maxItems: Int = MAX_SHARE_URIS
+        ): List<android.net.Uri> {
+            if (maxItems <= 0) return emptyList()
+            val blockedAuthority = selfAuthority.trim()
+            return uris.asSequence()
+                .filter { uri ->
+                    val scheme = uri.scheme?.lowercase(java.util.Locale.ROOT)
+                    val authority = uri.authority?.trim()
+                    scheme == "content" &&
+                        !authority.isNullOrBlank() &&
+                        !authority.equals(blockedAuthority, ignoreCase = true)
+                }
+                .distinct()
+                .take(maxItems)
+                .toList()
         }
     }
 }

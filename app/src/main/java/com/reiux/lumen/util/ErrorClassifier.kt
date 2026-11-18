@@ -83,18 +83,50 @@ object ErrorClassifier {
         }
 
         // 3. By HTTP status code (httpCode parameter or explicit HTTP 3-digit status in message)
+        val errorText = "${throwable?.message ?: ""} ${rawErrorMsg ?: ""}"
         val parsedHttpCode = httpCode ?: run {
-            val fullText = "${throwable?.message ?: ""} ${rawErrorMsg ?: ""}"
-            val match = Regex("""\bHTTP\s+(\d{3})\b""", RegexOption.IGNORE_CASE).find(fullText)
+            val match = Regex("""\bHTTP\s+(\d{3})\b""", RegexOption.IGNORE_CASE).find(errorText)
             match?.groupValues?.get(1)?.toIntOrNull()
         }
 
         if (parsedHttpCode != null) {
             when (parsedHttpCode) {
-                401, 403 -> return ClassifiedError(
+                401 -> return ClassifiedError(
                     reasonCode = "AUTH_EXPIRED",
                     userMessage = "Google sign-in expired or unauthorized.",
                     suggestedAction = "Sign in again once from the Accounts tab. If Google keeps signing you out, stop and check your Google account directly."
+                )
+                403 -> return when {
+                    errorText.contains("RATE_LIMIT", ignoreCase = true) ||
+                        errorText.contains("rateLimitExceeded", ignoreCase = true) ||
+                        errorText.contains("userRateLimitExceeded", ignoreCase = true) -> ClassifiedError(
+                        reasonCode = "RATE_LIMITED",
+                        userMessage = "Google upload rate limit reached.",
+                        suggestedAction = "Lumen will pause and retry automatically later."
+                    )
+                    errorText.contains("AccountDisabled", ignoreCase = true) ||
+                        errorText.contains("AccountRestricted", ignoreCase = true) ||
+                        errorText.contains("ACCOUNT_DISABLED", ignoreCase = true) -> ClassifiedError(
+                        reasonCode = "ACCOUNT_RESTRICTED",
+                        userMessage = "Google has restricted this account.",
+                        suggestedAction = "Check your Google account directly; do not keep retrying."
+                    )
+                    errorText.contains("ACCESS_TOKEN_EXPIRED", ignoreCase = true) ||
+                        errorText.contains("Token expired", ignoreCase = true) -> ClassifiedError(
+                        reasonCode = "AUTH_EXPIRED",
+                        userMessage = "Google sign-in expired or unauthorized.",
+                        suggestedAction = "Sign in again once from the Accounts tab. If Google keeps signing you out, stop and check your Google account directly."
+                    )
+                    else -> ClassifiedError(
+                        reasonCode = "ACCESS_FORBIDDEN",
+                        userMessage = "Google Photos rejected access (HTTP 403).",
+                        suggestedAction = "Check account permissions or album access, or sign in again from the Accounts tab."
+                    )
+                }
+                404 -> return ClassifiedError(
+                    reasonCode = "NOT_FOUND",
+                    userMessage = "Target album or item was not found in Google Photos.",
+                    suggestedAction = "Choose or create a valid Google Photos album and retry."
                 )
                 429 -> return ClassifiedError(
                     reasonCode = "RATE_LIMITED",
@@ -110,7 +142,6 @@ object ErrorClassifier {
         }
 
         // 4. Exact phrases produced by our own code
-        val errorText = "${throwable?.message ?: ""} ${rawErrorMsg ?: ""}"
 
         if (errorText.contains("Hash calculation failed", ignoreCase = true) ||
             errorText.contains("File integrity check failed", ignoreCase = true)

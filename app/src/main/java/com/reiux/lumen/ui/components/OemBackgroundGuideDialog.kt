@@ -27,7 +27,6 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -115,7 +114,7 @@ fun OemBackgroundGuideDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     OemIntentHelper.Brand.values().forEach { brand ->
-                        FilterChip(
+                        ExpressiveFilterChip(
                             selected = selectedBrand == brand,
                             onClick = { selectedBrand = brand },
                             label = {
@@ -146,7 +145,7 @@ fun OemBackgroundGuideDialog(
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        val steps = getInstructionsForBrand(selectedBrand)
+                        val steps = getInstructionsForBrand(context, selectedBrand)
                         steps.forEachIndexed { index, step ->
                             Row(
                                 modifier = Modifier
@@ -203,8 +202,16 @@ fun OemBackgroundGuideDialog(
 
                 TextButton(
                     onClick = {
-                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://dontkillmyapp.com/"))
-                        context.startActivity(browserIntent)
+                        try {
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://dontkillmyapp.com/"))
+                            context.startActivity(browserIntent)
+                        } catch (_: Exception) {
+                            android.widget.Toast.makeText(
+                                context,
+                                context.getString(R.string.toast_cannot_open_browser),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     },
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
@@ -227,36 +234,36 @@ fun OemBackgroundGuideDialog(
     )
 }
 
-private fun getInstructionsForBrand(brand: OemIntentHelper.Brand): List<Pair<String, String>> {
+private fun getInstructionsForBrand(context: android.content.Context, brand: OemIntentHelper.Brand): List<Pair<String, String>> {
     return when (brand) {
         OemIntentHelper.Brand.XIAOMI -> listOf(
-            "Enable Autostart" to "Open App Info > Permissions > Autostart (or Security app > Autostart) and turn ON for Lumen.",
-            "Set Battery Saver to No Restrictions" to "Open App Info > Battery Saver > Select 'No restrictions' instead of MIUI Battery Saver.",
-            "Lock in Recents" to "Open Recent Apps, long press the Lumen window, and tap the Padlock icon so cleaner tasks won't kill it."
+            context.getString(R.string.oem_step_xiaomi_1_title) to context.getString(R.string.oem_step_xiaomi_1_desc),
+            context.getString(R.string.oem_step_xiaomi_2_title) to context.getString(R.string.oem_step_xiaomi_2_desc),
+            context.getString(R.string.oem_step_xiaomi_3_title) to context.getString(R.string.oem_step_xiaomi_3_desc)
         )
         OemIntentHelper.Brand.SAMSUNG -> listOf(
-            "Set Battery to Unrestricted" to "Open Settings > Apps > Lumen > Battery > Choose 'Unrestricted' instead of Optimized.",
-            "Add to Never Sleeping Apps" to "Open Device Care > Battery > Background usage limits > 'Never sleeping apps' > Tap '+' and add Lumen."
+            context.getString(R.string.oem_step_samsung_1_title) to context.getString(R.string.oem_step_samsung_1_desc),
+            context.getString(R.string.oem_step_samsung_2_title) to context.getString(R.string.oem_step_samsung_2_desc)
         )
-        OemIntentHelper.Brand.ONEPLUS, OemIntentHelper.Brand.OPPO_REALME -> listOf(
-            "Allow Background & Auto-launch" to "Open App Info > Battery usage > Turn ON 'Allow background activity' and 'Allow auto-launch'.",
-            "Turn Off Battery Optimization" to "Open Settings > Battery > More settings > Optimize battery use > Select Lumen > 'Don't optimize'.",
-            "Lock in Recents" to "Open Recent Apps, tap the three dots on Lumen card, and select 'Lock'."
+        OemIntentHelper.Brand.OPPO_REALME -> listOf(
+            context.getString(R.string.oem_step_coloros_1_title) to context.getString(R.string.oem_step_coloros_1_desc),
+            context.getString(R.string.oem_step_coloros_2_title) to context.getString(R.string.oem_step_coloros_2_desc),
+            context.getString(R.string.oem_step_coloros_3_title) to context.getString(R.string.oem_step_coloros_3_desc)
         )
         OemIntentHelper.Brand.HUAWEI_HONOR -> listOf(
-            "Configure App Launch" to "Open Settings > Battery > App launch > Find Lumen > Turn off 'Manage automatically'.",
-            "Enable Manual Switches" to "Toggle ON 'Auto-launch', 'Secondary launch', and 'Run in background'."
+            context.getString(R.string.oem_step_magicos_1_title) to context.getString(R.string.oem_step_magicos_1_desc),
+            context.getString(R.string.oem_step_magicos_2_title) to context.getString(R.string.oem_step_magicos_2_desc)
         )
         OemIntentHelper.Brand.VIVO -> listOf(
-            "Enable Autostart" to "Open Settings > More settings > Applications > Autostart > Turn ON for Lumen.",
-            "High Background Power" to "Open Settings > Battery > High background power consumption > Allow Lumen."
+            context.getString(R.string.oem_step_originos_1_title) to context.getString(R.string.oem_step_originos_1_desc),
+            context.getString(R.string.oem_step_originos_2_title) to context.getString(R.string.oem_step_originos_2_desc)
         )
         OemIntentHelper.Brand.ASUS -> listOf(
-            "Auto-start Manager" to "Open Settings > Battery > PowerMaster (or Mobile Manager) > Auto-start manager > Allow Lumen."
+            context.getString(R.string.oem_step_asus_1_title) to context.getString(R.string.oem_step_asus_1_desc)
         )
         OemIntentHelper.Brand.PIXEL_AOSP -> listOf(
-            "App Battery Usage" to "Open Settings > Apps > Lumen > App battery usage > Select 'Unrestricted'.",
-            "Standard AOSP Optimization" to "Pixel UI and stock Android follow Google standards and run background sync reliably once battery optimization is allowed."
+            context.getString(R.string.oem_step_aosp_1_title) to context.getString(R.string.oem_step_aosp_1_desc),
+            context.getString(R.string.oem_step_aosp_2_title) to context.getString(R.string.oem_step_aosp_2_desc)
         )
     }
 }

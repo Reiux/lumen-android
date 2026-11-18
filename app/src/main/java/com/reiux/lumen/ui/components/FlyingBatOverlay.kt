@@ -45,6 +45,8 @@ fun FlyingBatOverlay(
         label = "flapAnimation"
     )
 
+    val batPath = androidx.compose.runtime.remember { Path() }
+
     Canvas(modifier = modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -56,7 +58,8 @@ fun FlyingBatOverlay(
 
         rotate(degrees = sin(flyProgress * 3 * Math.PI).toFloat() * 12f, pivot = Offset(x, y)) {
             val wingFlap = flapProgress * 8f
-            val path = Path().apply {
+            batPath.reset()
+            batPath.apply {
                 moveTo(x, y)
                 // Left Wing
                 cubicTo(x - 12f, y - 10f + wingFlap, x - 24f, y - 4f + wingFlap, x - 32f, y - 14f + wingFlap)
@@ -66,7 +69,7 @@ fun FlyingBatOverlay(
                 cubicTo(x + 24f, y - 4f + wingFlap, x + 12f, y - 10f + wingFlap, x, y)
                 close()
             }
-            drawPath(path = path, color = batColor)
+            drawPath(path = batPath, color = batColor)
         }
     }
 }
