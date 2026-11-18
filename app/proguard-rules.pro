@@ -1,21 +1,17 @@
-# Keep protobuf generated classes and lite runtime
--keep class com.google.protobuf.** { *; }
+# Keep protobuf-javalite message fields accessed reflectively by MessageSchema
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
 -dontwarn com.google.protobuf.**
--keep class com.reiux.lumen.proto.** { *; }
 
-# Keep data models
--keep class com.reiux.lumen.data.model.** { *; }
+# Keep Android 16+ Live Update reflective methods on NotificationCompat.Builder
+-keepclassmembers class androidx.core.app.NotificationCompat$Builder {
+    public androidx.core.app.NotificationCompat$Builder setRequestPromotedOngoing(boolean);
+    public androidx.core.app.NotificationCompat$Builder setShortCriticalText(java.lang.CharSequence);
+}
 
-# Keep OkHttp & Okio
--dontwarn okhttp3.**
--dontwarn okio.**
--keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
-
-# Keep Coroutines
--keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
-
-# Google Tink / AndroidX Security annotations
+# Google Tink / AndroidX Security compile-only annotations
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
 -dontwarn org.checkerframework.**
+

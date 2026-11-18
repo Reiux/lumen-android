@@ -3,6 +3,8 @@ package com.reiux.lumen.util
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,10 +14,9 @@ object OemIntentHelper {
     enum class Brand(val displayName: String) {
         XIAOMI("Xiaomi / HyperOS"),
         SAMSUNG("Samsung (One UI)"),
-        ONEPLUS("OnePlus (OxygenOS)"),
-        OPPO_REALME("Oppo / Realme (ColorOS)"),
-        HUAWEI_HONOR("Huawei / Honor (EMUI)"),
-        VIVO("Vivo / iQOO (Funtouch OS)"),
+        OPPO_REALME("Oppo / Realme / OnePlus (ColorOS)"),
+        HUAWEI_HONOR("Honor (MagicOS)"),
+        VIVO("Vivo / iQOO (Origin OS)"),
         ASUS("Asus (ZenUI)"),
         PIXEL_AOSP("Google Pixel / AOSP")
     }
@@ -26,8 +27,7 @@ object OemIntentHelper {
             manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco") -> Brand.XIAOMI
             manufacturer.contains("samsung") -> Brand.SAMSUNG
             manufacturer.contains("huawei") || manufacturer.contains("honor") -> Brand.HUAWEI_HONOR
-            manufacturer.contains("oneplus") -> Brand.ONEPLUS
-            manufacturer.contains("oppo") || manufacturer.contains("realme") -> Brand.OPPO_REALME
+            manufacturer.contains("oneplus") || manufacturer.contains("oppo") || manufacturer.contains("realme") -> Brand.OPPO_REALME
             manufacturer.contains("vivo") || manufacturer.contains("iqoo") -> Brand.VIVO
             manufacturer.contains("asus") -> Brand.ASUS
             else -> Brand.PIXEL_AOSP
@@ -41,7 +41,7 @@ object OemIntentHelper {
         when {
             manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco") -> {
                 candidateIntents.add(Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")))
-                candidateIntents.add(Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT))
+                candidateIntents.add(Intent("miui.intent.action.OP_AUTO_START").setPackage("com.miui.securitycenter").addCategory(Intent.CATEGORY_DEFAULT))
                 candidateIntents.add(Intent().setComponent(ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity")))
             }
             manufacturer.contains("huawei") || manufacturer.contains("honor") -> {
@@ -68,9 +68,29 @@ object OemIntentHelper {
             }
         }
 
-        // Try direct OEM activities
+        // Try direct OEM activities (system apps only)
         for (intent in candidateIntents) {
             try {
+                val resolveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.resolveActivity(
+                        intent,
+                        PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                }
+                val activityInfo = resolveInfo?.activityInfo
+                val appInfo = activityInfo?.applicationInfo
+                if (activityInfo == null || appInfo == null) {
+                    continue
+                }
+                if (!isSystemAppFlags(appInfo.flags)) {
+                    LumenLogger.w("OemIntentHelper") {
+                        "Skipping non-system OEM candidate activity: ${activityInfo.packageName}/${activityInfo.name}"
+                    }
+                    continue
+                }
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
                 return true
@@ -88,5 +108,10 @@ object OemIntentHelper {
         } catch (_: Exception) {
             false
         }
+    }
+
+    internal fun isSystemAppFlags(flags: Int): Boolean {
+        return (flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+            (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
     }
 }

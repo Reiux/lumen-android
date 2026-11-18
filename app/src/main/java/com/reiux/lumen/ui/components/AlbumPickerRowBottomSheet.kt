@@ -32,6 +32,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +62,38 @@ sealed class AlbumChoice {
     }
 }
 
+val AlbumChoiceSaver: Saver<AlbumChoice, ArrayList<String>> = Saver(
+    save = { choice ->
+        when (choice) {
+            is AlbumChoice.None -> arrayListOf("none")
+            is AlbumChoice.AutoFolderName -> arrayListOf("auto")
+            is AlbumChoice.ByMonth -> arrayListOf("month")
+            is AlbumChoice.CustomAlbum -> arrayListOf(
+                "custom",
+                choice.album.mediaKey,
+                choice.album.title,
+                choice.album.accountEmail ?: "",
+                choice.album.isMissing.toString()
+            )
+        }
+    },
+    restore = { list ->
+        when (list.firstOrNull()) {
+            "auto" -> AlbumChoice.AutoFolderName
+            "month" -> AlbumChoice.ByMonth
+            "custom" -> AlbumChoice.CustomAlbum(
+                GoogleAlbum(
+                    mediaKey = list.getOrElse(1) { "" },
+                    title = list.getOrElse(2) { "" },
+                    accountEmail = list.getOrElse(3) { "" }.ifBlank { null },
+                    isMissing = list.getOrElse(4) { "false" }.toBoolean()
+                )
+            )
+            else -> AlbumChoice.None
+        }
+    }
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumPickerRow(
@@ -75,14 +109,7 @@ fun AlbumPickerRow(
     onOpenAlbumManager: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showSheet by remember { mutableStateOf(false) }
-    var showAddAlbumSheet by remember { mutableStateOf(false) }
-
-    val accountAlbums = remember(savedAlbums, activeAccount) {
-        val email = activeAccount?.email
-        if (email.isNullOrBlank()) emptyList()
-        else savedAlbums.filter { !it.accountEmail.isNullOrBlank() && it.accountEmail.equals(email, ignoreCase = true) }
-    }
+    var showSheet by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -129,160 +156,190 @@ fun AlbumPickerRow(
     }
 
     if (showSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        AlbumDestinationBottomSheet(
+            choice = choice,
+            onChoiceSelected = {
+                onChoiceSelected(it)
+                showSheet = false
+            },
+            savedAlbums = savedAlbums,
+            accounts = accounts,
+            activeAccount = activeAccount,
+            isManualUploadDialog = isManualUploadDialog,
+            folderDisplayName = folderDisplayName,
+            currentMonthName = currentMonthName,
+            onAddAlbum = onAddAlbum,
+            onOpenAlbumManager = {
+                showSheet = false
+                onOpenAlbumManager()
+            },
+            onDismiss = { showSheet = false }
+        )
+    }
+}
 
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            sheetState = sheetState,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AlbumDestinationBottomSheet(
+    choice: AlbumChoice,
+    onChoiceSelected: (AlbumChoice) -> Unit,
+    savedAlbums: List<GoogleAlbum>,
+    accounts: List<com.reiux.lumen.data.model.GoogleAccount> = emptyList(),
+    activeAccount: com.reiux.lumen.data.model.GoogleAccount? = null,
+    isManualUploadDialog: Boolean = false,
+    folderDisplayName: String? = null,
+    currentMonthName: String? = null,
+    onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> GoogleAlbum = { key, nick, email -> GoogleAlbum(key, nick, email) },
+    onOpenAlbumManager: () -> Unit = {},
+    onDismiss: () -> Unit
+) {
+    var showAddAlbumSheet by rememberSaveable { mutableStateOf(false) }
+    val accountAlbums = remember(savedAlbums, activeAccount) {
+        val email = activeAccount?.email
+        if (email.isNullOrBlank()) savedAlbums
+        else savedAlbums.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        DialogBlurEffect()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            DialogBlurEffect()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            Text(
+                text = stringResource(R.string.album_sheet_dest_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = stringResource(R.string.album_sheet_dest_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                // Option 1: No album
+                item {
+                    RadioChoiceRow(
+                        title = stringResource(R.string.album_choice_none),
+                        subtitle = stringResource(R.string.album_choice_none_sub),
+                        isSelected = choice is AlbumChoice.None,
+                        onClick = { onChoiceSelected(AlbumChoice.None) }
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Option 1: No album
+                // Option 2: Named after folder (folder dialogs only)
+                if (!isManualUploadDialog) {
                     item {
                         RadioChoiceRow(
-                            title = stringResource(R.string.album_choice_none),
-                            subtitle = stringResource(R.string.album_choice_none_sub),
-                            isSelected = choice is AlbumChoice.None,
-                            onClick = {
-                                onChoiceSelected(AlbumChoice.None)
-                                showSheet = false
-                            }
+                            title = stringResource(R.string.album_choice_folder_generic),
+                            subtitle = if (folderDisplayName != null) stringResource(R.string.album_choice_folder_sub, folderDisplayName) else null,
+                            isSelected = choice is AlbumChoice.AutoFolderName,
+                            onClick = { onChoiceSelected(AlbumChoice.AutoFolderName) }
                         )
-                    }
-
-                    // Option 2: Named after folder (folder dialogs only)
-                    if (!isManualUploadDialog) {
-                        item {
-                            RadioChoiceRow(
-                                title = stringResource(R.string.album_choice_folder_generic),
-                                subtitle = if (folderDisplayName != null) stringResource(R.string.album_choice_folder_sub, folderDisplayName) else null,
-                                isSelected = choice is AlbumChoice.AutoFolderName,
-                                onClick = {
-                                    onChoiceSelected(AlbumChoice.AutoFolderName)
-                                    showSheet = false
-                                }
-                            )
-                        }
-                    }
-
-                    // Option 3: By month (Manual upload dialog only)
-                    if (isManualUploadDialog) {
-                        item {
-                            RadioChoiceRow(
-                                title = stringResource(R.string.album_choice_month_generic),
-                                subtitle = if (currentMonthName != null) stringResource(R.string.album_choice_month_sub, currentMonthName) else null,
-                                isSelected = choice is AlbumChoice.ByMonth,
-                                onClick = {
-                                    onChoiceSelected(AlbumChoice.ByMonth)
-                                    showSheet = false
-                                }
-                            )
-                        }
-                    }
-
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    }
-
-                    // Option 4: Saved albums
-                    if (accountAlbums.isEmpty()) {
-                        item {
-                            Text(
-                                text = stringResource(R.string.album_empty_saved),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-                    } else {
-                        items(accountAlbums, key = { "${it.accountEmail}:${it.mediaKey}:${it.title}" }) { album ->
-                            RadioChoiceRow(
-                                title = album.title,
-                                subtitle = album.getSubtitle(),
-                                isSelected = choice is AlbumChoice.CustomAlbum && (choice as AlbumChoice.CustomAlbum).album.mediaKey == album.mediaKey,
-                                onClick = {
-                                    onChoiceSelected(AlbumChoice.CustomAlbum(album))
-                                    showSheet = false
-                                }
-                            )
-                        }
-                    }
-
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    }
-
-                    // Add album & Manage albums
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showAddAlbumSheet = true
-                                }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = stringResource(R.string.album_btn_add_album),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    showSheet = false
-                                    onOpenAlbumManager()
-                                }
-                            ) {
-                                Text(stringResource(R.string.album_btn_manage_albums))
-                            }
-                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // Option 3: By month (Manual upload dialog only)
+                if (isManualUploadDialog) {
+                    item {
+                        RadioChoiceRow(
+                            title = stringResource(R.string.album_choice_month_generic),
+                            subtitle = if (currentMonthName != null) stringResource(R.string.album_choice_month_sub, currentMonthName) else null,
+                            isSelected = choice is AlbumChoice.ByMonth,
+                            onClick = { onChoiceSelected(AlbumChoice.ByMonth) }
+                        )
+                    }
+                }
+
+                item {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
+
+                // Option 4: Saved albums
+                if (accountAlbums.isEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.album_empty_saved),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                } else {
+                    items(accountAlbums, key = { "${it.accountEmail}:${it.mediaKey}:${it.title}" }) { album ->
+                        RadioChoiceRow(
+                            title = album.title,
+                            subtitle = album.getSubtitle(),
+                            isSelected = choice is AlbumChoice.CustomAlbum && choice.album.mediaKey == album.mediaKey,
+                            onClick = { onChoiceSelected(AlbumChoice.CustomAlbum(album)) }
+                        )
+                    }
+                }
+
+                item {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
+
+                // Add album & Manage albums
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showAddAlbumSheet = true
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.album_btn_add_album),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                onOpenAlbumManager()
+                            }
+                        ) {
+                            Text(stringResource(R.string.album_btn_manage_albums))
+                        }
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -146,7 +147,7 @@ object FrameRatePerfMonitor {
 
                 if (frameDurationMs > 32.0) {
                     LumenLogger.w("Perf") {
-                        "[PERF SLOW FRAME] frameDuration=${String.format("%.1f", frameDurationMs)}ms (>32ms) activeAnimations=$activeAnimations"
+                        "[PERF SLOW FRAME] frameDuration=${String.format(Locale.US, "%.1f", frameDurationMs)}ms (>32ms) activeAnimations=$activeAnimations"
                     }
                 }
 
@@ -155,7 +156,7 @@ object FrameRatePerfMonitor {
                     if (activeAnimations.isNotEmpty() && totalFrames > 0) {
                         val fps = (totalFrames * 1000.0) / windowDurationMs
                         LumenLogger.d("Perf") {
-                            "[PERF 1s SAMPLE] fps=${String.format("%.1f", fps)} frames=$totalFrames janky=$jankyFrames worst=${String.format("%.1f", worstFrameMs)}ms activeAnimations=$activeAnimations"
+                            "[PERF 1s SAMPLE] fps=${String.format(Locale.US, "%.1f", fps)} frames=$totalFrames janky=$jankyFrames worst=${String.format(Locale.US, "%.1f", worstFrameMs)}ms activeAnimations=$activeAnimations"
                         }
                     }
                     totalFrames = 0
@@ -271,7 +272,8 @@ object UiSnapshotDumper {
                     appendLine("    |    |- [AddFolderButton] (height=48dp, enabled=true)")
                 }
                 "ACCOUNTS" -> {
-                    appendLine("    |    |- [AccountsList] count=$accountsCount active='$activeAccount'")
+                    val redactedAccount = activeAccount?.let { LumenLogger.redact(it) } ?: "None"
+                    appendLine("    |    |- [AccountsList] count=$accountsCount active='$redactedAccount'")
                     appendLine("    |    |- [AddAccountButton] (height=48dp, enabled=true)")
                 }
                 "SETTINGS" -> {

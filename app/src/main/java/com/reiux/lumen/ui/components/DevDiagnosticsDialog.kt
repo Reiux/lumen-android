@@ -110,14 +110,16 @@ fun DevDiagnosticsDialog(
 
     val testResults = remember { mutableStateListOf<DiagnosticTest>().apply { addAll(initialTests) } }
 
-    fun updateTest(id: String, state: TestState, details: String, durationMs: Long = 0L) {
-        val index = testResults.indexOfFirst { it.id == id }
-        if (index >= 0) {
-            testResults[index] = testResults[index].copy(
-                state = state,
-                details = details,
-                durationMs = durationMs
-            )
+    suspend fun updateTest(id: String, state: TestState, details: String, durationMs: Long = 0L) {
+        withContext(Dispatchers.Main.immediate) {
+            val index = testResults.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                testResults[index] = testResults[index].copy(
+                    state = state,
+                    details = details,
+                    durationMs = durationMs
+                )
+            }
         }
     }
 

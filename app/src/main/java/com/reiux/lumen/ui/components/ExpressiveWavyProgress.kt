@@ -50,6 +50,8 @@ fun ExpressiveWavyLinearProgress(
         label = "phaseAnimation",
     )
 
+    val wavePath = androidx.compose.runtime.remember { Path() }
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -83,7 +85,7 @@ fun ExpressiveWavyLinearProgress(
         // 2. Draw active wavy progress without any overlapping track line underneath
         val activeSegmentWidth = activeEndX - startX
         if (activeSegmentWidth > 1f) {
-            val path = Path()
+            wavePath.reset()
             val stepPx = 2f
             var x = startX
             var first = true
@@ -99,16 +101,16 @@ fun ExpressiveWavyLinearProgress(
                 }
                 val y = centerY + sin(((x - startX) / periodPx) * 2 * PI.toFloat() + phase) * ampPx * taper
                 if (first) {
-                    path.moveTo(x, y)
+                    wavePath.moveTo(x, y)
                     first = false
                 } else {
-                    path.lineTo(x, y)
+                    wavePath.lineTo(x, y)
                 }
                 x += stepPx
             }
 
             drawPath(
-                path = path,
+                path = wavePath,
                 color = color,
                 style = Stroke(width = strokePx, cap = StrokeCap.Round),
             )
@@ -135,6 +137,8 @@ fun ExpressiveWavyIndeterminateProgress(
         label = "phaseAnimation",
     )
 
+    val wavePath = androidx.compose.runtime.remember { Path() }
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -146,7 +150,7 @@ fun ExpressiveWavyIndeterminateProgress(
         val ampPx = waveAmplitude.toPx()
         val periodPx = wavePeriod.toPx().coerceAtLeast(10f)
 
-        val path = Path()
+        wavePath.reset()
         val stepPx = 2f
         var x = strokePx / 2f
         var first = true
@@ -162,16 +166,16 @@ fun ExpressiveWavyIndeterminateProgress(
             }
             val y = centerY + sin((x / periodPx) * 2 * PI.toFloat() + phase) * ampPx * taper
             if (first) {
-                path.moveTo(x, y)
+                wavePath.moveTo(x, y)
                 first = false
             } else {
-                path.lineTo(x, y)
+                wavePath.lineTo(x, y)
             }
             x += stepPx
         }
 
         drawPath(
-            path = path,
+            path = wavePath,
             color = color,
             style = Stroke(width = strokePx, cap = StrokeCap.Round),
         )

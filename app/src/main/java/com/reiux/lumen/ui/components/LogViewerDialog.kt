@@ -2,10 +2,12 @@ package com.reiux.lumen.ui.components
 
 import android.Manifest
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -117,6 +119,9 @@ fun LogViewerDialog(
         val dir = File(context.cacheDir, "logs")
         val file = File(dir, "lumen_crash.log")
         if (file.exists() && file.length() > 0) file else null
+    }
+    val cachedCrashText = remember(crashLogFile) {
+        try { crashLogFile?.readText() } catch (_: Exception) { null }
     }
     var showCrashReportDialog by remember { mutableStateOf(false) }
 
@@ -296,7 +301,7 @@ fun LogViewerDialog(
 }
 
     if (showCrashReportDialog && crashLogFile != null) {
-        val crashText = remember { crashLogFile.readText() }
+        val crashText = cachedCrashText ?: ""
         PredictiveAlertDialog(
             onDismissRequest = { showCrashReportDialog = false },
             title = { Text("Last Session Crash Report", fontWeight = FontWeight.Bold) },
@@ -318,8 +323,7 @@ fun LogViewerDialog(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Crash Report", crashText))
+                        copySensitiveClipboardText(context, "Crash Report", crashText)
                         Toast.makeText(context, "Copied crash report to clipboard", Toast.LENGTH_SHORT).show()
                     }
                 ) {
@@ -340,7 +344,7 @@ fun LogViewerDialog(
             selectedAccount = selectedAccount,
             settings = settings,
             allLogs = allLogs,
-            crashText = crashLogFile?.readText(),
+            crashText = cachedCrashText,
             onDismiss = { showShareReportDialog = false }
         )
     }
@@ -402,21 +406,41 @@ private fun BackupDiagnosticCheckCard(
     settings: BackupSettings?
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var refreshTick by remember { mutableStateOf(0) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                refreshTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val hasAccount = selectedAccount != null
     val hasFolders = settings?.folders?.any { it.enabled } == true
     val autoBackupOn = settings?.autoBackupEnabled == true
-    val wifiOk = settings?.wifiOnly != true || DeviceConditions.isWifiConnected(context)
-    val chargingOk = settings?.chargingOnly != true || DeviceConditions.isDeviceCharging(context)
-    val batteryOptOk = DeviceConditions.isIgnoringBatteryOptimizations(context)
-    val mediaPermOk = if (Build.VERSION.SDK_INT >= 33) {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-    } else {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    val wifiOk = remember(settings?.wifiOnly, refreshTick) { settings?.wifiOnly != true || DeviceConditions.isWifiConnected(context) }
+    val chargingOk = remember(settings?.chargingOnly, refreshTick) { settings?.chargingOnly != true || DeviceConditions.isDeviceCharging(context) }
+    val batteryOptOk = remember(refreshTick) { DeviceConditions.isIgnoringBatteryOptimizations(context) }
+    val mediaPermOk = remember(refreshTick) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
     }
-    val notifPermOk = if (Build.VERSION.SDK_INT >= 33) {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-    } else true
+    val notifPermOk = remember(refreshTick) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else true
+    }
 
     val allPass = hasAccount && hasFolders && autoBackupOn && wifiOk && chargingOk && batteryOptOk && mediaPermOk && notifPermOk
 
@@ -855,14 +879,14 @@ private fun RawLogsTabContent(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val popularTags = listOf("EasterEgg", "Sensors", "UploadEngine", "Watcher", "Network", "UI", "Storage")
-            FilterChip(
+            ExpressiveFilterChip(
                 selected = searchQuery.isEmpty() && opIdFilter.isEmpty(),
                 onClick = { searchQuery = ""; opIdFilter = "" },
                 label = { Text("ALL LOGS", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             )
             popularTags.forEach { tag ->
                 val isSel = searchQuery.equals(tag, ignoreCase = true)
-                FilterChip(
+                ExpressiveFilterChip(
                     selected = isSel,
                     onClick = { searchQuery = if (isSel) "" else tag },
                     label = { Text(tag, fontSize = 10.sp) }
@@ -899,9 +923,8 @@ private fun RawLogsTabContent(
 
             TextButton(
                 onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val text = filteredLogs.joinToString("\n") { it.fullFormattedText }
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Lumen Logs", text))
+                    copySensitiveClipboardText(context, "Lumen Logs", text)
                     Toast.makeText(context, "Copied ${filteredLogs.size} lines to clipboard", Toast.LENGTH_SHORT).show()
                 }
             ) {
@@ -1034,17 +1057,15 @@ private fun ShareReportDialog(
             .takeLast(20)
         if (problems.isNotEmpty()) {
             sb.appendLine("#### Recent Problems (${problems.size})")
-            problems.forEach { p ->
-                val fileName = if (hideFileNames && p.fileName != null) "[file_hidden]" else p.fileName ?: ""
-                sb.appendLine("- [${p.formattedTime}] [${p.reasonCode ?: p.tag}] ${p.userMessage ?: p.message} $fileName")
-            }
+            LumenLogger.formatProblemsForReport(problems, hideFileNames).forEach { sb.appendLine(it) }
             sb.appendLine()
         }
 
         if (!crashText.isNullOrEmpty()) {
             sb.appendLine("#### Last Crash Trace")
             sb.appendLine("```")
-            sb.appendLine(crashText.lines().take(20).joinToString("\n"))
+            val safeCrashText = if (hideFileNames) LumenLogger.redactFileNamesAndPaths(crashText) else crashText
+            sb.appendLine(safeCrashText.lines().take(20).joinToString("\n"))
             sb.appendLine("```")
         }
 
@@ -1077,8 +1098,7 @@ private fun ShareReportDialog(
             TextButton(
                 onClick = {
                     val text = generateReport(asGitHubMarkdown = false)
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Lumen Report", text))
+                    copySensitiveClipboardText(context, "Lumen Report", text)
                     Toast.makeText(context, "Copied report to clipboard", Toast.LENGTH_SHORT).show()
                     onDismiss()
                 }
@@ -1092,4 +1112,15 @@ private fun ShareReportDialog(
             }
         }
     )
+}
+
+private fun copySensitiveClipboardText(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText(label, text)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val extras = clip.description.extras?.let { PersistableBundle(it) } ?: PersistableBundle()
+        extras.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+        clip.description.extras = extras
+    }
+    clipboard.setPrimaryClip(clip)
 }

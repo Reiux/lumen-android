@@ -29,6 +29,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -52,8 +54,12 @@ fun UpdateBottomSheet(
     onDismiss: () -> Unit,
     onUpdateClick: () -> Unit
 ) {
+    val currentIsDownloading by rememberUpdatedState(isDownloading)
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
+        skipPartiallyExpanded = true,
+        confirmValueChange = { targetValue ->
+            !(currentIsDownloading && targetValue == androidx.compose.material3.SheetValue.Hidden)
+        }
     )
     val context = LocalContext.current
 
@@ -63,6 +69,9 @@ fun UpdateBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
+        androidx.activity.compose.BackHandler(enabled = isDownloading) {
+            // Block back press dismissal while an update download is in progress
+        }
         DialogBlurEffect()
         Column(
             modifier = Modifier
@@ -172,11 +181,19 @@ fun UpdateBottomSheet(
                 ExpressiveButton(
                     onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-                            context.startActivity(
-                                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                            )
+                            try {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                )
+                            } catch (_: Exception) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Could not open unknown app sources settings",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         } else {
                             onUpdateClick()
                         }
@@ -207,22 +224,8 @@ fun launchApkInstall(context: Context, apkFile: File) {
         }
         val archiveInfo = getPackageArchiveInfoWithRetry(pm, apkFile, flags)
         if (archiveInfo == null) {
-            // Some OEM builds return null here for perfectly valid APKs. If (and only if)
-            // the file was staged by our own updater in our private cache directory, defer
-            // to the system installer, which still enforces signature continuity for
-            // same-package updates. Anything else fails closed.
-            val updatesDir = runCatching { File(context.cacheDir, "updates").canonicalFile }.getOrNull()
-            val stagedByUs = updatesDir != null &&
-                runCatching { apkFile.canonicalFile.path.startsWith(updatesDir.path + File.separator) }.getOrDefault(false) &&
-                apkFile.name.startsWith("lumen_update_") &&
-                apkFile.name.endsWith(".apk")
-            if (!stagedByUs) {
-                LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath} outside the private updates dir; refusing to install" }
-                android.widget.Toast.makeText(context, "Security check failed: could not verify update package", android.widget.Toast.LENGTH_LONG).show()
-                return
-            }
-            LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath}; deferring to the system installer" }
-            launchInstaller(context, apkFile)
+            LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath}; refusing to install unverified archive" }
+            android.widget.Toast.makeText(context, "Security check failed: could not verify update package", android.widget.Toast.LENGTH_LONG).show()
             return
         }
         val expectedPackage = context.packageName.removeSuffix(".dev")

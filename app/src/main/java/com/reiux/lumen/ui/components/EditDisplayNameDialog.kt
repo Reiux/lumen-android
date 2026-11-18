@@ -63,7 +63,7 @@ fun EditDisplayNameDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.accounts_display_name_label)) },
-                    placeholder = { Text("e.g. Personal or Work") },
+                    placeholder = { Text(stringResource(R.string.dialog_edit_display_name_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
