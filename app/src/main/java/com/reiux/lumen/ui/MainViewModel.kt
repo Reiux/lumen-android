@@ -1287,6 +1287,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 LocalMediaFolder("/sdcard/Pictures/Screenshots", "Screenshots", 342, 342, 0, null, nowSec - 900),
                 LocalMediaFolder("/sdcard/Pictures/Snapseed", "Snapseed", 58, 58, 0, null, nowSec - 3600),
                 LocalMediaFolder("/sdcard/Pictures/Instagram", "Instagram", 184, 170, 14, null, nowSec - 7200),
+                LocalMediaFolder("/sdcard/Movies/Telegram", "Telegram", 24, 0, 24, null, nowSec - 10800),
+                LocalMediaFolder("/sdcard/Pictures/Telegram", "Telegram", 62, 62, 0, null, nowSec - 12600),
                 LocalMediaFolder("/sdcard/Download", "Download", 47, 41, 6, null, nowSec - 14400)
             )
             return

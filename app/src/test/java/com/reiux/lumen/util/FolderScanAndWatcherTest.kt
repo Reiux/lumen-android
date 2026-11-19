@@ -101,4 +101,52 @@ class FolderScanAndWatcherTest {
             MediaFileReader.toShortDisplayPath("/storage/emulated/0/Pictures/Snapseed/")
         )
     }
+
+    @Test
+    fun folderMediaKindClassifiesPhotosVideosMixedAndSubfolders() {
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.PHOTOS,
+            com.reiux.lumen.ui.components.resolveFolderMediaKind(imageCount = 12, videoCount = 0)
+        )
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.VIDEOS,
+            com.reiux.lumen.ui.components.resolveFolderMediaKind(imageCount = 0, videoCount = 5)
+        )
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.MEDIA,
+            com.reiux.lumen.ui.components.resolveFolderMediaKind(imageCount = 12, videoCount = 5)
+        )
+        assertEquals(
+            null,
+            com.reiux.lumen.ui.components.resolveFolderMediaKind(imageCount = 0, videoCount = 0)
+        )
+
+        val discovered = listOf(
+            LocalMediaFolder("/storage/emulated/0/Pictures/Telegram", "Telegram", 20, 20, 0, null, 100L),
+            LocalMediaFolder("/storage/emulated/0/Movies/Telegram", "Telegram", 8, 0, 8, null, 200L),
+            LocalMediaFolder("/storage/emulated/0/Movies/Telegram/Clips", "Clips", 3, 3, 0, null, 300L)
+        )
+
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.PHOTOS,
+            com.reiux.lumen.ui.components.resolveFolderMediaKindForPath(
+                BackupFolder("/storage/emulated/0/Pictures/Telegram", "Telegram", true, includeSubfolders = false),
+                discovered
+            )
+        )
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.VIDEOS,
+            com.reiux.lumen.ui.components.resolveFolderMediaKindForPath(
+                BackupFolder("/storage/emulated/0/Movies/Telegram", "Telegram", true, includeSubfolders = false),
+                discovered
+            )
+        )
+        assertEquals(
+            com.reiux.lumen.ui.components.FolderMediaKind.MEDIA,
+            com.reiux.lumen.ui.components.resolveFolderMediaKindForPath(
+                BackupFolder("/storage/emulated/0/Movies/Telegram", "Telegram", true, includeSubfolders = true),
+                discovered
+            )
+        )
+    }
 }

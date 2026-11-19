@@ -241,7 +241,11 @@ fun AlbumDestinationBottomSheet(
                     item {
                         RadioChoiceRow(
                             title = stringResource(R.string.album_choice_folder_generic),
-                            subtitle = if (folderDisplayName != null) stringResource(R.string.album_choice_folder_sub, folderDisplayName) else null,
+                            subtitle = if (folderDisplayName != null) {
+                                stringResource(R.string.album_choice_folder_sub, folderDisplayName)
+                            } else {
+                                stringResource(R.string.album_choice_folder_sub_generic)
+                            },
                             isSelected = choice is AlbumChoice.AutoFolderName,
                             onClick = { onChoiceSelected(AlbumChoice.AutoFolderName) }
                         )

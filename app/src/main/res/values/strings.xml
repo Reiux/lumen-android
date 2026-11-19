@@ -17,6 +17,9 @@
     <string name="label_include_subfolders">Include subfolders</string>
     <string name="helper_include_subfolders">Also back up photos and videos in folders inside this one</string>
     <string name="tag_subfolders">+ subfolders</string>
+    <string name="tag_media_photos">Photos</string>
+    <string name="tag_media_videos">Videos</string>
+    <string name="tag_media_mixed">Media</string>
     <!-- Account Risk & Safety Strings -->
     <string name="account_risk_title">Heads up</string>
     <string name="account_risk_body">Lumen is unofficial and may violate Google\'s Terms of Service. Google can restrict or disable an account, which can also lock you out of Gmail and Drive. Use an account you can afford to lose, and keep your original photos.</string>
@@ -464,7 +467,8 @@
     <string name="album_choice_none_sub">Save to main Google Photos timeline</string>
     <string name="album_choice_folder">Named after folder (%1$s)</string>
     <string name="album_choice_folder_generic">Named after the folder</string>
-    <string name="album_choice_folder_sub">Album name: \'%1$s\'</string>
+    <string name="album_choice_folder_sub">Album name: \'%1$s\'. Adds to an existing album if one has the same name.</string>
+    <string name="album_choice_folder_sub_generic">Adds to an existing album if one has the same name.</string>
     <string name="album_choice_month">By month (%1$s)</string>
     <string name="album_choice_month_generic">By month</string>
     <string name="album_choice_month_sub">Album name: \'Uploads %1$s\'</string>

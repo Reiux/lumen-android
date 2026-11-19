@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -103,6 +104,7 @@ import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
+import com.reiux.lumen.ui.components.FolderMediaTypeChip
 import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
@@ -111,6 +113,7 @@ import com.reiux.lumen.ui.components.isAllowedBackupFolderPath
 import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.rememberHapticClick
 import com.reiux.lumen.ui.components.requiresAllFilesPermission
+import com.reiux.lumen.ui.components.resolveFolderMediaKind
 import com.reiux.lumen.util.LocalMediaFolder
 import com.reiux.lumen.util.MediaFileReader
 import kotlinx.coroutines.delay
@@ -260,7 +263,7 @@ fun DeviceFoldersScreen(
         }
     }
 
-    val filteredFolders = remember(discoveredFolders, searchQuery, sortMode) {
+    val filteredFolders = remember(discoveredFolders, configuredFolders, targetEmail, searchQuery, sortMode) {
         val q = searchQuery.trim()
         val matched = if (q.isEmpty()) {
             discoveredFolders
@@ -270,10 +273,17 @@ fun DeviceFoldersScreen(
                     MediaFileReader.toShortDisplayPath(it.path).contains(q, ignoreCase = true)
             }
         }
-        when (sortMode) {
-            DeviceFolderSort.RECENT -> matched.sortedByDescending { it.latestDateAddedSec }
-            DeviceFolderSort.MOST_ITEMS -> matched.sortedByDescending { it.mediaCount }
+        val comparator = when (sortMode) {
+            DeviceFolderSort.RECENT ->
+                compareByDescending<LocalMediaFolder> { findConfiguredMatch(it)?.enabled == true }
+                    .thenByDescending { it.latestDateAddedSec }
+                    .thenByDescending { it.mediaCount }
+            DeviceFolderSort.MOST_ITEMS ->
+                compareByDescending<LocalMediaFolder> { findConfiguredMatch(it)?.enabled == true }
+                    .thenByDescending { it.mediaCount }
+                    .thenByDescending { it.latestDateAddedSec }
         }
+        matched.sortedWith(comparator)
     }
 
     val enabledCount = remember(discoveredFolders, configuredFolders, targetEmail) {
@@ -551,6 +561,7 @@ fun DeviceFoldersScreen(
                         folders = filteredFolders,
                         isDiscovering = isDiscovering,
                         searchQuery = searchQuery,
+                        sortMode = sortMode,
                         findMatch = rememberedFindMatch,
                         remoteAlbums = remoteAlbums,
                         onToggle = handleFolderToggle,
@@ -585,6 +596,7 @@ fun DeviceFoldersScreen(
                         folders = filteredFolders,
                         isDiscovering = isDiscovering,
                         searchQuery = searchQuery,
+                        sortMode = sortMode,
                         findMatch = rememberedFindMatch,
                         remoteAlbums = remoteAlbums,
                         onToggle = handleFolderToggle,
@@ -710,11 +722,23 @@ private fun DeviceFoldersListContent(
     folders: List<LocalMediaFolder>,
     isDiscovering: Boolean,
     searchQuery: String,
+    sortMode: DeviceFolderSort,
     findMatch: (LocalMediaFolder) -> BackupFolder?,
     remoteAlbums: List<GoogleAlbum>,
     onToggle: (LocalMediaFolder, Boolean) -> Unit,
     onPickAlbum: (LocalMediaFolder) -> Unit
 ) {
+    val listState = rememberLazyListState()
+    var lastSortMode by remember { mutableStateOf(sortMode) }
+    var lastSearchQuery by remember { mutableStateOf(searchQuery) }
+    LaunchedEffect(sortMode, searchQuery) {
+        if (lastSortMode != sortMode || lastSearchQuery != searchQuery) {
+            lastSortMode = sortMode
+            lastSearchQuery = searchQuery
+            listState.scrollToItem(0)
+        }
+    }
+
     if (isDiscovering && folders.isEmpty()) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -757,6 +781,7 @@ private fun DeviceFoldersListContent(
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
@@ -772,7 +797,8 @@ private fun DeviceFoldersListContent(
                 position = groupPositionOf(index, folders.size),
                 remoteAlbums = remoteAlbums,
                 onToggle = { next -> onToggle(folder, next) },
-                onPickAlbum = { onPickAlbum(folder) }
+                onPickAlbum = { onPickAlbum(folder) },
+                modifier = Modifier.animateItem()
             )
         }
     }
@@ -785,7 +811,8 @@ private fun DeviceFolderCardItem(
     position: GroupPosition,
     remoteAlbums: List<GoogleAlbum>,
     onToggle: (Boolean) -> Unit,
-    onPickAlbum: () -> Unit
+    onPickAlbum: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isEnabled = configured?.enabled == true
     val cardColor by animateColorAsState(
@@ -808,7 +835,7 @@ private fun DeviceFolderCardItem(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = groupedCardShape(position),
         color = cardColor
     ) {
@@ -878,9 +905,12 @@ private fun DeviceFolderCardItem(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val hasAlbum = albumMode != AlbumTargetMode.NONE
+                val mediaKind = remember(folder.imageCount, folder.videoCount) {
+                    resolveFolderMediaKind(folder.imageCount, folder.videoCount)
+                }
                 val chipInteraction = remember { MutableInteractionSource() }
                 val chipScope = rememberCoroutineScope()
                 val isGesturePressed by rememberExpressivePressed(chipInteraction)
@@ -920,47 +950,59 @@ private fun DeviceFolderCardItem(
                 )
                 val chipShape = RoundedCornerShape(chipCorner)
 
-                Surface(
-                    shape = chipShape,
-                    color = chipContainerColor,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .scale(chipScale)
-                        .minimumInteractiveComponentSize()
-                        .clip(chipShape)
-                        .clickable(
-                            interactionSource = chipInteraction,
-                            indication = LocalIndication.current,
-                            onClick = chipClick
-                        )
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = chipShape,
+                        color = chipContainerColor,
+                        modifier = Modifier
+                            .scale(chipScale)
+                            .minimumInteractiveComponentSize()
+                            .clip(chipShape)
+                            .clickable(
+                                interactionSource = chipInteraction,
+                                indication = LocalIndication.current,
+                                onClick = chipClick
+                            )
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PhotoLibrary,
-                            contentDescription = null,
-                            tint = chipContentColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = albumLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = chipContentColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoLibrary,
+                                contentDescription = null,
+                                tint = chipContentColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = albumLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = chipContentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                }
+
+                if (mediaKind != null) {
+                    FolderMediaTypeChip(
+                        kind = mediaKind,
+                        enabled = isEnabled,
+                        compact = false
+                    )
                 }
             }
         }
     }
 }
 
-private fun hasReadMediaPermission(context: Context): Boolean {
+internal fun hasReadMediaPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||

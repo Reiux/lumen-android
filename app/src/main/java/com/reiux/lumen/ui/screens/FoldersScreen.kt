@@ -47,12 +47,14 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,8 +88,12 @@ import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveWavyIndeterminateProgress
 import com.reiux.lumen.ui.components.ExpressiveWavyLinearProgress
+import com.reiux.lumen.ui.components.FolderMediaKind
+import com.reiux.lumen.ui.components.FolderMediaTypeChip
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.resolveFolderMediaKindForPath
+import com.reiux.lumen.util.LocalMediaFolder
 
 @Composable
 fun FoldersScreen(
@@ -95,6 +101,9 @@ fun FoldersScreen(
     accounts: List<GoogleAccount> = emptyList(),
     activeAccount: GoogleAccount? = null,
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
+    discoveredFolders: List<LocalMediaFolder> = emptyList(),
+    isMockMode: Boolean = false,
+    onDiscoverDeviceFolders: () -> Unit = {},
     albumSyncState: AlbumSyncState = AlbumSyncState.Idle,
     onToggleFolder: (path: String, accountEmail: String?, enabled: Boolean) -> Unit,
     onSetIncludeSubfolders: (path: String, accountEmail: String?, includeSubfolders: Boolean) -> Unit,
@@ -112,6 +121,12 @@ fun FoldersScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    LaunchedEffect(folders.isNotEmpty(), isMockMode) {
+        if (discoveredFolders.isEmpty() && folders.isNotEmpty() && (isMockMode || hasReadMediaPermission(context))) {
+            onDiscoverDeviceFolders()
+        }
+    }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var folderToEdit by rememberSaveable(stateSaver = NullableBackupFolderSaver) { mutableStateOf<BackupFolder?>(null) }
     var folderToRemove by rememberSaveable(stateSaver = NullableBackupFolderSaver) { mutableStateOf<BackupFolder?>(null) }
@@ -267,13 +282,14 @@ fun FoldersScreen(
     var selectedAccountFilter by rememberSaveable { mutableStateOf<String?>(null) }
 
     val filteredFolders = remember(folders, selectedAccountFilter) {
-        if (selectedAccountFilter == null) {
+        val base = if (selectedAccountFilter == null) {
             folders
         } else if (selectedAccountFilter == "unassigned") {
             folders.filter { it.accountEmail.isNullOrBlank() }
         } else {
             folders.filter { it.accountEmail.equals(selectedAccountFilter, ignoreCase = true) }
         }
+        base.sortedByDescending { it.enabled }
     }
 
     val hasAlbumAssignedFolders = remember(folders) {
@@ -345,6 +361,7 @@ fun FoldersScreen(
                         position = groupPositionOf(index, filteredFolders.size),
                         accounts = accounts,
                         remoteAlbums = remoteAlbums,
+                        mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
                         accountsCount = accounts.size,
                         onToggleFolder = onToggleFolder,
                         onRequestAllFilesToggle = { targetFolder ->
@@ -353,7 +370,8 @@ fun FoldersScreen(
                         },
                         onSetIncludeSubfolders = onSetIncludeSubfolders,
                         onEditFolder = { folderToEdit = it },
-                        onRemoveFolder = { folderToRemove = it }
+                        onRemoveFolder = { folderToRemove = it },
+                        modifier = Modifier.animateItem()
                     )
                 }
                 item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -405,6 +423,7 @@ fun FoldersScreen(
                     position = groupPositionOf(index, filteredFolders.size),
                     accounts = accounts,
                     remoteAlbums = remoteAlbums,
+                    mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
                     accountsCount = accounts.size,
                     onToggleFolder = onToggleFolder,
                     onRequestAllFilesToggle = { targetFolder ->
@@ -413,7 +432,8 @@ fun FoldersScreen(
                     },
                     onSetIncludeSubfolders = onSetIncludeSubfolders,
                     onEditFolder = { folderToEdit = it },
-                    onRemoveFolder = { folderToRemove = it }
+                    onRemoveFolder = { folderToRemove = it },
+                    modifier = Modifier.animateItem()
                 )
             }
 
@@ -642,11 +662,16 @@ private fun AlbumSyncStatusCard(
                                 )
                             }
                         }
-                        ExpressiveIconButton(onClick = onDismiss) {
+                        ExpressiveIconButton(
+                            onClick = onDismiss,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = stringResource(R.string.btn_close),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -717,17 +742,19 @@ private fun FolderRowItem(
     position: com.reiux.lumen.ui.components.GroupPosition,
     accounts: List<GoogleAccount> = emptyList(),
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
+    mediaKind: FolderMediaKind? = null,
     accountsCount: Int = 1,
     onToggleFolder: (path: String, accountEmail: String?, enabled: Boolean) -> Unit,
     onRequestAllFilesToggle: (folder: BackupFolder) -> Unit,
     onSetIncludeSubfolders: (path: String, accountEmail: String?, includeSubfolders: Boolean) -> Unit,
     onEditFolder: (BackupFolder) -> Unit,
-    onRemoveFolder: (folder: BackupFolder) -> Unit
+    onRemoveFolder: (folder: BackupFolder) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = groupedCardShape(position),
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
@@ -839,15 +866,23 @@ private fun FolderRowItem(
                 }
             }
 
-            // Row 2: Subfolders chip and Album label
-            val showRow2 = folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE)
+            // Row 2: Media type chip, Subfolders chip, and Album label
+            val showRow2 = mediaKind != null || (folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE))
             if (showRow2) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (folder.includeSubfolders) {
+                    if (mediaKind != null) {
+                        FolderMediaTypeChip(
+                            kind = mediaKind,
+                            enabled = folder.enabled,
+                            compact = true
+                        )
+                    }
+
+                    if (folder.enabled && folder.includeSubfolders) {
                         Surface(
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.primaryContainer
@@ -862,7 +897,7 @@ private fun FolderRowItem(
                         }
                     }
 
-                    if (folder.targetAlbumMode != AlbumTargetMode.NONE) {
+                    if (folder.enabled && folder.targetAlbumMode != AlbumTargetMode.NONE) {
                         val matchingAlbum = remoteAlbums.find {
                             (it.mediaKey == folder.customAlbumName || it.title == folder.customAlbumName) &&
                                 (folder.accountEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank() || it.accountEmail.equals(folder.accountEmail, ignoreCase = true))

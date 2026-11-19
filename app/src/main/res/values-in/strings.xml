@@ -17,6 +17,9 @@
     <string name="label_include_subfolders">Sertakan subfolder</string>
     <string name="helper_include_subfolders">Cadangkan juga foto dan video di dalam subfolder</string>
     <string name="tag_subfolders">+ subfolder</string>
+    <string name="tag_media_photos">Foto</string>
+    <string name="tag_media_videos">Video</string>
+    <string name="tag_media_mixed">Media</string>
     <!-- Account Risk & Safety Strings -->
     <string name="account_risk_title">Perhatian</string>
     <string name="account_risk_body">Lumen adalah aplikasi tidak resmi dan mungkin melanggar Ketentuan Layanan Google. Google dapat membatasi atau menonaktifkan akun, yang juga dapat mengunci Anda dari Gmail dan Drive. Gunakan akun cadangan yang aman, dan selalu simpan foto asli Anda.</string>
@@ -464,7 +467,8 @@
     <string name="album_choice_none_sub">Simpan ke linimasa utama Google Foto</string>
     <string name="album_choice_folder">Sesuai nama folder (%1$s)</string>
     <string name="album_choice_folder_generic">Sesuai nama folder</string>
-    <string name="album_choice_folder_sub">Nama album: \'%1$s\'</string>
+    <string name="album_choice_folder_sub">Nama album: \'%1$s\'. Akan ditambahkan ke album yang ada jika namanya sama.</string>
+    <string name="album_choice_folder_sub_generic">Akan ditambahkan ke album yang ada jika namanya sama.</string>
     <string name="album_choice_month">Berdasarkan bulan (%1$s)</string>
     <string name="album_choice_month_generic">Berdasarkan bulan</string>
     <string name="album_choice_month_sub">Nama album: \'Unggahan %1$s\'</string>
