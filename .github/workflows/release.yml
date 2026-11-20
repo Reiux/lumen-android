@@ -121,7 +121,7 @@ jobs:
           LUMEN_KEYSTORE_PASSWORD: ${{ secrets.LUMEN_KEYSTORE_PASSWORD }}
           LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
           LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
-        run: env -u ANDROID_PREFS_ROOT ./gradlew assembleRelease
+        run: env -u ANDROID_PREFS_ROOT ./gradlew assembleRelease assembleDebug
 
       - name: Cleanup keystore
         if: always()
@@ -156,6 +156,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/lumen-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/lumen-test-debug.apk
 
       - name: Write release notes
         run: |
@@ -190,13 +191,20 @@ jobs:
             echo "::error::Failed to compute SHA-256 digest for dist/lumen-release.apk"
             exit 1
           fi
+          DEBUG_APK_SHA256=$(sha256sum dist/lumen-test-debug.apk | awk '{print $1}')
+          if [ -z "$DEBUG_APK_SHA256" ]; then
+            echo "::error::Failed to compute SHA-256 digest for dist/lumen-test-debug.apk"
+            exit 1
+          fi
 
           echo "" >> dist/notes.md
           echo "### Verification" >> dist/notes.md
           echo "- **Release APK Certificate SHA-256:** \`$CERT_SHA256\`" >> dist/notes.md
+          echo "- \`lumen-test-debug.apk\` is signed with the debug key and is for testing only." >> dist/notes.md
           echo "" >> dist/notes.md
           echo '```text' >> dist/notes.md
           echo "$APK_SHA256  lumen-release.apk" >> dist/notes.md
+          echo "$DEBUG_APK_SHA256  lumen-test-debug.apk" >> dist/notes.md
           echo '```' >> dist/notes.md
 
       - name: Publish
@@ -207,6 +215,7 @@ jobs:
           body_path: dist/notes.md
           files: |
             dist/lumen-release.apk
+            dist/lumen-test-debug.apk
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
