@@ -17,13 +17,16 @@
     <string name="label_include_subfolders">Include subfolders</string>
     <string name="helper_include_subfolders">Also back up photos and videos in folders inside this one</string>
     <string name="tag_subfolders">+ subfolders</string>
+    <string name="tag_media_photos">Photos</string>
+    <string name="tag_media_videos">Videos</string>
+    <string name="tag_media_mixed">Media</string>
     <!-- Account Risk & Safety Strings -->
     <string name="account_risk_title">Heads up</string>
     <string name="account_risk_body">Lumen is unofficial and may violate Google\'s Terms of Service. Google can restrict or disable an account, which can also lock you out of Gmail and Drive. Use an account you can afford to lose, and keep your original photos.</string>
     <string name="account_risk_learn_more">Learn more</string>
     <string name="account_risk_understand">I understand</string>
-    <string name="account_risk_acknowledged">Risks acknowledged — Learn more</string>
-    <string name="account_safety_title">Account Safety &amp; Risks</string>
+    <string name="account_risk_acknowledged">Account safety acknowledged · View details</string>
+    <string name="account_safety_title">Account Safety &amp; Disclosures</string>
     <string name="account_safety_subtitle">Important disclosures regarding Google account restrictions</string>
     <!-- Circuit Breaker Cards & Toasts -->
     <string name="breaker_sign_in_required_title">Sign-in Required</string>
@@ -69,7 +72,7 @@
     <string name="nav_accounts">Accounts</string>
     <string name="nav_settings">Settings</string>
     <!-- Brand Header & Splash -->
-    <string name="app_tagline">Unlimited Cloud Backup</string>
+    <string name="app_tagline">Private Cloud Backup</string>
     <string name="status_counts_to_quota">Counts to Quota</string>
     <string name="status_storage_saver">Storage Saver</string>
     <string name="status_unlimited_original">Original Quality</string>
@@ -120,6 +123,8 @@
     <string name="folders_btn_add">Add Folder</string>
     <string name="folders_empty_title">No Folders Configured</string>
     <string name="folders_empty_subtitle">Tap Add Folder to select directories with photos and videos to back up.</string>
+    <string name="folders_empty_account_title">No Folders for This Account</string>
+    <string name="folders_empty_account_subtitle">Add folders for this account in Device Folders, or reassign an existing folder.</string>
     <string name="folders_status_enabled">Enabled</string>
     <string name="folders_status_disabled">Disabled</string>
     <string name="folders_btn_scan">Scan Device</string>
@@ -146,13 +151,13 @@
     <string name="pref_diagnostics_title">Developer Diagnostics</string>
     <!-- About Screen -->
     <string name="about_title">About Lumen</string>
-    <string name="about_subtitle">Unlimited, private Google Photos backup</string>
+    <string name="about_subtitle">Private Google Photos backup</string>
     <string name="about_github">GitHub Repository</string>
     <string name="about_report_issue">Report an Issue</string>
     <string name="about_dev_unlocked">Developer mode unlocked</string>
     <!-- Onboarding Screen -->
     <string name="onboarding_welcome_title">Welcome to Lumen</string>
-    <string name="onboarding_welcome_desc">Unlimited, private Google Photos backup for your photos and videos.</string>
+    <string name="onboarding_welcome_desc">Private, original-quality Google Photos backup for your photos and videos.</string>
     <string name="onboarding_btn_get_started">Get Started</string>
     <string name="onboarding_btn_next">Next</string>
     <string name="onboarding_btn_back">Back</string>
@@ -172,4 +177,454 @@
     <string name="btn_try_again">Try Again</string>
     <string name="btn_continue">Continue</string>
     <string name="btn_album_manager">Album Manager</string>
+    <string name="btn_got_it">Got it</string>
+    <string name="btn_guide">Guide</string>
+    <string name="btn_view">View</string>
+    <string name="btn_allow">Allow</string>
+
+    <!-- Additional Settings Strings -->
+    <string name="settings_subtitle">Upload preferences and app theme</string>
+    <string name="settings_theme_palette">Theme Palette</string>
+    <string name="settings_accent_palette">Accent Palette</string>
+    <string name="settings_accent_palette_desc">Dynamic Monet color matches your wallpaper by default. Pick any preset to customize.</string>
+    <string name="settings_dev_tools">Developer Tools</string>
+    <string name="settings_blur_dialogs_title">Gaussian Blur on Dialogs &amp; Sheets</string>
+    <string name="settings_blur_dialogs_desc">Use window-level hardware Gaussian blur on dialog and sheet backdrops</string>
+    <string name="settings_showcase_mode_title">Screenshot Showcase Mode</string>
+    <string name="settings_showcase_mode_desc">Freeze UI into static sample data for banner screenshots</string>
+    <string name="settings_mock_sim_title">Frontend Mock Simulation</string>
+    <string name="settings_mock_sim_desc">Run active background upload loops and timers</string>
+    <string name="settings_mock_replay_swipe_nudge_title">Replay Account Swipe Nudge</string>
+    <string name="settings_mock_replay_swipe_nudge_desc">Reset the one-time swipe hint and preview it on the Backup tab</string>
+    <string name="settings_run_diagnostics_title">Run Diagnostics</string>
+    <string name="settings_run_diagnostics_desc">Check endpoints, hashing speed, and permissions</string>
+    <string name="settings_replay_walkthrough_title">Replay Setup Walkthrough</string>
+    <string name="settings_replay_walkthrough_desc">Go through the initial setup screens again</string>
+    <string name="settings_disable_dev_mode_title">Turn Off Developer Mode</string>
+    <string name="settings_disable_dev_mode_desc">Hide developer tools across the app</string>
+    <string name="settings_network_speed_title">Network &amp; Upload Speed</string>
+    <string name="settings_storage_quality_title">Storage &amp; Quality</string>
+    <string name="settings_storage_cleanup_title">Storage Cleanup</string>
+    <string name="settings_updates_title">Updates</string>
+    <string name="settings_about_title">About</string>
+    <string name="pref_storage_saver_sub_compressed">On · Slightly compressed (Pixel 2 profile)</string>
+    <string name="pref_storage_saver_sub_original">Off · Original resolution (Pixel 1 profile)</string>
+    <string name="pref_use_quota_title">Use Account Quota</string>
+    <string name="pref_use_quota_desc">Uploads count against your Google storage quota (Pixel 8 profile)</string>
+    <string name="pref_upload_notifs_title">Upload Notifications</string>
+    <string name="pref_upload_notifs_desc">Show upload progress in the notification shade</string>
+    <string name="pref_delete_after_backup_title">Delete photos from phone after backup</string>
+    <string name="pref_delete_after_backup_desc">Permanently deletes backed up media from this device once confirmed in Google Photos</string>
+    <string name="pref_auto_backup_title">Back up new photos and videos</string>
+    <string name="pref_auto_backup_desc">Automatically back up new files in enabled folders</string>
+    <string name="pref_upload_threads_title">Parallel Upload Threads</string>
+    <string name="pref_upload_threads_desc">Upload multiple photos simultaneously.</string>
+    <string name="pref_oem_guide_title">Manufacturer Background Setup</string>
+    <string name="pref_oem_guide_desc">Guides for MIUI, HyperOS, One UI, and ColorOS</string>
+    <string name="dialog_delete_after_backup_title">Delete original photos from device?</string>
+    <string name="dialog_delete_after_backup_msg">When enabled, photos and videos backed up to Google Photos will be permanently deleted from your phone\'s storage once upload is verified. Make sure you have another copy if needed.</string>
+    <string name="dialog_delete_after_backup_confirm">I Understand, Enable</string>
+    <string name="dialog_storage_saver_info_msg">Storage Saver quality uses Google Photos compression to save storage space while maintaining visual quality. Files are re-encoded by Google upon upload.</string>
+
+    <!-- Additional Accounts Strings -->
+    <string name="dialog_remove_account_desc">Are you sure you want to remove %1$s from Lumen?</string>
+    <string name="dialog_remove_account_affects">This will affect %1$d folders and %2$d albums attached to this account.</string>
+    <string name="accounts_other_title">Other Accounts (%1$d)</string>
+    <string name="accounts_btn_change_avatar">Change Avatar</string>
+    <string name="accounts_btn_rename_short">Rename</string>
+    <string name="toast_cannot_switch_uploading">Cannot switch accounts while uploading</string>
+    <string name="toast_cannot_remove_uploading">Cannot remove an account while uploading</string>
+    <string name="toast_cannot_change_quality_uploading">Cannot change quality while uploading</string>
+    <string name="toast_cannot_change_quota_uploading">Cannot change quota setting while uploading</string>
+
+    <!-- Additional Folders Strings -->
+    <string name="dialog_remove_folder_title">Remove backup folder?</string>
+    <string name="dialog_remove_folder_msg">Lumen will stop monitoring \'%1$s\'. Your local files will stay safe on your device.</string>
+    <string name="filter_all">All (%1$d)</string>
+    <string name="filter_unassigned">Unassigned (%1$d)</string>
+    <string name="folder_album_missing">%1$s (Missing in Google Photos)</string>
+    <string name="folder_unassigned_warning">Unassigned folder: Please choose an account</string>
+
+    <!-- Additional Backup Screen Strings -->
+    <string name="backup_recent_activity">Recent Activity (%1$d)</string>
+    <string name="btn_retry_failed_count">Retry Failed (%1$d)</string>
+    <string name="backup_queue_empty_title">Queue is empty</string>
+    <string name="backup_upload_in_progress_title">Upload in Progress</string>
+    <string name="backup_upload_in_progress_msg">You cannot switch accounts while a backup is actively uploading.\n\nFiles are currently streaming to %1$s.\n\nPlease wait for active uploads to finish or cancel the backup first.</string>
+    <string name="title_album_not_found">Album not found</string>
+    <string name="backup_idle_subtitle">Pick photos and videos to upload, or sync your folders.</string>
+    <string name="backup_queue_count">%1$d items in queue</string>
+    <string name="btn_open_album_manager">Open Album Manager</string>
+    <string name="filter_uploading">Uploading (%1$d)</string>
+    <string name="filter_failed">Failed (%1$d)</string>
+    <string name="filter_done">Done (%1$d)</string>
+
+    <!-- Additional About Screen Strings -->
+    <string name="about_check_updates_title">Check for updates</string>
+    <string name="about_check_updates_desc">Check GitHub for latest release</string>
+    <string name="about_debug_title">Debug</string>
+    <string name="about_save_logs_title">Save Logs</string>
+    <string name="about_save_logs_desc">Save logs to local files on your device</string>
+    <string name="about_export_logs_title">Export Logs</string>
+    <string name="about_export_logs_desc">Share or save a text file of your logs</string>
+    <string name="about_view_live_logs_title">View Live Logs</string>
+    <string name="about_view_live_logs_desc">View live app activity in real time</string>
+    <string name="about_credits_title">Credits &amp; Acknowledgments</string>
+    <string name="about_developer_title">Developer</string>
+    <string name="about_core_protocol_title">Original Core Protocol Logic</string>
+    <string name="about_disclaimer_title">Disclaimer</string>
+    <string name="about_disclaimer_text">Lumen is an independent open-source application and is not affiliated with, endorsed by, or sponsored by Google LLC. Users use this app and services at their own discretion.</string>
+
+    <!-- Albums Screen Strings -->
+    <string name="albums_title">Albums</string>
+    <string name="albums_subtitle">Organize uploaded photos into Google Photos albums</string>
+    <string name="albums_btn_add">Add Album</string>
+    <string name="albums_empty_title">No Albums Yet</string>
+    <string name="albums_empty_desc">Create or link a Google Photos album to back up specific folders directly into them.</string>
+    <string name="dialog_remove_album_title">Remove album?</string>
+    <string name="dialog_remove_album_msg">This will remove \'%1$s\' from Lumen. Photos in Google Photos won\'t be affected.</string>
+    <string name="dialog_edit_album_title">Edit Album Settings</string>
+    <string name="dialog_edit_album_nickname_prompt">Enter a friendly nickname for this album:</string>
+    <string name="dialog_edit_album_nickname_label">Album Nickname</string>
+    <string name="dialog_edit_album_assign_account">Assign Google Account:</string>
+    <string name="albums_tab_paste_link">Paste Link or Key</string>
+    <string name="albums_tab_create_new">Create New Album</string>
+    <string name="albums_field_album_name">Album Name</string>
+    <string name="albums_field_link_or_key">Link or Key</string>
+    <string name="albums_btn_save_album">Save Album</string>
+    <string name="albums_link_help">How do I find my album link or key?</string>
+
+    <!-- Dialog Components Strings -->
+    <string name="add_folder_dialog_title">Add Backup Folder</string>
+    <string name="add_folder_quick_presets">Quick Presets</string>
+    <string name="add_folder_folder_name">Folder Name</string>
+    <string name="edit_folder_dialog_title">Edit Backup Folder</string>
+    <string name="edit_folder_save_changes">Save Changes</string>
+    <string name="update_dialog_title">Update Available</string>
+    <string name="update_dialog_subtitle">Version %1$s is ready to install</string>
+    <string name="update_dialog_changelog">Changelog</string>
+    <string name="update_btn_later">Later</string>
+    <string name="update_btn_update_now">Update Now</string>
+    <string name="update_btn_downloading">Downloading…</string>
+    <string name="manual_upload_title">Upload Photos &amp; Videos</string>
+    <string name="manual_upload_subtitle">Choose upload destination and account</string>
+    <string name="manual_upload_btn_start">Start Upload</string>
+
+    <!-- Onboarding Features -->
+    <string name="onboarding_feat_unlimited_title">Original Quality Uploads</string>
+    <string name="onboarding_feat_unlimited_desc">Back up full-resolution photos and videos directly to Google Photos, or switch to Storage Saver anytime.</string>
+    <string name="onboarding_feat_direct_title">Direct and Private</string>
+    <string name="onboarding_feat_direct_desc">Direct communication between your device and Google Photos. No telemetry or tracking.</string>
+    <string name="onboarding_feat_background_title">Background Backup</string>
+    <string name="onboarding_feat_background_desc">Smart background backup that respects your Wi-Fi and battery settings.</string>
+    <!-- Additional Backup and Status Strings -->
+    <string name="btn_sync_folders">Sync Folders</string>
+    <string name="btn_clear">Clear</string>
+    <string name="filter_no_items_match">No items match this filter</string>
+    <string name="toast_unlocked_prism">Unlocked Prism Rainbow Theme!</string>
+    <string name="account_no_selected">No Account Selected</string>
+    <string name="btn_connect">Connect</string>
+    <string name="btn_switch">Switch</string>
+    <string name="backup_scan_files_found">%1$,d files found — %2$s</string>
+    <string name="backup_scanning_folders">Scanning enabled folders for photos &amp; videos…</string>
+    <string name="backup_paused_no_internet">Backup Paused · No Internet</string>
+    <string name="backup_status_uploading">Uploading…</string>
+    <string name="backup_status_ready">Backup Ready</string>
+    <string name="backup_offline_desc">An active internet connection is required to upload photos and videos to Google Photos. Uploads will resume automatically when connected.</string>
+    <string name="backup_missing_album_desc_uncompleted">The album \"%1$s\" in %2$s no longer exists in Google Photos. Uploads to it were stopped. Remove or replace it in Album Manager.</string>
+    <string name="backup_missing_album_desc_completed">Photos were saved to your main Google Photos timeline, but the target album \"%1$s\" in %2$s no longer exists in Google Photos. Remove or replace it in Album Manager.</string>
+    <string name="backup_paused_condition">Backup is paused (%1$s) and will resume automatically when ready.</string>
+    <string name="status_backed_up">Backed up</string>
+    <string name="status_already_in_photos">Already in Google Photos</string>
+    <string name="status_failed">Failed</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_uploading_bytes">Uploading (%1$s / %2$s)</string>
+    <string name="status_hashing">Hashing…</string>
+    <string name="status_checking_library">Checking library…</string>
+    <string name="status_committing">Committing…</string>
+    <string name="status_queued">Queued</string>
+    <string name="accounts_active_fallback">your active account</string>
+    <string name="dialog_auth_error_title">Authentication Error</string>
+    <string name="dialog_remove_restricted_title">Remove Restricted Account</string>
+    <string name="dialog_remove_restricted_desc">This account has been restricted by Google. Removing it will clear the block in Lumen, but you must check the account\'s status directly with Google before trying to use it again.</string>
+    <string name="btn_remove">Remove</string>
+
+    <!-- Additional About Strings -->
+    <string name="about_source_code_title">Source code</string>
+    <string name="about_source_code_desc">View repository on GitHub</string>
+    <string name="about_licenses_title">Open source licenses</string>
+    <string name="about_licenses_desc">Third-party libraries and licenses</string>
+    <string name="about_force_update_title">Force Update</string>
+    <string name="about_force_update_desc">Reinstall or force update to the latest release</string>
+    <string name="toast_checking_updates">Checking for updates…</string>
+    <string name="toast_cannot_open_browser">Could not open browser</string>
+
+    <!-- Additional Albums Strings -->
+    <string name="btn_rename">Rename</string>
+    <string name="albums_no_account">No account</string>
+    <string name="albums_options_desc">Album options</string>
+    <string name="albums_filter_all">All</string>
+    <string name="albums_error_name_exists">An album with this name already exists.</string>
+    <string name="albums_error_key_exists">This album key or nickname already exists.</string>
+    <string name="albums_error_invalid_key">Please enter a valid Google Photos album link or key.</string>
+    <string name="albums_choose_folder_custom">Choose from File Manager…</string>
+    <string name="albums_change_folder_custom">Change Selected Folder…</string>
+
+    <!-- Additional Manual Upload Strings -->
+    <string name="manual_upload_files_count">Upload Destination (%1$d %2$s)</string>
+    <string name="manual_upload_word_file">file</string>
+    <string name="manual_upload_word_files">files</string>
+    <string name="manual_upload_to_account_label">Upload to Account</string>
+    <string name="manual_upload_choose_destination">Choose where these selected files should be saved in Google Photos:</string>
+    <string name="manual_upload_no_account_toast">No Google account connected. Please sign in first.</string>
+    <string name="manual_upload_no_internet">No Internet</string>
+    <!-- Settings Specific Strings -->
+    <string name="dialog_delete_after_backup_lead">Enabling this option will permanently delete backed up photos and videos from your phone\'s storage to free up space.</string>
+    <string name="dialog_delete_after_backup_bullets">• Photos and videos uploaded after enabling this will be removed from this device once Google Photos confirms the upload.\n• If you delete a photo from Google Photos in the future, it will no longer exist on your phone.\n• Files that failed to upload or haven\'t been backed up yet will never be deleted.</string>
+    <string name="dialog_delete_after_backup_confirm_question">Are you sure you want to enable automatic local deletion?</string>
+    <string name="settings_upload_in_progress_msg">You cannot change the %1$s while an upload is currently running.\n\nChanging quota or compression profiles mid-transfer alters device emulation headers and will corrupt active file chunks or trigger Google storage quota lockouts.\n\nPlease wait for your uploads to finish or cancel the active backup first.</string>
+    <string name="pref_upload_threads_count">%1$d threads</string>
+    <string name="pref_background_activity_title">Allow Background Activity</string>
+    <string name="pref_background_activity_desc">Turn off battery optimization so backups keep running in the background</string>
+    <string name="status_allowed">Allowed</string>
+    <string name="nav_back">Back</string>
+    <string name="btn_add_folder">Add Folder</string>
+    <string name="edit_folder_include_subfolders">Include Subfolders</string>
+    <string name="edit_folder_include_subfolders_desc">Scan files in nested subfolders</string>
+    <string name="dialog_edit_display_name_title">Change Display Name</string>
+    <string name="dialog_edit_display_name_desc">Give this Google account a custom label for easy identification.</string>
+    <string name="accounts_display_name_label">Display Name</string>
+
+    <!-- Dialog & Component Strings -->
+    <string name="update_dialog_default_notes">Bug fixes and improvements.</string>
+    <string name="update_downloading_progress">Downloading update…</string>
+    <string name="update_up_to_date">Lumen is up to date</string>
+
+    <string name="manual_upload_to_google_photos">Upload to Google Photos</string>
+    <string name="manual_upload_to_google_photos_account">Upload to Google Photos • %1$s</string>
+    <string name="manual_upload_no_internet_toast">No internet connection</string>
+    <string name="manual_upload_selected_files_label">Files to upload</string>
+    <string name="manual_upload_more_files">+%1$d more</string>
+    <string name="manual_upload_new_share_banner_title">New share request (%1$d %2$s)</string>
+    <string name="manual_upload_new_share_banner_hint">A different share arrived. Review before switching.</string>
+    <string name="manual_upload_btn_switch">Switch</string>
+    <string name="manual_upload_btn_ignore">Ignore</string>
+    <string name="share_uris_capped_toast">Share limit reached: only the first %1$d files were queued.</string>
+
+    <string name="oem_guide_dialog_title">Keep App Running in Background</string>
+    <string name="oem_guide_dialog_desc">Many phone brands (such as Xiaomi, Samsung, and OnePlus) kill background tasks when apps are swiped away from Recents unless battery restrictions are turned off.</string>
+    <string name="oem_guide_select_brand">Select Device Brand</string>
+    <string name="oem_guide_brand_detected">%1$s (Detected)</string>
+    <string name="oem_guide_brand_instructions">Instructions for %1$s</string>
+    <string name="oem_guide_open_settings">Open Device Settings / App Info</string>
+    <string name="oem_guide_view_full">View full guide on DontKillMyApp.com</string>
+
+    <string name="account_add_dialog_title">Add Google Account</string>
+    <string name="account_paste_credential_hint">Paste a full Lumen credential string (androidId=...&amp;Token=...).</string>
+    <string name="account_paste_token_hint">Enter the oauth_token cookie obtained from Google Embedded Setup.</string>
+    <string name="account_field_credential">Credential string</string>
+    <string name="account_field_oauth">OAuth Token</string>
+    <string name="account_switch_to_oauth">Switch to OAuth Token</string>
+    <string name="account_switch_to_credential">Switch to Credential String</string>
+    <string name="account_btn_connect">Connect</string>
+    <string name="auth_error_title">Authentication Error</string>
+    <string name="divider_or">OR</string>
+
+    <string name="account_safety_point_1">Lumen is unofficial and is not affiliated with Google. It uploads to Google Photos in a way Google did not design for third-party apps.</string>
+    <string name="account_safety_point_2">This may violate Google\'s Terms of Service. Google can sign you out, restrict, or disable an account at any time, and this has happened to users of similar tools.</string>
+    <string name="account_safety_point_3">A disabled Google account can also lock you out of Gmail, Drive, and everything else tied to it.</string>
+    <string name="account_safety_point_4">Use an account you can afford to lose access to. Avoid your main email, or accounts used for work, school or banking.</string>
+    <string name="account_safety_point_5">Do not treat Google Photos as your only copy. Keep your original photos, especially if you enable \"Delete photos from phone after backup\" in Settings.</string>
+    <string name="account_safety_point_6">If Google signs you out or asks you to verify your account, stop and do not keep retrying. Lumen will pause uploads for you.</string>
+    <string name="account_safety_point_7">Each sign-in registers a device on your Google account. Avoid signing in and out repeatedly.</string>
+
+    <string name="upload_paused">Upload Paused</string>
+    <string name="upload_paused_generic">Uploads are paused.</string>
+
+    <string name="album_sheet_title">Add Album</string>
+    <string name="album_segment_paste">Paste Link or Key</string>
+    <string name="album_segment_create">Create New Album</string>
+    <string name="album_label_name">Album Name</string>
+    <string name="album_hint_name">e.g. Vacation 2026</string>
+    <string name="album_err_exists">An album with this name already exists.</string>
+    <string name="album_label_link_key">Link or Key</string>
+    <string name="album_hint_link_key">e.g. photos.google.com/album/AF1Qip...</string>
+    <string name="album_err_key_exists">This album key or nickname already exists.</string>
+    <string name="album_err_invalid_key">Please enter a valid Google Photos album link or key.</string>
+    <string name="album_label_nickname">Album Nickname</string>
+    <string name="album_hint_nickname">e.g. Family Vacation</string>
+    <string name="album_btn_how_find">How do I find my album link or key?</string>
+    <string name="album_btn_save">Save Album</string>
+
+    <string name="album_help_title">Find your album link</string>
+    <string name="album_help_step_1">Tap \"Open Google Photos\" below. Your albums page opens in your browser. Sign in with the same Google account if it asks.</string>
+    <string name="album_help_step_2">Tap the album you want Lumen to use.</string>
+    <string name="album_help_step_3">Tap the address bar at the top of the browser and copy the whole link.</string>
+    <string name="album_help_step_4">Come back to Lumen and paste it into \"Link or Key\".</string>
+    <string name="album_help_nickname_tip">The nickname is only for you. Pick anything you will recognize.</string>
+    <string name="album_help_err_browser">Could not open web browser</string>
+    <string name="album_help_btn_open">Open Google Photos</string>
+
+    <string name="album_choice_none">No album</string>
+    <string name="album_choice_none_sub">Save to main Google Photos timeline</string>
+    <string name="album_choice_folder">Named after folder (%1$s)</string>
+    <string name="album_choice_folder_generic">Named after the folder</string>
+    <string name="album_choice_folder_sub">Album name: \'%1$s\'. Adds to an existing album if one has the same name.</string>
+    <string name="album_choice_folder_sub_generic">Adds to an existing album if one has the same name.</string>
+    <string name="album_choice_month">By month (%1$s)</string>
+    <string name="album_choice_month_generic">By month</string>
+    <string name="album_choice_month_sub">Album name: \'Uploads %1$s\'</string>
+    <string name="album_row_prefix">Album  ·  %1$s</string>
+    <string name="album_desc_select">Select album</string>
+    <string name="album_sheet_dest_title">Select Album Destination</string>
+    <string name="album_empty_saved">No albums yet</string>
+    <string name="album_btn_add_album">Add album</string>
+    <string name="album_btn_manage_albums">Manage albums</string>
+    <string name="album_dropdown_label">Select Target Album</string>
+    <string name="album_dropdown_placeholder">Choose an album…</string>
+    <string name="album_dropdown_empty">No saved albums yet</string>
+
+    <string name="google_signin_title">Sign in with Google</string>
+    <string name="google_signin_connecting">Connecting to Google…</string>
+    <string name="google_signin_subtitle">Sign in to grant backup permission for Google Photos</string>
+
+    <string name="onboarding_btn_configure_brand">Configure %1$s Settings</string>
+    <string name="onboarding_btn_view_brand_guide">View Manufacturer Background Guide</string>
+    <string name="onboarding_switch_or_add_account">Switch or Add Another Account</string>
+
+    <string name="notif_backup_title">Lumen Backup</string>
+    <string name="notif_init">Initializing upload service…</string>
+    <string name="notif_paused">Paused: %1$s</string>
+    <string name="notif_paused_chip">Paused</string>
+    <string name="notif_uploading">Uploading %1$s</string>
+    <string name="notif_checking_file">Checking file…</string>
+    <string name="notif_checking_duplicates">Checking Google Photos for duplicates…</string>
+    <string name="notif_upload_progress">%1$s of %2$s • %3$d%%</string>
+    <string name="notif_saving">Saving to Google Photos…</string>
+    <string name="notif_preparing">Preparing…</string>
+    <string name="notif_channel_name">Lumen Upload Service</string>
+    <string name="notif_channel_desc">Shows live upload progress for photos and videos</string>
+
+    <string name="btn_sign_in_google">Sign In with Google</string>
+    <string name="btn_paste_token_manual">Paste Token or Credential Manually</string>
+    <string name="settings_action_run">Run</string>
+    <string name="settings_action_replay">Replay</string>
+    <string name="settings_force_season_title">Force Theme Season</string>
+    <string name="settings_force_season_desc">Preview festive seasonal theme overlays</string>
+    <string name="settings_action_lock">Lock</string>
+    <string name="settings_action_view">View</string>
+    <string name="settings_about_lumen">About Lumen</string>
+
+    <!-- Device Folders Browser Strings -->
+    <string name="device_folders_title">Device Folders</string>
+    <string name="device_folders_subtitle">Pick folders to back up</string>
+    <string name="device_folders_btn_browse">Browse Device</string>
+    <string name="device_folders_btn_add_custom">Add Custom</string>
+    <string name="device_folders_btn_custom">Custom</string>
+    <string name="device_folders_search_placeholder">Search folders…</string>
+    <string name="device_folders_scanning">Scanning device media folders…</string>
+    <string name="device_folders_empty">No media folders found on this device.</string>
+    <string name="device_folders_no_matches">No folders match \"%1$s\"</string>
+    <string name="device_folders_items_count">%1$,d items</string>
+    <string name="device_folders_permission_title">Media Access Required</string>
+    <string name="device_folders_permission_desc">Allow Lumen to read your photos and videos so it can discover folders on your device.</string>
+    <string name="device_folders_permission_btn">Allow Media Access</string>
+    <string name="device_folders_sort_recent">Recent</string>
+    <string name="device_folders_sort_most">Most items</string>
+    <string name="device_folders_file_manager_fallback">Choose from File Manager…</string>
+    <string name="device_folders_album_none">No album</string>
+    <string name="device_folders_summary_enabled">%1$d of %2$d folders enabled</string>
+
+    <!-- Album Sync Strings -->
+    <string name="btn_sync_albums">Sync Albums</string>
+    <string name="btn_sync_to_album_now">Sync existing photos to album</string>
+    <string name="toast_album_sync_offline">Connect to the internet to sync albums</string>
+    <string name="toast_album_sync_none">Assign an album to at least one enabled folder first</string>
+    <string name="album_sync_in_progress">Syncing \"%1$s\"…</string>
+    <string name="album_sync_progress_detail">%1$,d / %2$,d checked • %3$,d added</string>
+    <string name="album_sync_preparing">Scanning folder files…</string>
+    <string name="album_sync_done_title">Album sync finished</string>
+    <string name="album_sync_done_all_synced">%1$,d backed-up items added to album.</string>
+    <string name="album_sync_done_with_pending">%1$,d backed-up items added to album. %2$,d not uploaded yet. Use Start Backup to upload them.</string>
+    <string name="album_sync_done_only_pending">No backed-up items found yet. %1$,d local items aren\'t uploaded yet. Use Start Backup to upload them.</string>
+    <string name="album_sync_done_nothing">No local photos or videos found to sync.</string>
+    <string name="pref_auto_sync_albums_title">Sync existing photos to albums</string>
+    <string name="pref_auto_sync_albums_desc">Automatically add already-backed-up photos when you assign an album to a folder</string>
+    <string name="pref_sync_albums_now_title">Sync Albums Now</string>
+    <string name="pref_sync_albums_now_desc">Check enabled folders and add already-backed-up photos to their assigned albums</string>
+    <string name="settings_action_sync">Sync</string>
+    <string name="settings_action_syncing">Syncing…</string>
+
+    <!-- Custom Folder, Onboarding, OEM Guide & Account Strings -->
+    <string name="add_folder_custom_header">Custom Folder</string>
+    <string name="add_folder_selected_path">Selected Path</string>
+    <string name="add_folder_hint_name">e.g. Vacation Photos</string>
+    <string name="add_folder_internal_storage">Internal Storage</string>
+    <string name="add_folder_fallback_name">Folder</string>
+    <string name="folders_edit_desc">Edit folder</string>
+
+    <string name="onboarding_btn_set_account_later">Set Up Account Later</string>
+    <string name="onboarding_privacy_title">Account Safety &amp; Privacy</string>
+    <string name="onboarding_privacy_desc_short">Lumen never sees or stores your password. It uses an OAuth token that only permits uploading media directly to Google Photos.</string>
+    <string name="onboarding_privacy_desc">Lumen never sees or stores your password and has no access to your Google Account. It uses an OAuth token that only permits uploading media directly to Google Photos (photos.googleapis.com).</string>
+    <string name="onboarding_permissions_setup_desc">To discover Device Folders and run backups in the background, Lumen needs a few standard permissions.</string>
+    <string name="onboarding_perm_media_title">Photos &amp; Videos</string>
+    <string name="onboarding_perm_notifs_title">Notifications</string>
+    <string name="onboarding_brand_setup_title">%1$s Background Setup</string>
+    <string name="onboarding_oem_xiaomi">Xiaomi / HyperOS requires enabling \'Autostart\' and setting Battery saver to \'No restrictions\' in App Info so backups can run in the background.</string>
+    <string name="onboarding_oem_samsung">Samsung (One UI) requires setting Battery to \'Unrestricted\' and adding Lumen to \'Never sleeping apps\' in Device Care.</string>
+    <string name="onboarding_oem_coloros">Oppo / Realme / OnePlus (ColorOS) requires enabling \'Allow auto-launch\' &amp; \'Allow background activity\' in Battery usage.</string>
+    <string name="onboarding_oem_magicos">Honor (MagicOS) requires setting App Launch to \'Manage manually\' and enabling \'Auto-launch\' and \'Run in background\'.</string>
+    <string name="onboarding_oem_originos">Vivo / iQOO (Origin OS) requires turning on \'Autostart\' and \'High background power consumption\' for Lumen.</string>
+    <string name="onboarding_oem_aosp">Google Pixel / AOSP runs background backups reliably once Allow Background Activity is enabled above.</string>
+    <string name="onboarding_account_google_title">Connect Google Account</string>
+    <string name="onboarding_account_desc">Sign in to the Google account where your backed up photos and videos will be stored.</string>
+    <string name="onboarding_status_ready">Ready</string>
+    <string name="onboarding_folders_hint">You can browse Device Folders, add Custom folders, or link Google Photos albums anytime in the Folders tab.</string>
+    <string name="onboarding_prefs_title">Settings &amp; Accent Palette</string>
+    <string name="onboarding_prefs_desc">Set your upload preferences and pick an Accent Palette.</string>
+    <string name="onboarding_done_title">You\'re all set</string>
+    <string name="onboarding_done_desc">Lumen is ready to back up your photos and videos.</string>
+    <string name="onboarding_done_feat_quality_title">Original Quality Ready</string>
+    <string name="onboarding_done_feat_quality_desc">Full-resolution uploads to Google Photos, with Storage Saver always available in Settings.</string>
+    <string name="onboarding_done_feat_auto_title">Automatic Backup Ready</string>
+    <string name="onboarding_done_feat_auto_desc">Your enabled folders are watched and will automatically back up new photos and videos in the background.</string>
+    <string name="onboarding_done_feat_direct_title">Direct &amp; Private</string>
+    <string name="onboarding_done_feat_direct_desc">All media is uploaded directly from your device to Google Photos.</string>
+
+    <string name="oem_step_xiaomi_1_title">Enable Autostart</string>
+    <string name="oem_step_xiaomi_1_desc">Open App Info &gt; Permissions &gt; Autostart (or Security app &gt; Autostart) and turn ON for Lumen.</string>
+    <string name="oem_step_xiaomi_2_title">Set Battery Saver to No Restrictions</string>
+    <string name="oem_step_xiaomi_2_desc">Open App Info &gt; Battery Saver &gt; Select \'No restrictions\' instead of MIUI Battery Saver.</string>
+    <string name="oem_step_xiaomi_3_title">Lock in Recents</string>
+    <string name="oem_step_xiaomi_3_desc">Open Recent Apps, long press the Lumen window, and tap the Padlock icon so cleaner tasks won\'t kill it.</string>
+    <string name="oem_step_samsung_1_title">Set Battery to Unrestricted</string>
+    <string name="oem_step_samsung_1_desc">Open Settings &gt; Apps &gt; Lumen &gt; Battery &gt; Choose \'Unrestricted\' instead of Optimized.</string>
+    <string name="oem_step_samsung_2_title">Add to Never Sleeping Apps</string>
+    <string name="oem_step_samsung_2_desc">Open Device Care &gt; Battery &gt; Background usage limits &gt; \'Never sleeping apps\' &gt; Tap \'+\' and add Lumen.</string>
+    <string name="oem_step_coloros_1_title">Allow Background &amp; Auto-launch</string>
+    <string name="oem_step_coloros_1_desc">Open App Info &gt; Battery usage &gt; Turn ON \'Allow background activity\' and \'Allow auto-launch\'.</string>
+    <string name="oem_step_coloros_2_title">Turn Off Battery Optimization</string>
+    <string name="oem_step_coloros_2_desc">Open Settings &gt; Battery &gt; More settings &gt; Optimize battery use &gt; Select Lumen &gt; \'Don\'t optimize\'.</string>
+    <string name="oem_step_coloros_3_title">Lock in Recents</string>
+    <string name="oem_step_coloros_3_desc">Open Recent Apps, tap the three dots on the Lumen card, and select \'Lock\'.</string>
+    <string name="oem_step_magicos_1_title">Configure App Launch</string>
+    <string name="oem_step_magicos_1_desc">Open Settings &gt; Battery &gt; App launch &gt; Find Lumen &gt; Turn off \'Manage automatically\'.</string>
+    <string name="oem_step_magicos_2_title">Enable Manual Switches</string>
+    <string name="oem_step_magicos_2_desc">Toggle ON \'Auto-launch\', \'Secondary launch\', and \'Run in background\'.</string>
+    <string name="oem_step_originos_1_title">Enable Autostart</string>
+    <string name="oem_step_originos_1_desc">Open Settings &gt; More settings &gt; Applications &gt; Autostart &gt; Turn ON for Lumen.</string>
+    <string name="oem_step_originos_2_title">High Background Power</string>
+    <string name="oem_step_originos_2_desc">Open Settings &gt; Battery &gt; High background power consumption &gt; Allow Lumen.</string>
+    <string name="oem_step_asus_1_title">Auto-start Manager</string>
+    <string name="oem_step_asus_1_desc">Open Settings &gt; Battery &gt; PowerMaster (or Mobile Manager) &gt; Auto-start manager &gt; Allow Lumen.</string>
+    <string name="oem_step_aosp_1_title">App Battery Usage</string>
+    <string name="oem_step_aosp_1_desc">Open Settings &gt; Apps &gt; Lumen &gt; App battery usage &gt; Select \'Unrestricted\'.</string>
+    <string name="oem_step_aosp_2_title">Standard AOSP Optimization</string>
+    <string name="oem_step_aosp_2_desc">Pixel UI and stock Android follow Google standards and run background backups reliably once battery optimization is allowed.</string>
+
+    <string name="accounts_no_other_connected">No other accounts connected</string>
+    <string name="accounts_upload_active_switch_msg">You cannot switch accounts while an upload is currently running.\n\nFiles are actively streaming to %1$s.\n\nPlease wait for the current upload batch to complete or cancel the backup first.</string>
+    <string name="accounts_upload_active_remove_msg">You cannot remove an account while an upload is currently running.\n\nFiles are actively streaming to %1$s.\n\nPlease wait for the current upload batch to complete or cancel the backup first.</string>
+    <string name="dialog_edit_display_name_hint">e.g. Personal or Work</string>
 </resources>

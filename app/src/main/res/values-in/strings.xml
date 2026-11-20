@@ -17,13 +17,16 @@
     <string name="label_include_subfolders">Sertakan subfolder</string>
     <string name="helper_include_subfolders">Cadangkan juga foto dan video di dalam subfolder</string>
     <string name="tag_subfolders">+ subfolder</string>
+    <string name="tag_media_photos">Foto</string>
+    <string name="tag_media_videos">Video</string>
+    <string name="tag_media_mixed">Media</string>
     <!-- Account Risk & Safety Strings -->
     <string name="account_risk_title">Perhatian</string>
     <string name="account_risk_body">Lumen adalah aplikasi tidak resmi dan mungkin melanggar Ketentuan Layanan Google. Google dapat membatasi atau menonaktifkan akun, yang juga dapat mengunci Anda dari Gmail dan Drive. Gunakan akun cadangan yang aman, dan selalu simpan foto asli Anda.</string>
     <string name="account_risk_learn_more">Pelajari lebih lanjut</string>
     <string name="account_risk_understand">Saya mengerti</string>
-    <string name="account_risk_acknowledged">Risiko dipahami — Pelajari lebih lanjut</string>
-    <string name="account_safety_title">Keamanan &amp; Risiko Akun</string>
+    <string name="account_risk_acknowledged">Keamanan akun dipahami · Lihat detail</string>
+    <string name="account_safety_title">Keamanan Akun &amp; Pengungkapan</string>
     <string name="account_safety_subtitle">Informasi penting mengenai pembatasan akun Google</string>
     <!-- Circuit Breaker Cards & Toasts -->
     <string name="breaker_sign_in_required_title">Perlu Masuk Lagi</string>
@@ -69,7 +72,7 @@
     <string name="nav_accounts">Akun</string>
     <string name="nav_settings">Setelan</string>
     <!-- Brand Header & Splash -->
-    <string name="app_tagline">Pencadangan Cloud Tanpa Batas</string>
+    <string name="app_tagline">Pencadangan Cloud Privat</string>
     <string name="status_counts_to_quota">Mengurangi Kuota</string>
     <string name="status_storage_saver">Penghemat Penyimpanan</string>
     <string name="status_unlimited_original">Kualitas Asli</string>
@@ -120,6 +123,8 @@
     <string name="folders_btn_add">Tambah Folder</string>
     <string name="folders_empty_title">Belum Ada Folder yang Dipilih</string>
     <string name="folders_empty_subtitle">Ketuk Tambah Folder untuk memilih direktori foto dan video yang ingin dicadangkan.</string>
+    <string name="folders_empty_account_title">Tidak Ada Folder untuk Akun Ini</string>
+    <string name="folders_empty_account_subtitle">Tambahkan folder untuk akun ini di Folder Perangkat, atau tetapkan ulang folder yang ada.</string>
     <string name="folders_status_enabled">Aktif</string>
     <string name="folders_status_disabled">Nonaktif</string>
     <string name="folders_btn_scan">Pindai Perangkat</string>
@@ -146,13 +151,13 @@
     <string name="pref_diagnostics_title">Diagnostik Pengembang</string>
     <!-- About Screen -->
     <string name="about_title">Tentang Lumen</string>
-    <string name="about_subtitle">Pencadangan Google Foto tanpa batas &amp; privat</string>
+    <string name="about_subtitle">Pencadangan Google Foto privat</string>
     <string name="about_github">Repositori GitHub</string>
     <string name="about_report_issue">Laporkan Masalah</string>
     <string name="about_dev_unlocked">Opsi pengembang telah aktif</string>
     <!-- Onboarding Screen -->
     <string name="onboarding_welcome_title">Selamat Datang di Lumen</string>
-    <string name="onboarding_welcome_desc">Pencadangan Google Foto tanpa batas dan privat untuk foto dan video Anda.</string>
+    <string name="onboarding_welcome_desc">Pencadangan Google Foto privat dengan kualitas asli untuk foto dan video Anda.</string>
     <string name="onboarding_btn_get_started">Mulai</string>
     <string name="onboarding_btn_next">Lanjut</string>
     <string name="onboarding_btn_back">Kembali</string>
@@ -172,4 +177,454 @@
     <string name="btn_try_again">Coba Lagi</string>
     <string name="btn_continue">Lanjutkan</string>
     <string name="btn_album_manager">Manajer Album</string>
+    <string name="btn_got_it">Mengerti</string>
+    <string name="btn_guide">Panduan</string>
+    <string name="btn_view">Lihat</string>
+    <string name="btn_allow">Izinkan</string>
+
+    <!-- Additional Settings Strings -->
+    <string name="settings_subtitle">Preferensi pengunggahan dan tema aplikasi</string>
+    <string name="settings_theme_palette">Palet Tema</string>
+    <string name="settings_accent_palette">Palet Aksen</string>
+    <string name="settings_accent_palette_desc">Warna Monet dinamis mengikuti wallpaper secara default. Pilih preset apa saja untuk menyesuaikan.</string>
+    <string name="settings_dev_tools">Opsi Pengembang</string>
+    <string name="settings_blur_dialogs_title">Efek Gaussian Blur pada Dialog &amp; Sheet</string>
+    <string name="settings_blur_dialogs_desc">Gunakan efek blur perangkat keras pada latar belakang dialog dan sheet</string>
+    <string name="settings_showcase_mode_title">Mode Showcase Screenshot</string>
+    <string name="settings_showcase_mode_desc">Bekukan UI ke data sampel statis untuk screenshot banner</string>
+    <string name="settings_mock_sim_title">Simulasi Mock Frontend</string>
+    <string name="settings_mock_sim_desc">Jalankan simulasi pengunggahan latar belakang dan timer</string>
+    <string name="settings_mock_replay_swipe_nudge_title">Putar Ulang Petunjuk Geser Akun</string>
+    <string name="settings_mock_replay_swipe_nudge_desc">Atur ulang animasi petunjuk geser akun dan lihat di tab Cadangan</string>
+    <string name="settings_run_diagnostics_title">Jalankan Diagnostik</string>
+    <string name="settings_run_diagnostics_desc">Periksa endpoint, kecepatan hashing, dan perizinan</string>
+    <string name="settings_replay_walkthrough_title">Ulangi Panduan Penyiapan</string>
+    <string name="settings_replay_walkthrough_desc">Buka kembali layar panduan penyiapan awal</string>
+    <string name="settings_disable_dev_mode_title">Nonaktifkan Opsi Pengembang</string>
+    <string name="settings_disable_dev_mode_desc">Sembunyikan opsi pengembang di seluruh aplikasi</string>
+    <string name="settings_network_speed_title">Jaringan &amp; Kecepatan Unggah</string>
+    <string name="settings_storage_quality_title">Penyimpanan &amp; Kualitas</string>
+    <string name="settings_storage_cleanup_title">Pembersihan Penyimpanan</string>
+    <string name="settings_updates_title">Pembaruan</string>
+    <string name="settings_about_title">Tentang</string>
+    <string name="pref_storage_saver_sub_compressed">Aktif · Sedikit dikompresi (profil Pixel 2)</string>
+    <string name="pref_storage_saver_sub_original">Nonaktif · Resolusi asli (profil Pixel 1)</string>
+    <string name="pref_use_quota_title">Gunakan Kuota Akun</string>
+    <string name="pref_use_quota_desc">Unggahan mengurangi kuota penyimpanan Google Anda (profil Pixel 8)</string>
+    <string name="pref_upload_notifs_title">Notifikasi Pengunggahan</string>
+    <string name="pref_upload_notifs_desc">Tampilkan progres pengunggahan di bilah notifikasi</string>
+    <string name="pref_delete_after_backup_title">Hapus foto dari ponsel setelah dicadangkan</string>
+    <string name="pref_delete_after_backup_desc">Menghapus media secara permanen dari perangkat ini setelah dikonfirmasi tersimpan di Google Foto</string>
+    <string name="pref_auto_backup_title">Cadangkan foto dan video baru</string>
+    <string name="pref_auto_backup_desc">Cadangkan file baru secara otomatis di folder yang aktif</string>
+    <string name="pref_upload_threads_title">Thread Pengunggahan Paralel</string>
+    <string name="pref_upload_threads_desc">Unggah beberapa foto sekaligus.</string>
+    <string name="pref_oem_guide_title">Penyiapan Latar Belakang Produsen</string>
+    <string name="pref_oem_guide_desc">Panduan untuk MIUI, HyperOS, One UI, dan ColorOS</string>
+    <string name="dialog_delete_after_backup_title">Hapus foto asli dari perangkat?</string>
+    <string name="dialog_delete_after_backup_msg">Jika diaktifkan, foto dan video yang dicadangkan ke Google Foto akan dihapus secara permanen dari penyimpanan ponsel Anda setelah unggahan terverifikasi. Pastikan Anda memiliki salinan lain jika diperlukan.</string>
+    <string name="dialog_delete_after_backup_confirm">Saya Mengerti, Aktifkan</string>
+    <string name="dialog_storage_saver_info_msg">Kualitas Penghemat Penyimpanan menggunakan kompresi Google Foto untuk menghemat ruang penyimpanan dengan tetap menjaga kualitas visual. File akan dienkode ulang oleh Google saat diunggah.</string>
+
+    <!-- Additional Accounts Strings -->
+    <string name="dialog_remove_account_desc">Apakah Anda yakin ingin menghapus %1$s dari Lumen?</string>
+    <string name="dialog_remove_account_affects">Ini akan memengaruhi %1$d folder dan %2$d album yang terhubung ke akun ini.</string>
+    <string name="accounts_other_title">Akun Lainnya (%1$d)</string>
+    <string name="accounts_btn_change_avatar">Ubah Avatar</string>
+    <string name="accounts_btn_rename_short">Ubah Nama</string>
+    <string name="toast_cannot_switch_uploading">Tidak dapat beralih akun saat pencadangan sedang berlangsung</string>
+    <string name="toast_cannot_remove_uploading">Tidak dapat menghapus akun saat pencadangan sedang berlangsung</string>
+    <string name="toast_cannot_change_quality_uploading">Tidak dapat mengubah kualitas saat pencadangan sedang berlangsung</string>
+    <string name="toast_cannot_change_quota_uploading">Tidak dapat mengubah setelan kuota saat pencadangan sedang berlangsung</string>
+
+    <!-- Additional Folders Strings -->
+    <string name="dialog_remove_folder_title">Hapus folder cadangan?</string>
+    <string name="dialog_remove_folder_msg">Lumen akan berhenti memantau \'%1$s\'. File lokal Anda akan tetap aman di perangkat.</string>
+    <string name="filter_all">Semua (%1$d)</string>
+    <string name="filter_unassigned">Belum Ditetapkan (%1$d)</string>
+    <string name="folder_album_missing">%1$s (Tidak ditemukan di Google Foto)</string>
+    <string name="folder_unassigned_warning">Folder belum ditetapkan: Silakan pilih akun</string>
+
+    <!-- Additional Backup Screen Strings -->
+    <string name="backup_recent_activity">Aktivitas Terbaru (%1$d)</string>
+    <string name="btn_retry_failed_count">Coba Lagi yang Gagal (%1$d)</string>
+    <string name="backup_queue_empty_title">Antrean kosong</string>
+    <string name="backup_upload_in_progress_title">Pencadangan Sedang Berjalan</string>
+    <string name="backup_upload_in_progress_msg">Anda tidak dapat beralih akun saat pencadangan sedang berlangsung.\n\nFile saat ini sedang diunggah ke %1$s.\n\nHarap tunggu hingga unggahan selesai atau batalkan pencadangan terlebih dahulu.</string>
+    <string name="title_album_not_found">Album tidak ditemukan</string>
+    <string name="backup_idle_subtitle">Pilih foto dan video untuk diunggah, atau sinkronkan folder Anda.</string>
+    <string name="backup_queue_count">%1$d item dalam antrean</string>
+    <string name="btn_open_album_manager">Buka Manajer Album</string>
+    <string name="filter_uploading">Mengunggah (%1$d)</string>
+    <string name="filter_failed">Gagal (%1$d)</string>
+    <string name="filter_done">Selesai (%1$d)</string>
+
+    <!-- Additional About Screen Strings -->
+    <string name="about_check_updates_title">Periksa pembaruan</string>
+    <string name="about_check_updates_desc">Periksa rilis terbaru di GitHub</string>
+    <string name="about_debug_title">Debug</string>
+    <string name="about_save_logs_title">Simpan Log</string>
+    <string name="about_save_logs_desc">Simpan log ke file lokal di perangkat Anda</string>
+    <string name="about_export_logs_title">Ekspor Log</string>
+    <string name="about_export_logs_desc">Bagikan atau simpan file teks log Anda</string>
+    <string name="about_view_live_logs_title">Lihat Log Langsung</string>
+    <string name="about_view_live_logs_desc">Lihat aktivitas aplikasi secara real-time</string>
+    <string name="about_credits_title">Kredit &amp; Ucapan Terima Kasih</string>
+    <string name="about_developer_title">Pengembang</string>
+    <string name="about_core_protocol_title">Logika Inti Protokol Asli</string>
+    <string name="about_disclaimer_title">Pernyataan Penafian</string>
+    <string name="about_disclaimer_text">Lumen adalah aplikasi sumber terbuka independen dan tidak berafiliasi dengan, didukung oleh, atau disponsori oleh Google LLC. Pengguna menggunakan aplikasi dan layanan ini atas kebijaksanaan mereka sendiri.</string>
+
+    <!-- Albums Screen Strings -->
+    <string name="albums_title">Album</string>
+    <string name="albums_subtitle">Atur foto yang diunggah ke dalam album Google Foto</string>
+    <string name="albums_btn_add">Tambah Album</string>
+    <string name="albums_empty_title">Belum Ada Album</string>
+    <string name="albums_empty_desc">Buat atau hubungkan album Google Foto untuk mencadangkan folder tertentu langsung ke dalamnya.</string>
+    <string name="dialog_remove_album_title">Hapus album?</string>
+    <string name="dialog_remove_album_msg">Ini akan menghapus \'%1$s\' dari Lumen. Foto di Google Foto tidak akan terpengaruh.</string>
+    <string name="dialog_edit_album_title">Edit Setelan Album</string>
+    <string name="dialog_edit_album_nickname_prompt">Masukkan nama panggilan untuk album ini:</string>
+    <string name="dialog_edit_album_nickname_label">Nama Panggilan Album</string>
+    <string name="dialog_edit_album_assign_account">Tetapkan Akun Google:</string>
+    <string name="albums_tab_paste_link">Tempel Tautan atau Kunci</string>
+    <string name="albums_tab_create_new">Buat Album Baru</string>
+    <string name="albums_field_album_name">Nama Album</string>
+    <string name="albums_field_link_or_key">Tautan atau Kunci</string>
+    <string name="albums_btn_save_album">Simpan Album</string>
+    <string name="albums_link_help">Bagaimana cara menemukan tautan atau kunci album saya?</string>
+
+    <!-- Dialog Components Strings -->
+    <string name="add_folder_dialog_title">Tambah Folder Cadangan</string>
+    <string name="add_folder_quick_presets">Preset Cepat</string>
+    <string name="add_folder_folder_name">Nama Folder</string>
+    <string name="edit_folder_dialog_title">Edit Folder Cadangan</string>
+    <string name="edit_folder_save_changes">Simpan Perubahan</string>
+    <string name="update_dialog_title">Pembaruan Tersedia</string>
+    <string name="update_dialog_subtitle">Versi %1$s siap dipasang</string>
+    <string name="update_dialog_changelog">Catatan Rilis</string>
+    <string name="update_btn_later">Nanti</string>
+    <string name="update_btn_update_now">Perbarui Sekarang</string>
+    <string name="update_btn_downloading">Mengunduh…</string>
+    <string name="manual_upload_title">Unggah Foto &amp; Video</string>
+    <string name="manual_upload_subtitle">Pilih tujuan unggahan dan akun</string>
+    <string name="manual_upload_btn_start">Mulai Unggah</string>
+
+    <!-- Onboarding Features -->
+    <string name="onboarding_feat_unlimited_title">Unggahan Kualitas Asli</string>
+    <string name="onboarding_feat_unlimited_desc">Cadangkan foto dan video resolusi penuh langsung ke Google Foto, atau beralih ke Penghemat Penyimpanan kapan saja.</string>
+    <string name="onboarding_feat_direct_title">Langsung &amp; Privat</string>
+    <string name="onboarding_feat_direct_desc">Komunikasi langsung antara perangkat Anda dan Google Foto. Tanpa telemetri atau pelacakan.</string>
+    <string name="onboarding_feat_background_title">Pencadangan di Latar Belakang</string>
+    <string name="onboarding_feat_background_desc">Pencadangan latar belakang pintar yang mematuhi pengaturan Wi-Fi dan baterai Anda.</string>
+    <!-- Additional Backup and Status Strings -->
+    <string name="btn_sync_folders">Sinkronkan Folder</string>
+    <string name="btn_clear">Hapus</string>
+    <string name="filter_no_items_match">Tidak ada item yang cocok dengan filter ini</string>
+    <string name="toast_unlocked_prism">Membuka Kunci Tema Pelangi Prisma!</string>
+    <string name="account_no_selected">Tidak Ada Akun Terpilih</string>
+    <string name="btn_connect">Hubungkan</string>
+    <string name="btn_switch">Ganti</string>
+    <string name="backup_scan_files_found">%1$,d berkas ditemukan — %2$s</string>
+    <string name="backup_scanning_folders">Memindai folder aktif untuk foto &amp; video…</string>
+    <string name="backup_paused_no_internet">Pencadangan Dijeda · Tidak Ada Internet</string>
+    <string name="backup_status_uploading">Mengunggah…</string>
+    <string name="backup_status_ready">Pencadangan Siap</string>
+    <string name="backup_offline_desc">Koneksi internet aktif diperlukan untuk mengunggah foto dan video ke Google Foto. Unggahan akan dilanjutkan secara otomatis saat terhubung.</string>
+    <string name="backup_missing_album_desc_uncompleted">Album \"%1$s\" di %2$s tidak lagi ada di Google Foto. Unggahan ke album tersebut dihentikan. Hapus atau ganti di Pengelola Album.</string>
+    <string name="backup_missing_album_desc_completed">Foto disimpan ke linimasa utama Google Foto Anda, tetapi album tujuan \"%1$s\" di %2$s tidak lagi ada di Google Foto. Hapus atau ganti di Pengelola Album.</string>
+    <string name="backup_paused_condition">Pencadangan dijeda (%1$s) dan akan dilanjutkan secara otomatis jika sudah siap.</string>
+    <string name="status_backed_up">Telah dicadangkan</string>
+    <string name="status_already_in_photos">Sudah ada di Google Foto</string>
+    <string name="status_failed">Gagal</string>
+    <string name="status_stopped">Dihentikan</string>
+    <string name="status_uploading_bytes">Mengunggah (%1$s / %2$s)</string>
+    <string name="status_hashing">Membuat hash…</string>
+    <string name="status_checking_library">Memeriksa galeri…</string>
+    <string name="status_committing">Menyimpan ke album…</string>
+    <string name="status_queued">Dalam antrean</string>
+    <string name="accounts_active_fallback">akun aktif Anda</string>
+    <string name="dialog_auth_error_title">Kesalahan Autentikasi</string>
+    <string name="dialog_remove_restricted_title">Hapus Akun yang Dibatasi</string>
+    <string name="dialog_remove_restricted_desc">Akun ini telah dibatasi oleh Google. Menghapusnya akan membersihkan pemblokiran di Lumen, namun Anda harus memeriksa status akun langsung di Google sebelum mencoba menggunakannya kembali.</string>
+    <string name="btn_remove">Hapus</string>
+
+    <!-- Additional About Strings -->
+    <string name="about_source_code_title">Kode sumber</string>
+    <string name="about_source_code_desc">Lihat repositori di GitHub</string>
+    <string name="about_licenses_title">Lisensi sumber terbuka</string>
+    <string name="about_licenses_desc">Pustaka dan lisensi pihak ketiga</string>
+    <string name="about_force_update_title">Paksa Pembaruan</string>
+    <string name="about_force_update_desc">Pasang ulang atau paksa perbarui ke versi terbaru</string>
+    <string name="toast_checking_updates">Memeriksa pembaruan…</string>
+    <string name="toast_cannot_open_browser">Tidak dapat membuka peramban</string>
+
+    <!-- Additional Albums Strings -->
+    <string name="btn_rename">Ubah nama</string>
+    <string name="albums_no_account">Tanpa akun</string>
+    <string name="albums_options_desc">Opsi album</string>
+    <string name="albums_filter_all">Semua</string>
+    <string name="albums_error_name_exists">Album dengan nama ini sudah ada.</string>
+    <string name="albums_error_key_exists">Kunci atau nama panggilan album ini sudah ada.</string>
+    <string name="albums_error_invalid_key">Harap masukkan tautan atau kunci album Google Foto yang valid.</string>
+    <string name="albums_choose_folder_custom">Pilih dari Pengelola Berkas…</string>
+    <string name="albums_change_folder_custom">Ganti Folder Terpilih…</string>
+
+    <!-- Additional Manual Upload Strings -->
+    <string name="manual_upload_files_count">Tujuan Unggahan (%1$d %2$s)</string>
+    <string name="manual_upload_word_file">berkas</string>
+    <string name="manual_upload_word_files">berkas</string>
+    <string name="manual_upload_to_account_label">Unggah ke Akun</string>
+    <string name="manual_upload_choose_destination">Pilih tujuan penyimpanan berkas di Google Foto:</string>
+    <string name="manual_upload_no_account_toast">Tidak ada akun Google yang terhubung. Harap masuk terlebih dahulu.</string>
+    <string name="manual_upload_no_internet">Tidak Ada Internet</string>
+    <!-- Settings Specific Strings -->
+    <string name="dialog_delete_after_backup_lead">Mengaktifkan opsi ini akan menghapus foto dan video yang dicadangkan secara permanen dari penyimpanan ponsel Anda untuk menghemat ruang.</string>
+    <string name="dialog_delete_after_backup_bullets">• Foto dan video yang diunggah setelah mengaktifkan opsi ini akan dihapus dari perangkat setelah Google Foto mengonfirmasi unggahan.\n• Jika Anda menghapus foto dari Google Foto di masa mendatang, foto tersebut tidak akan ada lagi di ponsel Anda.\n• Berkas yang gagal diunggah atau belum dicadangkan tidak akan pernah dihapus.</string>
+    <string name="dialog_delete_after_backup_confirm_question">Apakah Anda yakin ingin mengaktifkan penghapusan lokal otomatis?</string>
+    <string name="settings_upload_in_progress_msg">Anda tidak dapat mengubah %1$s saat pengunggahan sedang berlangsung.\n\nMengubah profil kuota atau kompresi saat transfer mengubah header emulasi perangkat dan akan merusak potongan berkas aktif atau memicu penguncian kuota penyimpanan Google.\n\nHarap tunggu hingga unggahan selesai atau batalkan pencadangan aktif terlebih dahulu.</string>
+    <string name="pref_upload_threads_count">%1$d thread</string>
+    <string name="pref_background_activity_title">Izinkan Aktivitas Latar Belakang</string>
+    <string name="pref_background_activity_desc">Matikan pengoptimalan baterai agar pencadangan terus berjalan di latar belakang</string>
+    <string name="status_allowed">Diizinkan</string>
+    <string name="nav_back">Kembali</string>
+    <string name="btn_add_folder">Tambah Folder</string>
+    <string name="edit_folder_include_subfolders">Sertakan Subfolder</string>
+    <string name="edit_folder_include_subfolders_desc">Pindai berkas di dalam subfolder bersarang</string>
+    <string name="dialog_edit_display_name_title">Ubah Nama Tampilan</string>
+    <string name="dialog_edit_display_name_desc">Beri akun Google ini label khusus agar mudah dikenali.</string>
+    <string name="accounts_display_name_label">Nama Tampilan</string>
+
+    <!-- Dialog & Component Strings -->
+    <string name="update_dialog_default_notes">Perbaikan bug dan peningkatan performa.</string>
+    <string name="update_downloading_progress">Mengunduh pembaruan…</string>
+    <string name="update_up_to_date">Lumen sudah versi terbaru</string>
+
+    <string name="manual_upload_to_google_photos">Unggah ke Google Foto</string>
+    <string name="manual_upload_to_google_photos_account">Unggah ke Google Foto • %1$s</string>
+    <string name="manual_upload_no_internet_toast">Tidak ada koneksi internet</string>
+    <string name="manual_upload_selected_files_label">Berkas yang akan diunggah</string>
+    <string name="manual_upload_more_files">+%1$d lainnya</string>
+    <string name="manual_upload_new_share_banner_title">Permintaan berbagi baru (%1$d %2$s)</string>
+    <string name="manual_upload_new_share_banner_hint">Permintaan berbagi lain masuk. Tinjau sebelum beralih.</string>
+    <string name="manual_upload_btn_switch">Ganti</string>
+    <string name="manual_upload_btn_ignore">Abaikan</string>
+    <string name="share_uris_capped_toast">Batas berbagi tercapai: hanya %1$d berkas pertama yang diproses.</string>
+
+    <string name="oem_guide_dialog_title">Biarkan Aplikasi Berjalan di Latar Belakang</string>
+    <string name="oem_guide_dialog_desc">Banyak merek ponsel (seperti Xiaomi, Samsung, dan OnePlus) mematikan tugas latar belakang saat aplikasi dihapus dari Terbaru kecuali pembatasan baterai dinonaktifkan.</string>
+    <string name="oem_guide_select_brand">Pilih Merek Perangkat</string>
+    <string name="oem_guide_brand_detected">%1$s (Terdeteksi)</string>
+    <string name="oem_guide_brand_instructions">Instruksi untuk %1$s</string>
+    <string name="oem_guide_open_settings">Buka Pengaturan Perangkat / Info Aplikasi</string>
+    <string name="oem_guide_view_full">Lihat panduan lengkap di DontKillMyApp.com</string>
+
+    <string name="account_add_dialog_title">Tambah Akun Google</string>
+    <string name="account_paste_credential_hint">Tempel string kredensial Lumen lengkap (androidId=...&amp;Token=...).</string>
+    <string name="account_paste_token_hint">Masukkan kuki oauth_token yang didapat dari Google Embedded Setup.</string>
+    <string name="account_field_credential">String kredensial</string>
+    <string name="account_field_oauth">Token OAuth</string>
+    <string name="account_switch_to_oauth">Ganti ke Token OAuth</string>
+    <string name="account_switch_to_credential">Ganti ke String Kredensial</string>
+    <string name="account_btn_connect">Hubungkan</string>
+    <string name="auth_error_title">Kesalahan Autentikasi</string>
+    <string name="divider_or">ATAU</string>
+
+    <string name="account_safety_point_1">Lumen bersifat tidak resmi dan tidak berafiliasi dengan Google. Aplikasi ini mengunggah ke Google Foto dengan cara yang tidak dirancang Google untuk aplikasi pihak ketiga.</string>
+    <string name="account_safety_point_2">Ini dapat melanggar Ketentuan Layanan Google. Google dapat mengeluarkan, membatasi, atau menonaktifkan akun sewaktu-waktu, dan hal ini pernah dialami pengguna alat serupa.</string>
+    <string name="account_safety_point_3">Akun Google yang dinonaktifkan juga dapat mengunci akses Anda ke Gmail, Drive, dan layanan lain yang terhubung.</string>
+    <string name="account_safety_point_4">Gunakan akun cadangan yang rela Anda lepas jika terjadi pemblokiran. Hindari email utama, atau akun kantor, sekolah, atau perbankan.</string>
+    <string name="account_safety_point_5">Jangan jadikan Google Foto sebagai satu-satunya salinan Anda. Simpan foto asli Anda, terutama jika Anda mengaktifkan \"Hapus foto dari ponsel setelah dicadangkan\" di Pengaturan.</string>
+    <string name="account_safety_point_6">Jika Google mengeluarkan Anda atau meminta verifikasi akun, hentikan dan jangan terus mencoba ulang. Lumen akan menjeda unggahan untuk Anda.</string>
+    <string name="account_safety_point_7">Setiap proses masuk mendaftarkan perangkat pada akun Google Anda. Hindari keluar masuk secara berulang.</string>
+
+    <string name="upload_paused">Unggahan Dijeda</string>
+    <string name="upload_paused_generic">Unggahan sedang dijeda.</string>
+
+    <string name="album_sheet_title">Tambah Album</string>
+    <string name="album_segment_paste">Tempel Tautan atau Kunci</string>
+    <string name="album_segment_create">Buat Album Baru</string>
+    <string name="album_label_name">Nama Album</string>
+    <string name="album_hint_name">mis. Liburan 2026</string>
+    <string name="album_err_exists">Album dengan nama ini sudah ada.</string>
+    <string name="album_label_link_key">Tautan atau Kunci</string>
+    <string name="album_hint_link_key">mis. photos.google.com/album/AF1Qip...</string>
+    <string name="album_err_key_exists">Kunci atau nama panggilan album ini sudah ada.</string>
+    <string name="album_err_invalid_key">Harap masukkan tautan atau kunci album Google Foto yang valid.</string>
+    <string name="album_label_nickname">Nama Panggilan Album</string>
+    <string name="album_hint_nickname">mis. Liburan Keluarga</string>
+    <string name="album_btn_how_find">Bagaimana cara menemukan tautan atau kunci album?</string>
+    <string name="album_btn_save">Simpan Album</string>
+
+    <string name="album_help_title">Temukan tautan album Anda</string>
+    <string name="album_help_step_1">Ketuk \"Buka Google Foto\" di bawah. Halaman album Anda akan terbuka di peramban. Masuk dengan akun Google yang sama jika diminta.</string>
+    <string name="album_help_step_2">Ketuk album yang ingin Anda gunakan untuk Lumen.</string>
+    <string name="album_help_step_3">Ketuk bilah alamat di bagian atas peramban dan salin seluruh tautan.</string>
+    <string name="album_help_step_4">Kembali ke Lumen dan tempelkan ke kolom \"Tautan atau Kunci\".</string>
+    <string name="album_help_nickname_tip">Nama panggilan ini hanya untuk Anda. Pilih nama apa pun yang mudah Anda kenali.</string>
+    <string name="album_help_err_browser">Tidak dapat membuka peramban web</string>
+    <string name="album_help_btn_open">Buka Google Foto</string>
+
+    <string name="album_choice_none">Tanpa album</string>
+    <string name="album_choice_none_sub">Simpan ke linimasa utama Google Foto</string>
+    <string name="album_choice_folder">Sesuai nama folder (%1$s)</string>
+    <string name="album_choice_folder_generic">Sesuai nama folder</string>
+    <string name="album_choice_folder_sub">Nama album: \'%1$s\'. Akan ditambahkan ke album yang ada jika namanya sama.</string>
+    <string name="album_choice_folder_sub_generic">Akan ditambahkan ke album yang ada jika namanya sama.</string>
+    <string name="album_choice_month">Berdasarkan bulan (%1$s)</string>
+    <string name="album_choice_month_generic">Berdasarkan bulan</string>
+    <string name="album_choice_month_sub">Nama album: \'Unggahan %1$s\'</string>
+    <string name="album_row_prefix">Album  ·  %1$s</string>
+    <string name="album_desc_select">Pilih album</string>
+    <string name="album_sheet_dest_title">Pilih Tujuan Album</string>
+    <string name="album_empty_saved">Belum ada album</string>
+    <string name="album_btn_add_album">Tambah album</string>
+    <string name="album_btn_manage_albums">Kelola album</string>
+    <string name="album_dropdown_label">Pilih Album Tujuan</string>
+    <string name="album_dropdown_placeholder">Pilih album…</string>
+    <string name="album_dropdown_empty">Belum ada album tersimpan</string>
+
+    <string name="google_signin_title">Masuk dengan Google</string>
+    <string name="google_signin_connecting">Menghubungkan ke Google…</string>
+    <string name="google_signin_subtitle">Masuk untuk memberikan izin pencadangan Google Foto</string>
+
+    <string name="onboarding_btn_configure_brand">Konfigurasi Pengaturan %1$s</string>
+    <string name="onboarding_btn_view_brand_guide">Lihat Panduan Latar Belakang Produsen</string>
+    <string name="onboarding_switch_or_add_account">Ganti atau Tambah Akun Lain</string>
+
+    <string name="notif_backup_title">Pencadangan Lumen</string>
+    <string name="notif_init">Menginisialisasi layanan pengunggahan…</string>
+    <string name="notif_paused">Dijeda: %1$s</string>
+    <string name="notif_paused_chip">Dijeda</string>
+    <string name="notif_uploading">Mengunggah %1$s</string>
+    <string name="notif_checking_file">Memeriksa berkas…</string>
+    <string name="notif_checking_duplicates">Memeriksa duplikasi di Google Foto…</string>
+    <string name="notif_upload_progress">%1$s dari %2$s • %3$d%%</string>
+    <string name="notif_saving">Menyimpan ke Google Foto…</string>
+    <string name="notif_preparing">Menyiapkan…</string>
+    <string name="notif_channel_name">Layanan Unggah Lumen</string>
+    <string name="notif_channel_desc">Menampilkan progres pengunggahan foto dan video</string>
+
+    <string name="btn_sign_in_google">Masuk dengan Google</string>
+    <string name="btn_paste_token_manual">Tempel Token atau Kredensial Manual</string>
+    <string name="settings_action_run">Jalankan</string>
+    <string name="settings_action_replay">Putar Ulang</string>
+    <string name="settings_force_season_title">Paksa Tema Musiman</string>
+    <string name="settings_force_season_desc">Pratinjau hamparan tema musiman yang meriah</string>
+    <string name="settings_action_lock">Kunci</string>
+    <string name="settings_action_view">Lihat</string>
+    <string name="settings_about_lumen">Tentang Lumen</string>
+
+    <!-- Device Folders Browser Strings -->
+    <string name="device_folders_title">Folder Perangkat</string>
+    <string name="device_folders_subtitle">Pilih folder cadangan</string>
+    <string name="device_folders_btn_browse">Jelajahi Perangkat</string>
+    <string name="device_folders_btn_add_custom">Tambah Kustom</string>
+    <string name="device_folders_btn_custom">Kustom</string>
+    <string name="device_folders_search_placeholder">Cari folder…</string>
+    <string name="device_folders_scanning">Memindai folder media perangkat…</string>
+    <string name="device_folders_empty">Tidak ada folder media ditemukan di perangkat ini.</string>
+    <string name="device_folders_no_matches">Tidak ada folder yang cocok dengan \"%1$s\"</string>
+    <string name="device_folders_items_count">%1$,d item</string>
+    <string name="device_folders_permission_title">Akses Media Diperlukan</string>
+    <string name="device_folders_permission_desc">Izinkan Lumen membaca foto dan video Anda agar dapat menemukan folder di perangkat Anda.</string>
+    <string name="device_folders_permission_btn">Izinkan Akses Media</string>
+    <string name="device_folders_sort_recent">Terbaru</string>
+    <string name="device_folders_sort_most">Item terbanyak</string>
+    <string name="device_folders_file_manager_fallback">Pilih dari Manajer File…</string>
+    <string name="device_folders_album_none">Tanpa album</string>
+    <string name="device_folders_summary_enabled">%1$d dari %2$d folder diaktifkan</string>
+
+    <!-- Album Sync Strings -->
+    <string name="btn_sync_albums">Sinkronkan Album</string>
+    <string name="btn_sync_to_album_now">Sinkronkan foto yang ada ke album</string>
+    <string name="toast_album_sync_offline">Hubungkan ke internet untuk menyinkronkan album</string>
+    <string name="toast_album_sync_none">Atur album ke minimal satu folder aktif terlebih dahulu</string>
+    <string name="album_sync_in_progress">Menyinkronkan \"%1$s\"…</string>
+    <string name="album_sync_progress_detail">%1$,d / %2$,d diperiksa • %3$,d ditambahkan</string>
+    <string name="album_sync_preparing">Memindai file folder…</string>
+    <string name="album_sync_done_title">Sinkronisasi album selesai</string>
+    <string name="album_sync_done_all_synced">%1$,d item yang sudah dicadangkan ditambahkan ke album.</string>
+    <string name="album_sync_done_with_pending">%1$,d item ditambahkan ke album. %2$,d belum diunggah. Gunakan Mulai Pencadangan untuk mengunggahnya.</string>
+    <string name="album_sync_done_only_pending">Belum ada item tercakup. %1$,d item lokal belum diunggah. Gunakan Mulai Pencadangan untuk mengunggahnya.</string>
+    <string name="album_sync_done_nothing">Tidak ditemukan foto atau video lokal untuk disinkronkan.</string>
+    <string name="pref_auto_sync_albums_title">Sinkronkan foto yang ada ke album</string>
+    <string name="pref_auto_sync_albums_desc">Otomatis tambahkan foto yang sudah dicadangkan saat Anda menetapkan album pada folder</string>
+    <string name="pref_sync_albums_now_title">Sinkronkan Album Sekarang</string>
+    <string name="pref_sync_albums_now_desc">Periksa folder aktif dan tambahkan foto yang sudah dicadangkan ke album tujuannya</string>
+    <string name="settings_action_sync">Sinkronkan</string>
+    <string name="settings_action_syncing">Menyinkronkan…</string>
+
+    <!-- Custom Folder, Onboarding, OEM Guide & Account Strings -->
+    <string name="add_folder_custom_header">Folder Kustom</string>
+    <string name="add_folder_selected_path">Jalur Terpilih</string>
+    <string name="add_folder_hint_name">mis. Foto Liburan</string>
+    <string name="add_folder_internal_storage">Penyimpanan Internal</string>
+    <string name="add_folder_fallback_name">Folder</string>
+    <string name="folders_edit_desc">Edit folder</string>
+
+    <string name="onboarding_btn_set_account_later">Atur Akun Nanti</string>
+    <string name="onboarding_privacy_title">Keamanan &amp; Privasi Akun</string>
+    <string name="onboarding_privacy_desc_short">Lumen tidak pernah melihat atau menyimpan kata sandi Anda. Aplikasi ini menggunakan token OAuth yang hanya mengizinkan pengunggahan media langsung ke Google Foto.</string>
+    <string name="onboarding_privacy_desc">Lumen tidak pernah melihat atau menyimpan kata sandi Anda dan tidak memiliki akses ke Akun Google Anda. Aplikasi ini menggunakan token OAuth yang hanya mengizinkan pengunggahan media langsung ke Google Foto (photos.googleapis.com).</string>
+    <string name="onboarding_permissions_setup_desc">Untuk menemukan Folder Perangkat dan menjalankan pencadangan di latar belakang, Lumen memerlukan beberapa izin standar.</string>
+    <string name="onboarding_perm_media_title">Foto &amp; Video</string>
+    <string name="onboarding_perm_notifs_title">Notifikasi</string>
+    <string name="onboarding_brand_setup_title">Penyiapan Latar Belakang %1$s</string>
+    <string name="onboarding_oem_xiaomi">Xiaomi / HyperOS mewajibkan pengaktifan \'Mulai otomatis\' dan menyetel Penghemat baterai ke \'Tidak ada pembatasan\' di Info Aplikasi agar pencadangan tetap berjalan di latar belakang.</string>
+    <string name="onboarding_oem_samsung">Samsung (One UI) mewajibkan penyetelan Baterai ke \'Tidak dibatasi\' dan menambahkan Lumen ke \'Aplikasi yang tidak pernah tidur\' di Perawatan Perangkat.</string>
+    <string name="onboarding_oem_coloros">Oppo / Realme / OnePlus (ColorOS) mewajibkan pengaktifan \'Izinkan peluncuran otomatis\' &amp; \'Izinkan aktivitas latar belakang\' di Penggunaan baterai.</string>
+    <string name="onboarding_oem_magicos">Honor (MagicOS) mewajibkan penyetelan Peluncuran Aplikasi ke \'Kelola secara manual\' serta mengaktifkan \'Peluncuran otomatis\' dan \'Jalankan di latar belakang\'.</string>
+    <string name="onboarding_oem_originos">Vivo / iQOO (Origin OS) mewajibkan pengaktifan \'Mulai otomatis\' dan \'Konsumsi daya latar belakang tinggi\' untuk Lumen.</string>
+    <string name="onboarding_oem_aosp">Google Pixel / AOSP menjalankan pencadangan latar belakang dengan lancar setelah Izinkan Aktivitas Latar Belakang diaktifkan di atas.</string>
+    <string name="onboarding_account_google_title">Hubungkan Akun Google</string>
+    <string name="onboarding_account_desc">Masuk ke akun Google tempat foto dan video cadangan Anda akan disimpan.</string>
+    <string name="onboarding_status_ready">Siap</string>
+    <string name="onboarding_folders_hint">Anda dapat menjelajahi Folder Perangkat, menambahkan folder Kustom, atau menautkan album Google Foto kapan saja di tab Folder.</string>
+    <string name="onboarding_prefs_title">Pengaturan &amp; Palet Aksen</string>
+    <string name="onboarding_prefs_desc">Atur preferensi pengunggahan Anda dan pilih Palet Aksen.</string>
+    <string name="onboarding_done_title">Semuanya siap</string>
+    <string name="onboarding_done_desc">Lumen siap mencadangkan foto dan video Anda.</string>
+    <string name="onboarding_done_feat_quality_title">Kualitas Asli Siap</string>
+    <string name="onboarding_done_feat_quality_desc">Unggahan resolusi penuh ke Google Foto, dengan Penghemat Penyimpanan yang selalu tersedia di Pengaturan.</string>
+    <string name="onboarding_done_feat_auto_title">Pencadangan Otomatis Siap</string>
+    <string name="onboarding_done_feat_auto_desc">Folder yang diaktifkan akan dipantau dan otomatis mencadangkan foto serta video baru di latar belakang.</string>
+    <string name="onboarding_done_feat_direct_title">Langsung &amp; Privat</string>
+    <string name="onboarding_done_feat_direct_desc">Semua media diunggah langsung dari perangkat Anda ke Google Foto.</string>
+
+    <string name="oem_step_xiaomi_1_title">Aktifkan Mulai Otomatis</string>
+    <string name="oem_step_xiaomi_1_desc">Buka Info Aplikasi &gt; Perizinan &gt; Mulai otomatis (atau aplikasi Keamanan &gt; Mulai otomatis) dan aktifkan untuk Lumen.</string>
+    <string name="oem_step_xiaomi_2_title">Atur Penghemat Baterai ke Tanpa Pembatasan</string>
+    <string name="oem_step_xiaomi_2_desc">Buka Info Aplikasi &gt; Penghemat Baterai &gt; Pilih \'Tidak ada pembatasan\'.</string>
+    <string name="oem_step_xiaomi_3_title">Kunci di Aplikasi Terbaru</string>
+    <string name="oem_step_xiaomi_3_desc">Buka Aplikasi Terbaru, tekan lama jendela Lumen, lalu ketuk ikon Gembok agar tidak dihentikan pembersih sistem.</string>
+    <string name="oem_step_samsung_1_title">Atur Baterai ke Tidak Dibatasi</string>
+    <string name="oem_step_samsung_1_desc">Buka Pengaturan &gt; Aplikasi &gt; Lumen &gt; Baterai &gt; Pilih \'Tidak dibatasi\'.</string>
+    <string name="oem_step_samsung_2_title">Tambahkan ke Aplikasi Tidak Pernah Tidur</string>
+    <string name="oem_step_samsung_2_desc">Buka Perawatan Perangkat &gt; Baterai &gt; Batas penggunaan latar belakang &gt; \'Aplikasi yang tidak pernah tidur\' &gt; Ketuk \'+\' dan tambahkan Lumen.</string>
+    <string name="oem_step_coloros_1_title">Izinkan Latar Belakang &amp; Peluncuran Otomatis</string>
+    <string name="oem_step_coloros_1_desc">Buka Info Aplikasi &gt; Penggunaan baterai &gt; Aktifkan \'Izinkan aktivitas latar belakang\' dan \'Izinkan peluncuran otomatis\'.</string>
+    <string name="oem_step_coloros_2_title">Matikan Pengoptimalan Baterai</string>
+    <string name="oem_step_coloros_2_desc">Buka Pengaturan &gt; Baterai &gt; Pengaturan lainnya &gt; Optimalkan penggunaan baterai &gt; Pilih Lumen &gt; \'Jangan optimalkan\'.</string>
+    <string name="oem_step_coloros_3_title">Kunci di Aplikasi Terbaru</string>
+    <string name="oem_step_coloros_3_desc">Buka Aplikasi Terbaru, ketuk titik tiga pada kartu Lumen, lalu pilih \'Kunci\'.</string>
+    <string name="oem_step_magicos_1_title">Konfigurasi Peluncuran Aplikasi</string>
+    <string name="oem_step_magicos_1_desc">Buka Pengaturan &gt; Baterai &gt; Peluncuran aplikasi &gt; Cari Lumen &gt; Matikan \'Kelola secara otomatis\'.</string>
+    <string name="oem_step_magicos_2_title">Aktifkan Sakelar Manual</string>
+    <string name="oem_step_magicos_2_desc">Aktifkan \'Peluncuran otomatis\', \'Peluncuran sekunder\', dan \'Jalankan di latar belakang\'.</string>
+    <string name="oem_step_originos_1_title">Aktifkan Mulai Otomatis</string>
+    <string name="oem_step_originos_1_desc">Buka Pengaturan &gt; Pengaturan lainnya &gt; Aplikasi &gt; Mulai otomatis &gt; Aktifkan untuk Lumen.</string>
+    <string name="oem_step_originos_2_title">Konsumsi Daya Latar Belakang Tinggi</string>
+    <string name="oem_step_originos_2_desc">Buka Pengaturan &gt; Baterai &gt; Konsumsi daya latar belakang tinggi &gt; Izinkan Lumen.</string>
+    <string name="oem_step_asus_1_title">Manajer Mulai Otomatis</string>
+    <string name="oem_step_asus_1_desc">Buka Pengaturan &gt; Baterai &gt; PowerMaster (atau Mobile Manager) &gt; Manajer mulai otomatis &gt; Izinkan Lumen.</string>
+    <string name="oem_step_aosp_1_title">Penggunaan Baterai Aplikasi</string>
+    <string name="oem_step_aosp_1_desc">Buka Pengaturan &gt; Aplikasi &gt; Lumen &gt; Penggunaan baterai aplikasi &gt; Pilih \'Tidak dibatasi\'.</string>
+    <string name="oem_step_aosp_2_title">Pengoptimalan AOSP Standar</string>
+    <string name="oem_step_aosp_2_desc">Pixel UI dan Android bawaan mengikuti standar Google serta menjalankan pencadangan latar belakang dengan lancar setelah pengoptimalan baterai diizinkan.</string>
+
+    <string name="accounts_no_other_connected">Tidak ada akun lain yang terhubung</string>
+    <string name="accounts_upload_active_switch_msg">Anda tidak dapat mengganti akun saat pengunggahan sedang berjalan.\n\nFile sedang dikirim secara aktif ke %1$s.\n\nHarap tunggu hingga kloter pengunggahan selesai atau batalkan pencadangan terlebih dahulu.</string>
+    <string name="accounts_upload_active_remove_msg">Anda tidak dapat menghapus akun saat pengunggahan sedang berjalan.\n\nFile sedang dikirim secara aktif ke %1$s.\n\nHarap tunggu hingga kloter pengunggahan selesai atau batalkan pencadangan terlebih dahulu.</string>
+    <string name="dialog_edit_display_name_hint">mis. Pribadi atau Kantor</string>
 </resources>

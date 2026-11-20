@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
@@ -16,6 +17,7 @@ object FileHasher {
             val buffer = ByteArray(64 * 1024)
             var bytesRead: Int
             while (stream.read(buffer).also { bytesRead = it } != -1) {
+                ensureActive()
                 digest.update(buffer, 0, bytesRead)
             }
         }
@@ -30,6 +32,7 @@ object FileHasher {
             val buffer = ByteArray(64 * 1024)
             var bytesRead: Int
             while (stream.read(buffer).also { bytesRead = it } != -1) {
+                ensureActive()
                 digest.update(buffer, 0, bytesRead)
             }
         } ?: throw IllegalArgumentException("Cannot open URI: $uri")

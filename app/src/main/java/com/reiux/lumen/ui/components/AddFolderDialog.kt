@@ -44,11 +44,14 @@ import androidx.compose.ui.unit.sp
 import com.reiux.lumen.data.model.AlbumTargetMode
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,13 +79,15 @@ fun AddFolderDialog(
     onAddFolder: (BackupFolder) -> Unit
 ) {
     val context = LocalContext.current
-    var path by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("") }
-    var assignedAccountEmail by remember { mutableStateOf(activeAccount?.email) }
-    var selectedAccount by remember(assignedAccountEmail, activeAccount, accounts) {
-        mutableStateOf(accounts.firstOrNull { it.email == assignedAccountEmail } ?: activeAccount ?: accounts.firstOrNull())
+    var path by rememberSaveable { mutableStateOf("") }
+    var displayName by rememberSaveable { mutableStateOf("") }
+    var assignedAccountEmail by rememberSaveable { mutableStateOf(activeAccount?.email) }
+    val selectedAccount = remember(assignedAccountEmail, activeAccount, accounts) {
+        accounts.firstOrNull { !assignedAccountEmail.isNullOrBlank() && it.email.equals(assignedAccountEmail, ignoreCase = true) }
+            ?: activeAccount
+            ?: accounts.firstOrNull()
     }
-    var albumChoice by remember { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
+    var albumChoice by rememberSaveable(stateSaver = AlbumChoiceSaver) { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
 
     val presets = remember {
         listOf(
@@ -125,7 +130,7 @@ fun AddFolderDialog(
             .padding(horizontal = 16.dp),
         title = {
             Text(
-                text = "Add Backup Folder",
+                text = stringResource(R.string.add_folder_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -145,7 +150,7 @@ fun AddFolderDialog(
                     // Left Column: Presets & Path Summary
                     Column(modifier = Modifier.weight(0.5f)) {
                         Text(
-                            text = "Quick Presets",
+                            text = stringResource(R.string.add_folder_quick_presets),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -189,7 +194,7 @@ fun AddFolderDialog(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "Selected Path",
+                                            text = stringResource(R.string.add_folder_selected_path),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -209,7 +214,7 @@ fun AddFolderDialog(
                     // Right Column: Custom File Manager Picker & Folder Name Input
                     Column(modifier = Modifier.weight(0.5f)) {
                         Text(
-                            text = "Custom Folder",
+                            text = stringResource(R.string.add_folder_custom_header),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -228,7 +233,7 @@ fun AddFolderDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (path.isBlank()) "Choose Folder..." else "Change Selected..."
+                                text = if (path.isBlank()) stringResource(R.string.albums_choose_folder_custom) else stringResource(R.string.albums_change_folder_custom)
                             )
                         }
 
@@ -237,11 +242,45 @@ fun AddFolderDialog(
                         OutlinedTextField(
                             value = displayName,
                             onValueChange = { displayName = it },
-                            label = { Text("Folder Name") },
-                            placeholder = { Text("e.g. Vacation Photos") },
+                            label = { Text(stringResource(R.string.add_folder_folder_name)) },
+                            placeholder = { Text(stringResource(R.string.add_folder_hint_name)) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true
+                        )
+
+                        if (accounts.size > 1) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            AccountPickerRow(
+                                accounts = accounts,
+                                selectedAccount = selectedAccount,
+                                onSelectAccount = { acc ->
+                                    assignedAccountEmail = acc.email
+                                    albumChoice = AlbumChoice.None
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        val accountAlbums = remember(remoteAlbums, selectedAccount) {
+                            val email = selectedAccount?.email
+                            if (email.isNullOrBlank()) remoteAlbums
+                            else remoteAlbums.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
+                        }
+
+                        AlbumPickerRow(
+                            choice = albumChoice,
+                            onChoiceSelected = { albumChoice = it },
+                            savedAlbums = accountAlbums,
+                            accounts = accounts,
+                            activeAccount = selectedAccount,
+                            folderDisplayName = displayName.ifBlank { "Folder" },
+                            onAddAlbum = onAddAlbum,
+                            onOpenAlbumManager = {
+                                onDismiss()
+                                onOpenAlbumManager()
+                            }
                         )
                     }
                 }
@@ -253,7 +292,7 @@ fun AddFolderDialog(
                         .verticalScroll(scrollState)
                 ) {
                     Text(
-                        text = "Quick Presets",
+                        text = stringResource(R.string.add_folder_quick_presets),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -280,7 +319,7 @@ fun AddFolderDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Custom Folder",
+                        text = stringResource(R.string.add_folder_custom_header),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -299,7 +338,7 @@ fun AddFolderDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (path.isBlank()) "Choose from File Manager..." else "Change Selected Folder..."
+                            text = if (path.isBlank()) stringResource(R.string.albums_choose_folder_custom) else stringResource(R.string.albums_change_folder_custom)
                         )
                     }
 
@@ -323,7 +362,7 @@ fun AddFolderDialog(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Selected Path",
+                                        text = stringResource(R.string.add_folder_selected_path),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -344,8 +383,8 @@ fun AddFolderDialog(
                     OutlinedTextField(
                         value = displayName,
                         onValueChange = { displayName = it },
-                        label = { Text("Folder Name") },
-                        placeholder = { Text("e.g. Vacation Photos") },
+                        label = { Text(stringResource(R.string.add_folder_folder_name)) },
+                        placeholder = { Text(stringResource(R.string.add_folder_hint_name)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
@@ -357,7 +396,6 @@ fun AddFolderDialog(
                             accounts = accounts,
                             selectedAccount = selectedAccount,
                             onSelectAccount = { acc ->
-                                selectedAccount = acc
                                 assignedAccountEmail = acc.email
                                 albumChoice = AlbumChoice.None // Rule: Changing account resets album choice to No album
                             }
@@ -369,7 +407,7 @@ fun AddFolderDialog(
                     val accountAlbums = remember(remoteAlbums, selectedAccount) {
                         val email = selectedAccount?.email
                         if (email.isNullOrBlank()) remoteAlbums
-                        else remoteAlbums.filter { it.accountEmail == null || it.accountEmail.equals(email, ignoreCase = true) }
+                        else remoteAlbums.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
                     }
 
                     AlbumPickerRow(
@@ -400,7 +438,7 @@ fun AddFolderDialog(
                             is AlbumChoice.None -> Triple(AlbumTargetMode.NONE, null, null)
                             is AlbumChoice.AutoFolderName -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
                             is AlbumChoice.CustomAlbum -> {
-                                if (c.album.accountEmail.isNullOrBlank() || !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
+                                if (!c.album.accountEmail.isNullOrBlank() && !selectedEmail.isNullOrBlank() && !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
                                     albumChoice = AlbumChoice.None
                                     return@ExpressiveButton
                                 }
@@ -425,12 +463,12 @@ fun AddFolderDialog(
                 enabled = path.isNotBlank(),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text("Add Folder")
+                Text(stringResource(R.string.btn_add_folder))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         },
         shape = RoundedCornerShape(28.dp),
@@ -494,7 +532,7 @@ private fun resolveFolderPathFromUri(context: Context, uri: Uri): Pair<String, S
         val (path, name) = if (docId.startsWith("primary:")) {
             val relPath = docId.removePrefix("primary:")
             val path = if (relPath.isEmpty()) basePath else "$basePath/$relPath".trimEnd('/')
-            val name = relPath.trimEnd('/').substringAfterLast('/').ifEmpty { "Internal Storage" }
+            val name = relPath.trimEnd('/').substringAfterLast('/').ifEmpty { context.getString(R.string.add_folder_internal_storage) }
             path to name
         } else if (docId.contains(":")) {
             val parts = docId.split(":", limit = 2)
@@ -504,12 +542,12 @@ private fun resolveFolderPathFromUri(context: Context, uri: Uri): Pair<String, S
             val name = relPath.trimEnd('/').substringAfterLast('/').ifEmpty { volume }
             path to name
         } else {
-            val name = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: "Folder"
+            val name = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: context.getString(R.string.add_folder_fallback_name)
             (uri.path ?: "") to name
         }
         path to name
     } catch (_: Exception) {
-        val fallbackName = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: "Folder"
+        val fallbackName = uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: context.getString(R.string.add_folder_fallback_name)
         (uri.path ?: "") to fallbackName
     }
 }

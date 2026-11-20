@@ -31,7 +31,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build and Test
-        run: env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug testDebugUnitTest lintDebug
+        run: env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug testDebugUnitTest lintDebug lintRelease minifyReleaseWithR8
 
       - name: Upload debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

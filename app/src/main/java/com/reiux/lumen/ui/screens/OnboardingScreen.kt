@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -40,13 +42,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.AllInclusive
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -73,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +86,8 @@ import androidx.compose.ui.res.stringResource
 import com.reiux.lumen.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,6 +97,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.ui.MainViewModel
 import com.reiux.lumen.ui.components.AddAccountDialog
+import com.reiux.lumen.ui.components.AllFilesPermissionDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
@@ -100,6 +107,7 @@ import com.reiux.lumen.ui.components.GoogleSignInWebViewDialog
 import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
 import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.requiresAllFilesPermission
 import com.reiux.lumen.ui.theme.AvailablePresets
 import com.reiux.lumen.util.DeviceConditions
 import com.reiux.lumen.util.LumenLogger
@@ -121,9 +129,19 @@ fun OnboardingScreen(
     val isAddingAccount by viewModel.isAddingAccount.collectAsState()
     val addAccountError by viewModel.addAccountError.collectAsState()
 
-    var showSignInWebView by remember { mutableStateOf(false) }
-    var showManualTokenDialog by remember { mutableStateOf(false) }
-    var showAddAccountDialog by remember { mutableStateOf(false) }
+    var showSignInWebView by rememberSaveable { mutableStateOf(false) }
+    var showManualTokenDialog by rememberSaveable { mutableStateOf(false) }
+    var showAddAccountDialog by rememberSaveable { mutableStateOf(false) }
+    var hasPendingWebViewSubmit by rememberSaveable { mutableStateOf(false) }
+    var showAllFilesDialog by rememberSaveable { mutableStateOf(false) }
+    var returningFromAllFilesPermission by rememberSaveable { mutableStateOf(false) }
+    var pendingEnableFolderEncoded by rememberSaveable { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = pagerState.currentPage > 0) {
+        coroutineScope.launch {
+            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+        }
+    }
 
     // Dynamic permission states
     var hasMediaPermission by remember { mutableStateOf(checkMediaPermission(context)) }
@@ -137,12 +155,41 @@ fun OnboardingScreen(
                 hasMediaPermission = checkMediaPermission(context)
                 hasNotificationPermission = checkNotificationPermission(context)
                 hasBackgroundPermission = DeviceConditions.isIgnoringBatteryOptimizations(context)
+                if (returningFromAllFilesPermission) {
+                    returningFromAllFilesPermission = false
+                    pendingEnableFolderEncoded?.let { raw ->
+                        val parts = raw.split('\u0000', limit = 2)
+                        val path = parts[0]
+                        val email = parts.getOrNull(1)?.ifEmpty { null }
+                        if (!requiresAllFilesPermission(context, path)) {
+                            viewModel.toggleFolder(path, email, true)
+                        } else {
+                            Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
+                        }
+                        pendingEnableFolderEncoded = null
+                    }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
+    }
+
+    if (showAllFilesDialog) {
+        AllFilesPermissionDialog(
+            onConfirm = {
+                returningFromAllFilesPermission = true
+            },
+            onDismiss = {
+                showAllFilesDialog = false
+                if (!returningFromAllFilesPermission) {
+                    pendingEnableFolderEncoded = null
+                    Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -158,17 +205,52 @@ fun OnboardingScreen(
         LumenLogger.i("Onboarding", "Active onboarding step: page ${pagerState.currentPage}")
     }
 
+    var isAddSubmitInFlight by rememberSaveable { mutableStateOf(false) }
+
     if (showSignInWebView) {
         GoogleSignInWebViewDialog(
             onDismiss = { showSignInWebView = false },
             onTokenCaptured = { token ->
                 showSignInWebView = false
+                hasPendingWebViewSubmit = true
+                isAddSubmitInFlight = true
                 viewModel.addAccountWithToken(token)
             }
         )
     }
 
-    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+    if (hasPendingWebViewSubmit && !showManualTokenDialog && !showAddAccountDialog && addAccountError != null) {
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
+            onDismissRequest = {
+                hasPendingWebViewSubmit = false
+                viewModel.clearAddAccountError()
+            },
+            icon = Icons.Rounded.ErrorOutline,
+            title = stringResource(R.string.dialog_auth_error_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            isDestructiveConfirm = false,
+            confirmText = stringResource(R.string.btn_try_again),
+            onConfirm = {
+                viewModel.clearAddAccountError()
+                showSignInWebView = true
+            },
+            dismissText = stringResource(R.string.btn_cancel),
+            onDismissAction = {
+                hasPendingWebViewSubmit = false
+                viewModel.clearAddAccountError()
+            }
+        ) {
+            com.reiux.lumen.ui.components.ExpressiveDialogCallout(
+                tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR
+            ) {
+                Text(
+                    text = addAccountError ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    }
 
     if (showManualTokenDialog) {
         AddAccountDialog(
@@ -227,9 +309,47 @@ fun OnboardingScreen(
         if (!isAddSubmitInFlight || isAddingAccount) return@LaunchedEffect
         isAddSubmitInFlight = false
         if (addAccountError == null) {
+            hasPendingWebViewSubmit = false
             showManualTokenDialog = false
             showAddAccountDialog = false
         }
+    }
+
+    val onboardingFolders = remember(settings.folders, selectedAccount) {
+        val email = selectedAccount?.email
+        val scoped = if (!email.isNullOrBlank()) {
+            settings.folders.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
+        } else {
+            settings.folders
+        }
+        scoped.distinctBy { com.reiux.lumen.data.repository.SettingsRepository.normalizeFolderPath(it.path) }
+    }
+
+    val handleOnboardingFolderToggle: (com.reiux.lumen.data.model.BackupFolder, Boolean) -> Unit = { folder, enabled ->
+        val effectiveEmail = folder.accountEmail ?: selectedAccount?.email
+        if (enabled && requiresAllFilesPermission(context, folder.path)) {
+            pendingEnableFolderEncoded = "${folder.path}\u0000${effectiveEmail.orEmpty()}"
+            showAllFilesDialog = true
+        } else {
+            viewModel.toggleFolder(folder.path, effectiveEmail, enabled)
+        }
+    }
+
+    val requestOnboardingPermissions: () -> Unit = {
+        val permissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
     }
 
     val configuration = LocalConfiguration.current
@@ -272,7 +392,7 @@ fun OnboardingScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = "Back",
+                                        contentDescription = stringResource(R.string.nav_back),
                                         tint = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -338,17 +458,7 @@ fun OnboardingScreen(
                                 hasMedia = hasMediaPermission,
                                 hasNotifications = hasNotificationPermission,
                                 hasBackground = hasBackgroundPermission,
-                                onRequestPermissions = {
-                                    val permissions = mutableListOf<String>()
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-                                        permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
-                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                                    }
-                                    permissionLauncher.launch(permissions.toTypedArray())
-                                },
+                                onRequestPermissions = requestOnboardingPermissions,
                                 onRequestBackground = {
                                     DeviceConditions.requestIgnoreBatteryOptimizations(context)
                                 },
@@ -356,6 +466,7 @@ fun OnboardingScreen(
                             )
                             2 -> OnboardingAccountPage(
                                 selectedAccount = selectedAccount,
+                                isAddingAccount = isAddingAccount,
                                 hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
                                 onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                                 onOpenSignIn = { showSignInWebView = true },
@@ -364,10 +475,8 @@ fun OnboardingScreen(
                                 isTwoPane = true
                             )
                             3 -> OnboardingFoldersPage(
-                                folders = settings.folders,
-                                onToggleFolder = { folder, enabled ->
-                                    viewModel.toggleFolder(folder.path, folder.accountEmail ?: selectedAccount?.email, enabled)
-                                },
+                                folders = onboardingFolders,
+                                onToggleFolder = handleOnboardingFolderToggle,
                                 isTwoPane = true
                             )
                             4 -> OnboardingPreferencesPage(
@@ -438,7 +547,7 @@ fun OnboardingScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(R.string.nav_back),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -460,17 +569,7 @@ fun OnboardingScreen(
                             hasMedia = hasMediaPermission,
                             hasNotifications = hasNotificationPermission,
                             hasBackground = hasBackgroundPermission,
-                            onRequestPermissions = {
-                                val permissions = mutableListOf<String>()
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-                                    permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
-                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                } else {
-                                    permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                                }
-                                permissionLauncher.launch(permissions.toTypedArray())
-                            },
+                            onRequestPermissions = requestOnboardingPermissions,
                             onRequestBackground = {
                                 DeviceConditions.requestIgnoreBatteryOptimizations(context)
                             },
@@ -478,6 +577,7 @@ fun OnboardingScreen(
                         )
                         2 -> OnboardingAccountPage(
                             selectedAccount = selectedAccount,
+                            isAddingAccount = isAddingAccount,
                             hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
                             onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
                             onOpenSignIn = { showSignInWebView = true },
@@ -486,10 +586,8 @@ fun OnboardingScreen(
                             isTwoPane = false
                         )
                         3 -> OnboardingFoldersPage(
-                            folders = settings.folders,
-                            onToggleFolder = { folder, enabled ->
-                                viewModel.toggleFolder(folder.path, folder.accountEmail ?: selectedAccount?.email, enabled)
-                            },
+                            folders = onboardingFolders,
+                            onToggleFolder = handleOnboardingFolderToggle,
                             isTwoPane = false
                         )
                         4 -> OnboardingPreferencesPage(
@@ -586,7 +684,7 @@ private fun OnboardingActionButton(
                     .height(52.dp)
             ) {
                 Text(
-                    text = "Set Up Account Later",
+                    text = stringResource(R.string.onboarding_btn_set_account_later),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -630,14 +728,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 com.reiux.lumen.ui.components.DynamicLumenIcon(size = 68.dp)
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "Welcome to Lumen",
+                    text = stringResource(R.string.onboarding_welcome_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Unlimited, private Google Photos backup right from your Android device.",
+                    text = stringResource(R.string.onboarding_welcome_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -660,14 +758,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Account Privacy & Security",
+                                text = stringResource(R.string.onboarding_privacy_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Lumen never sees or stores your password. It uses a temporary OAuth token that only permits uploading media directly to Google Photos.",
+                                text = stringResource(R.string.onboarding_privacy_desc_short),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 16.sp
@@ -693,14 +791,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "Allow Access",
+                    text = stringResource(R.string.onboarding_permissions_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "To find your media and run in the background, Lumen needs a few standard permissions.",
+                    text = stringResource(R.string.onboarding_permissions_setup_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -722,14 +820,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "Connect Google Account",
+                    text = stringResource(R.string.onboarding_account_google_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Sign in to the Google account where your unlimited photos will be stored.",
+                    text = stringResource(R.string.onboarding_account_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -751,14 +849,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "Choose Backup Folders",
+                    text = stringResource(R.string.folders_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Select which local media folders should be automatically backed up.",
+                    text = stringResource(R.string.folders_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -780,14 +878,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "Preferences & Style",
+                    text = stringResource(R.string.onboarding_prefs_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Choose your backup rules and pick your favorite theme color.",
+                    text = stringResource(R.string.onboarding_prefs_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -809,14 +907,14 @@ private fun OnboardingStepLeftHeader(page: Int) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = "You're all set",
+                    text = stringResource(R.string.onboarding_done_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Lumen is ready to back up your photos and videos in full quality.",
+                    text = stringResource(R.string.onboarding_done_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -845,7 +943,7 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Welcome to Lumen",
+                text = stringResource(R.string.onboarding_welcome_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -854,7 +952,7 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Unlimited, private Google Photos backup right from your Android device.",
+                text = stringResource(R.string.onboarding_welcome_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -880,14 +978,14 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Account Privacy & Security",
+                            text = stringResource(R.string.onboarding_privacy_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Lumen never sees or stores your password and has no access to your Google Account. It uses a temporary OAuth token that only permits uploading media directly to Google Photos (photos.googleapis.com).",
+                            text = stringResource(R.string.onboarding_privacy_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
@@ -900,25 +998,25 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
         }
 
         FeatureHighlightCard(
-            icon = Icons.Rounded.AllInclusive,
-            title = "Unlimited Original Quality",
-            description = "Uses Pixel original quality so your uploads don't count against your Google One storage."
+            icon = Icons.Rounded.PhotoLibrary,
+            title = stringResource(R.string.onboarding_feat_unlimited_title),
+            description = stringResource(R.string.onboarding_feat_unlimited_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.Security,
-            title = "Direct and Private",
-            description = "Sends files straight from your device to Google. No third-party servers, proxies, or tracking."
+            title = stringResource(R.string.onboarding_feat_direct_title),
+            description = stringResource(R.string.onboarding_feat_direct_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.Sync,
-            title = "Background Backup",
-            description = "Uploads when charging or on Wi-Fi to keep your camera roll backed up without interruptions."
+            title = stringResource(R.string.onboarding_feat_background_title),
+            description = stringResource(R.string.onboarding_feat_background_desc)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -966,7 +1064,7 @@ private fun OnboardingPermissionsPage(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Allow Access",
+                text = stringResource(R.string.onboarding_permissions_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -975,7 +1073,7 @@ private fun OnboardingPermissionsPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "To find your media and run in the background, Lumen needs a few standard permissions.",
+                text = stringResource(R.string.onboarding_permissions_setup_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -986,8 +1084,8 @@ private fun OnboardingPermissionsPage(
 
         PermissionItemCard(
             icon = Icons.Rounded.PhotoLibrary,
-            title = "Photos & Videos",
-            description = "Needed to read your photos and videos so Lumen can back them up.",
+            title = stringResource(R.string.onboarding_perm_media_title),
+            description = stringResource(R.string.device_folders_permission_desc),
             isGranted = hasMedia,
             onRequest = onRequestPermissions
         )
@@ -996,8 +1094,8 @@ private fun OnboardingPermissionsPage(
 
         PermissionItemCard(
             icon = Icons.Rounded.Notifications,
-            title = "Notifications",
-            description = "Shows upload progress and backup status in your notification shade.",
+            title = stringResource(R.string.onboarding_perm_notifs_title),
+            description = stringResource(R.string.pref_upload_notifs_desc),
             isGranted = hasNotifications,
             onRequest = onRequestPermissions
         )
@@ -1006,18 +1104,18 @@ private fun OnboardingPermissionsPage(
 
         PermissionItemCard(
             icon = Icons.Rounded.BatteryChargingFull,
-            title = "Background Activity",
-            description = "Lets Lumen back up files in the background without being stopped by battery saver.",
+            title = stringResource(R.string.pref_background_activity_title),
+            description = stringResource(R.string.pref_background_activity_desc),
             isGranted = hasBackground,
             onRequest = onRequestBackground
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // OEM Auto-Start & Skin Detection Card
+        // OEM Background Setup & Skin Detection Card
         val detectedBrand = remember { OemIntentHelper.detectCurrentBrand() }
         val brandName = remember { detectedBrand.displayName }
-        var showOemDialog by remember { mutableStateOf(false) }
+        var showOemDialog by rememberSaveable { mutableStateOf(false) }
 
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -1034,7 +1132,7 @@ private fun OnboardingPermissionsPage(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "$brandName Auto-Start",
+                        text = stringResource(R.string.onboarding_brand_setup_title, brandName),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1043,17 +1141,17 @@ private fun OnboardingPermissionsPage(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = if (detectedBrand == OemIntentHelper.Brand.XIAOMI) {
-                        "HyperOS / MIUI requires enabling 'Autostart' and setting Battery saver to 'No restrictions' in App Info so backups can run in the background."
+                        stringResource(R.string.onboarding_oem_xiaomi)
                     } else if (detectedBrand == OemIntentHelper.Brand.SAMSUNG) {
-                        "Samsung One UI requires setting Battery to 'Unrestricted' and adding Lumen to 'Never sleeping apps' in Device Care."
-                    } else if (detectedBrand == OemIntentHelper.Brand.ONEPLUS || detectedBrand == OemIntentHelper.Brand.OPPO_REALME) {
-                        "ColorOS / OxygenOS requires enabling 'Allow auto-launch' & 'Allow background activity' in Battery usage."
+                        stringResource(R.string.onboarding_oem_samsung)
+                    } else if (detectedBrand == OemIntentHelper.Brand.OPPO_REALME) {
+                        stringResource(R.string.onboarding_oem_coloros)
                     } else if (detectedBrand == OemIntentHelper.Brand.HUAWEI_HONOR) {
-                        "Huawei / Honor requires setting App Launch to 'Manage manually' and enabling 'Auto-launch' and 'Run in background'."
+                        stringResource(R.string.onboarding_oem_magicos)
                     } else if (detectedBrand == OemIntentHelper.Brand.VIVO) {
-                        "Vivo / iQOO requires turning on 'Autostart' and 'High background power consumption' for Lumen."
+                        stringResource(R.string.onboarding_oem_originos)
                     } else {
-                        "Pixel UI and stock Android run background sync reliably once battery optimization is allowed above."
+                        stringResource(R.string.onboarding_oem_aosp)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1068,7 +1166,7 @@ private fun OnboardingPermissionsPage(
                     ) {
                         Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Configure $brandName Settings")
+                        Text(stringResource(R.string.onboarding_btn_configure_brand, brandName))
                     }
                 }
 
@@ -1078,7 +1176,7 @@ private fun OnboardingPermissionsPage(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("View All Phone Brands Guide", fontSize = 12.sp)
+                    Text(stringResource(R.string.onboarding_btn_view_brand_guide), fontSize = 12.sp)
                 }
             }
         }
@@ -1097,6 +1195,7 @@ private fun OnboardingPermissionsPage(
 @Composable
 private fun OnboardingAccountPage(
     selectedAccount: com.reiux.lumen.data.model.GoogleAccount?,
+    isAddingAccount: Boolean = false,
     hasAcknowledgedAccountRisk: Boolean,
     onAcknowledgeRisk: () -> Unit,
     onOpenSignIn: () -> Unit,
@@ -1104,7 +1203,7 @@ private fun OnboardingAccountPage(
     onOpenSwitchOrAddAccount: () -> Unit = onOpenSignIn,
     isTwoPane: Boolean = false
 ) {
-    var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
+    var localAcknowledged by rememberSaveable(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
     Column(
         modifier = Modifier
@@ -1134,7 +1233,7 @@ private fun OnboardingAccountPage(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Connect Google Account",
+                text = stringResource(R.string.onboarding_account_google_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1143,7 +1242,7 @@ private fun OnboardingAccountPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Sign in to the Google account where your unlimited photos will be stored.",
+                text = stringResource(R.string.onboarding_account_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -1209,7 +1308,7 @@ private fun OnboardingAccountPage(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Ready",
+                                text = stringResource(R.string.onboarding_status_ready),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -1222,31 +1321,39 @@ private fun OnboardingAccountPage(
             Spacer(modifier = Modifier.height(16.dp))
 
             TextButton(onClick = onOpenSwitchOrAddAccount) {
-                Text("Switch or Add Another Account")
+                Text(stringResource(R.string.onboarding_switch_or_add_account))
             }
         } else {
             ExpressiveButton(
                 onClick = onOpenSignIn,
-                enabled = localAcknowledged,
+                enabled = localAcknowledged && !isAddingAccount,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
             ) {
-                Icon(Icons.Rounded.AccountCircle, contentDescription = null, modifier = Modifier.size(22.dp))
-                Spacer(modifier = Modifier.width(10.dp))
-                Text("Sign In with Google", style = MaterialTheme.typography.titleMedium)
+                if (isAddingAccount) {
+                    ExpressiveLoadingIndicator(
+                        size = 20.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                } else {
+                    Icon(Icons.Rounded.AccountCircle, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+                Text(stringResource(R.string.btn_sign_in_google), style = MaterialTheme.typography.titleMedium)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             ExpressiveTonalButton(
                 onClick = onOpenManual,
-                enabled = localAcknowledged,
+                enabled = localAcknowledged && !isAddingAccount,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
             ) {
-                Text("Paste Token or Credential Manually", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.btn_paste_token_manual), style = MaterialTheme.typography.titleSmall)
             }
         }
 
@@ -1291,7 +1398,7 @@ private fun OnboardingFoldersPage(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Choose Backup Folders",
+                text = stringResource(R.string.folders_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1300,7 +1407,7 @@ private fun OnboardingFoldersPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Select which local media folders should be automatically backed up.",
+                text = stringResource(R.string.folders_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -1370,7 +1477,7 @@ private fun OnboardingFoldersPage(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "You can add custom folders anytime in the Folders tab.",
+            text = stringResource(R.string.onboarding_folders_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1426,7 +1533,7 @@ private fun OnboardingPreferencesPage(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Preferences & Style",
+                text = stringResource(R.string.onboarding_prefs_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1435,7 +1542,7 @@ private fun OnboardingPreferencesPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Choose your backup rules and pick your favorite theme color.",
+                text = stringResource(R.string.onboarding_prefs_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -1444,14 +1551,22 @@ private fun OnboardingPreferencesPage(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
+        val onboardingHaptic = LocalHapticFeedback.current
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val toggleWifi: (Boolean) -> Unit = { next ->
+                    try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                    onUpdateWifiOnly(next)
+                }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { toggleWifi(!wifiOnly) }
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -1463,31 +1578,36 @@ private fun OnboardingPreferencesPage(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Back Up on Wi-Fi Only",
+                            text = stringResource(R.string.pref_wifi_only_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Avoid using cellular mobile data for uploads",
+                            text = stringResource(R.string.pref_wifi_only_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     ExpressiveSwitch(
                         checked = wifiOnly,
-                        onCheckedChange = onUpdateWifiOnly
+                        onCheckedChange = toggleWifi
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
+                val toggleStorageSaver: (Boolean) -> Unit = { next ->
+                    try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                    onUpdateStorageSaver(next)
+                }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { toggleStorageSaver(!storageSaver) }
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.AllInclusive,
+                        imageVector = Icons.Rounded.HighQuality,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
@@ -1495,20 +1615,20 @@ private fun OnboardingPreferencesPage(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Original Quality (Pixel 1)",
+                            text = stringResource(R.string.pref_storage_saver_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (!storageSaver) "Free unlimited original quality storage" else "Compressed Storage Saver quality",
+                            text = if (storageSaver) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     ExpressiveSwitch(
-                        checked = !storageSaver,
-                        onCheckedChange = { onUpdateStorageSaver(!it) }
+                        checked = storageSaver,
+                        onCheckedChange = toggleStorageSaver
                     )
                 }
             }
@@ -1524,13 +1644,13 @@ private fun OnboardingPreferencesPage(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "App Theme Color",
+                    text = stringResource(R.string.settings_accent_palette),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Dynamic theming adapts to your device wallpaper on Android 12+",
+                    text = stringResource(R.string.settings_accent_palette_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1590,7 +1710,7 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "You're all set",
+                text = stringResource(R.string.onboarding_done_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1599,7 +1719,7 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Lumen is ready to back up your photos and videos in full quality.",
+                text = stringResource(R.string.onboarding_done_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -1609,25 +1729,25 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
         }
 
         FeatureHighlightCard(
-            icon = Icons.Rounded.AllInclusive,
-            title = "Unlimited Backup Ready",
-            description = "Uploads won't use up your Google account storage quota."
+            icon = Icons.Rounded.PhotoLibrary,
+            title = stringResource(R.string.onboarding_done_feat_quality_title),
+            description = stringResource(R.string.onboarding_done_feat_quality_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.FolderCopy,
-            title = "Automatic Sync Ready",
-            description = "Your selected folders are watched and will back up in the background."
+            title = stringResource(R.string.onboarding_done_feat_auto_title),
+            description = stringResource(R.string.onboarding_done_feat_auto_desc)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         FeatureHighlightCard(
             icon = Icons.Rounded.Security,
-            title = "Direct Connection",
-            description = "All files are sent directly from your phone to Google servers."
+            title = stringResource(R.string.onboarding_done_feat_direct_title),
+            description = stringResource(R.string.onboarding_done_feat_direct_desc)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -1756,7 +1876,7 @@ private fun PermissionItemCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Allowed",
+                            text = stringResource(R.string.status_allowed),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -1768,7 +1888,7 @@ private fun PermissionItemCard(
                     onClick = onRequest,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text("Allow", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_allow), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1778,7 +1898,11 @@ private fun PermissionItemCard(
 
 
 private fun checkMediaPermission(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
     } else {

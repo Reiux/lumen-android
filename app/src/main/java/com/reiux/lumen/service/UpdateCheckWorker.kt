@@ -47,10 +47,14 @@ class UpdateCheckWorker(
 
         if (updateInfo.isUpdateAvailable) {
             val lastNotified = settingsRepo.getLastNotifiedUpdateVersion()
-            if (UpdateRepository.shouldNotifyForVersion(updateInfo.versionName, lastNotified)) {
+            if (!settingsRepo.settings.value.notificationsEnabled) {
+                LumenLogger.d("Updater") { "Update v${updateInfo.versionName} available, but notifications are disabled. Skipping notification." }
+            } else if (UpdateRepository.shouldNotifyForVersion(updateInfo.versionName, lastNotified)) {
                 LumenLogger.i("Updater") { "Update available! v${updateInfo.versionName}. Showing notification." }
-                showUpdateNotification(updateInfo.versionName)
-                settingsRepo.setLastNotifiedUpdateVersion(updateInfo.versionName)
+                val internalToken = settingsRepo.getOrCreateInternalLaunchToken()
+                if (showUpdateNotification(updateInfo.versionName, internalToken)) {
+                    settingsRepo.setLastNotifiedUpdateVersion(updateInfo.versionName)
+                }
             } else {
                 LumenLogger.d("Updater") { "Update v${updateInfo.versionName} already notified. Skipping." }
             }
@@ -61,8 +65,8 @@ class UpdateCheckWorker(
         return Result.success()
     }
 
-    private fun showUpdateNotification(newVersion: String) {
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private fun showUpdateNotification(newVersion: String, internalToken: String): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
         val channelId = "lumen_updates_channel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -77,6 +81,7 @@ class UpdateCheckWorker(
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("action", "show_update")
+            putExtra("internal_token", internalToken)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -95,7 +100,13 @@ class UpdateCheckWorker(
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
-        nm.notify(9002, notif)
+        return try {
+            nm.notify(9002, notif)
+            true
+        } catch (e: SecurityException) {
+            LumenLogger.w("Updater") { "POST_NOTIFICATIONS denied; skipping update notification: ${e.message}" }
+            false
+        }
     }
 
     companion object {

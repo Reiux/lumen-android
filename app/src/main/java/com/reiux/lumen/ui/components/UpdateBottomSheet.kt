@@ -29,14 +29,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.UpdateInfo
 import com.reiux.lumen.util.LumenLogger
 import java.io.File
@@ -50,8 +54,12 @@ fun UpdateBottomSheet(
     onDismiss: () -> Unit,
     onUpdateClick: () -> Unit
 ) {
+    val currentIsDownloading by rememberUpdatedState(isDownloading)
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
+        skipPartiallyExpanded = true,
+        confirmValueChange = { targetValue ->
+            !(currentIsDownloading && targetValue == androidx.compose.material3.SheetValue.Hidden)
+        }
     )
     val context = LocalContext.current
 
@@ -61,6 +69,9 @@ fun UpdateBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
+        androidx.activity.compose.BackHandler(enabled = isDownloading) {
+            // Block back press dismissal while an update download is in progress
+        }
         DialogBlurEffect()
         Column(
             modifier = Modifier
@@ -83,13 +94,13 @@ fun UpdateBottomSheet(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "Update Available",
+                        text = stringResource(R.string.update_dialog_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Version ${updateInfo.versionName}",
+                        text = stringResource(R.string.update_dialog_subtitle, updateInfo.versionName),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -108,7 +119,8 @@ fun UpdateBottomSheet(
                         .padding(16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    val releaseNotes = updateInfo.releaseNotes.takeIf { it.isNotBlank() } ?: "Bug fixes and improvements."
+                    val defaultNotes = stringResource(R.string.update_dialog_default_notes)
+                    val releaseNotes = updateInfo.releaseNotes.takeIf { it.isNotBlank() } ?: defaultNotes
                     val annotatedText = parseSimpleMarkdown(
                         text = releaseNotes,
                         primaryColor = MaterialTheme.colorScheme.primary,
@@ -135,7 +147,7 @@ fun UpdateBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Downloading update...",
+                            text = stringResource(R.string.update_downloading_progress),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -163,24 +175,32 @@ fun UpdateBottomSheet(
                     onClick = onDismiss,
                     enabled = !isDownloading
                 ) {
-                    Text("Later")
+                    Text(stringResource(R.string.update_btn_later))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 ExpressiveButton(
                     onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-                            context.startActivity(
-                                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                            )
+                            try {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                )
+                            } catch (_: Exception) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Could not open unknown app sources settings",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         } else {
                             onUpdateClick()
                         }
                     },
                     enabled = !isDownloading
                 ) {
-                    Text(if (isDownloading) "Downloading..." else "Update Now")
+                    Text(if (isDownloading) stringResource(R.string.update_btn_downloading) else stringResource(R.string.update_btn_update_now))
                 }
             }
         }
@@ -204,22 +224,8 @@ fun launchApkInstall(context: Context, apkFile: File) {
         }
         val archiveInfo = getPackageArchiveInfoWithRetry(pm, apkFile, flags)
         if (archiveInfo == null) {
-            // Some OEM builds return null here for perfectly valid APKs. If (and only if)
-            // the file was staged by our own updater in our private cache directory, defer
-            // to the system installer, which still enforces signature continuity for
-            // same-package updates. Anything else fails closed.
-            val updatesDir = runCatching { File(context.cacheDir, "updates").canonicalFile }.getOrNull()
-            val stagedByUs = updatesDir != null &&
-                runCatching { apkFile.canonicalFile.path.startsWith(updatesDir.path + File.separator) }.getOrDefault(false) &&
-                apkFile.name.startsWith("lumen_update_") &&
-                apkFile.name.endsWith(".apk")
-            if (!stagedByUs) {
-                LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath} outside the private updates dir; refusing to install" }
-                android.widget.Toast.makeText(context, "Security check failed: could not verify update package", android.widget.Toast.LENGTH_LONG).show()
-                return
-            }
-            LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath}; deferring to the system installer" }
-            launchInstaller(context, apkFile)
+            LumenLogger.w("Update") { "getPackageArchiveInfo returned null for ${apkFile.absolutePath}; refusing to install unverified archive" }
+            android.widget.Toast.makeText(context, "Security check failed: could not verify update package", android.widget.Toast.LENGTH_LONG).show()
             return
         }
         val expectedPackage = context.packageName.removeSuffix(".dev")

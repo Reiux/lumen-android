@@ -13,8 +13,8 @@ android {
         applicationId "com.reiux.lumen"
         minSdk 26
         targetSdk 37
-        versionCode 10302
-        versionName "1.3.2"
+        versionCode 10303
+        versionName "1.3.3"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,7 +38,11 @@ android {
             def ka = ksProps.getProperty("keyAlias") ?: System.getenv("LUMEN_KEY_ALIAS")
             def kp = ksProps.getProperty("keyPassword") ?: System.getenv("LUMEN_KEY_PASSWORD")
 
-            def sfFile = sf ? file(sf) : null
+            def sfFile = null
+            if (sf) {
+                def candidate = file(sf)
+                sfFile = candidate.exists() ? candidate : rootProject.file(sf)
+            }
             if (sfFile && sfFile.exists() && sp && ka && kp) {
                 storeFile sfFile
                 storePassword sp
@@ -58,16 +62,10 @@ android {
         release {
             manifestPlaceholders = [appName: "Lumen"]
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (signingConfigs.release.storeFile != null) {
                 signingConfig signingConfigs.release
-            } else {
-                def isReleaseBuildRequested = gradle.startParameter.taskNames.any {
-                    it.toLowerCase().contains("release")
-                }
-                if (isReleaseBuildRequested) {
-                    throw new GradleException("Release keystore is not configured. Refusing to sign release build with debug keystore.")
-                }
             }
         }
     }
@@ -94,6 +92,27 @@ android {
     }
 }
 
+gradle.taskGraph.whenReady { taskGraph ->
+    def explicitReleaseArtifactRequested = gradle.startParameter.taskNames.any { rawName ->
+        def simpleName = rawName.substring(rawName.lastIndexOf(':') + 1).toLowerCase(java.util.Locale.ROOT)
+        simpleName == "assemblerelease" ||
+            simpleName == "bundlerelease" ||
+            simpleName == "packagerelease" ||
+            simpleName == "packagereleasebundle" ||
+            simpleName == "signreleasebundle"
+    }
+    def packagesReleaseArtifact = taskGraph.allTasks.any { task ->
+        task.project == project && (
+            task.name == "packageRelease" ||
+            task.name == "packageReleaseBundle" ||
+            task.name == "signReleaseBundle"
+        )
+    }
+    if (explicitReleaseArtifactRequested && packagesReleaseArtifact && android.signingConfigs.release.storeFile == null) {
+        throw new GradleException("Release keystore is not configured. Refusing to sign or package release build without release credentials.")
+    }
+}
+
 protobuf {
     protoc {
         artifact = 'com.google.protobuf:protoc:3.25.5'
@@ -117,11 +136,11 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
     implementation 'androidx.activity:activity-compose:1.10.0'
 
-    // Compose & Material 3 Expressive
+    // Compose & Material 3 Expressive (align Compose UI family to 1.8.2 required by material3 1.4.0)
     implementation platform('androidx.compose:compose-bom:2024.10.01')
-    implementation 'androidx.compose.ui:ui'
-    implementation 'androidx.compose.ui:ui-graphics'
-    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.ui:ui:1.8.2'
+    implementation 'androidx.compose.ui:ui-graphics:1.8.2'
+    implementation 'androidx.compose.ui:ui-tooling-preview:1.8.2'
     implementation 'androidx.compose.material3:material3:1.4.0'
     implementation 'androidx.graphics:graphics-shapes:1.0.1'
     implementation 'androidx.compose.material:material-icons-extended'
@@ -132,7 +151,6 @@ dependencies {
 
     // Networking
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
 
     // Protobuf
     implementation 'com.google.protobuf:protobuf-javalite:3.25.5'
@@ -151,7 +169,7 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2024.10.01')
-    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
-    debugImplementation 'androidx.compose.ui:ui-tooling'
-    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4:1.8.2'
+    debugImplementation 'androidx.compose.ui:ui-tooling:1.8.2'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest:1.8.2'
 }

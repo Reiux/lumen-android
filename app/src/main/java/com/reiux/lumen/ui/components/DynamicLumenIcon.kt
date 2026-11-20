@@ -45,6 +45,8 @@ fun DynamicLumenIcon(
     val b4 = blade4Color ?: seasonB4 ?: MaterialTheme.colorScheme.primaryContainer
     val center = centerColor ?: seasonCenter ?: MaterialTheme.colorScheme.onSurface
 
+    val bladePath = androidx.compose.runtime.remember { Path() }
+
     Canvas(modifier = modifier.size(size)) {
         val w = this.size.width
         val scale = w / 108f
@@ -53,29 +55,31 @@ fun DynamicLumenIcon(
             rotate(rotationAngle, pivot = this.center) {
                 val bladeColors = listOf(b1, b2, b3, b4)
 
+                bladePath.reset()
+                bladePath.apply {
+                    moveTo(54f * scale, 26f * scale)
+                    cubicTo(
+                        65f * scale, 26f * scale,
+                        76f * scale, 36f * scale,
+                        76f * scale, 47f * scale
+                    )
+                    cubicTo(
+                        76f * scale, 52f * scale,
+                        70f * scale, 54f * scale,
+                        63f * scale, 54f * scale
+                    )
+                    cubicTo(
+                        59f * scale, 44f * scale,
+                        54f * scale, 35f * scale,
+                        54f * scale, 26f * scale
+                    )
+                    close()
+                }
+
                 // Draw 4 rotating aperture blades
                 bladeColors.forEachIndexed { index, color ->
                     rotate(degrees = index * 90f, pivot = this.center) {
-                        val path = Path().apply {
-                            moveTo(54f * scale, 26f * scale)
-                            cubicTo(
-                                65f * scale, 26f * scale,
-                                76f * scale, 36f * scale,
-                                76f * scale, 47f * scale
-                            )
-                            cubicTo(
-                                76f * scale, 52f * scale,
-                                70f * scale, 54f * scale,
-                                63f * scale, 54f * scale
-                            )
-                            cubicTo(
-                                59f * scale, 44f * scale,
-                                54f * scale, 35f * scale,
-                                54f * scale, 26f * scale
-                            )
-                            close()
-                        }
-                        drawPath(path = path, color = color)
+                        drawPath(path = bladePath, color = color)
                     }
                 }
 

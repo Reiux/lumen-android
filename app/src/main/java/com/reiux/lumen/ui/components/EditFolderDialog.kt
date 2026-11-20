@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -34,14 +36,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.stringResource
+import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
@@ -56,14 +63,17 @@ fun EditFolderDialog(
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum>,
     onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> com.reiux.lumen.data.network.GoogleAlbum = { k, n, e -> com.reiux.lumen.data.network.GoogleAlbum(k, n, e) },
     onOpenAlbumManager: () -> Unit = {},
+    onSyncToAlbum: ((BackupFolder) -> Unit)? = null,
     onDismiss: () -> Unit,
     onSaveFolder: (BackupFolder) -> Unit
 ) {
-    var displayName by remember { mutableStateOf(folder.displayName) }
-    var includeSubfolders by remember { mutableStateOf(folder.includeSubfolders) }
-    var assignedAccountEmail by remember { mutableStateOf(folder.accountEmail ?: activeAccount?.email) }
-    var selectedAccount by remember(assignedAccountEmail, activeAccount, accounts) {
-        mutableStateOf(accounts.firstOrNull { it.email == assignedAccountEmail } ?: activeAccount ?: accounts.firstOrNull())
+    var displayName by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.displayName) }
+    var includeSubfolders by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.includeSubfolders) }
+    var assignedAccountEmail by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.accountEmail ?: activeAccount?.email) }
+    val selectedAccount = remember(assignedAccountEmail, activeAccount, accounts) {
+        accounts.firstOrNull { !assignedAccountEmail.isNullOrBlank() && it.email.equals(assignedAccountEmail, ignoreCase = true) }
+            ?: activeAccount
+            ?: accounts.firstOrNull()
     }
 
     val initialChoice = remember(folder, remoteAlbums) {
@@ -72,14 +82,17 @@ fun EditFolderDialog(
             AlbumTargetMode.AUTO_FOLDER_NAME -> AlbumChoice.AutoFolderName
             AlbumTargetMode.CUSTOM_NAME -> {
                 val key = folder.customAlbumName ?: ""
-                val matched = remoteAlbums.find { it.mediaKey == key || it.title == key }
+                val matched = remoteAlbums.find {
+                    (it.mediaKey == key || it.title == key) &&
+                        (it.accountEmail.isNullOrBlank() || assignedAccountEmail.isNullOrBlank() || it.accountEmail.equals(assignedAccountEmail, ignoreCase = true))
+                } ?: remoteAlbums.find { it.mediaKey == key || it.title == key }
                 if (matched != null) AlbumChoice.CustomAlbum(matched)
                 else if (key.isNotBlank()) AlbumChoice.CustomAlbum(com.reiux.lumen.data.network.GoogleAlbum(mediaKey = key, title = folder.customAlbumNickname ?: key, accountEmail = assignedAccountEmail))
                 else AlbumChoice.None
             }
         }
     }
-    var albumChoice by remember { mutableStateOf<AlbumChoice>(initialChoice) }
+    var albumChoice by rememberSaveable(folder.path, folder.accountEmail, stateSaver = AlbumChoiceSaver) { mutableStateOf<AlbumChoice>(initialChoice) }
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
@@ -91,7 +104,7 @@ fun EditFolderDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {
             Text(
-                text = "Edit Folder Settings",
+                text = stringResource(R.string.edit_folder_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -108,7 +121,7 @@ fun EditFolderDialog(
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("Folder Name") },
+                    label = { Text(stringResource(R.string.add_folder_folder_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     singleLine = true
@@ -119,7 +132,6 @@ fun EditFolderDialog(
                         accounts = accounts,
                         selectedAccount = selectedAccount,
                         onSelectAccount = { acc ->
-                            selectedAccount = acc
                             assignedAccountEmail = acc.email
                             albumChoice = AlbumChoice.None
                         }
@@ -129,7 +141,7 @@ fun EditFolderDialog(
                 val accountAlbums = remember(remoteAlbums, selectedAccount) {
                     val email = selectedAccount?.email
                     if (email.isNullOrBlank()) remoteAlbums
-                    else remoteAlbums.filter { it.accountEmail == null || it.accountEmail.equals(email, ignoreCase = true) }
+                    else remoteAlbums.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
                 }
 
                 AlbumPickerRow(
@@ -146,6 +158,47 @@ fun EditFolderDialog(
                     }
                 )
 
+                if (onSyncToAlbum != null && folder.enabled && albumChoice !is AlbumChoice.None) {
+                    ExpressiveTonalButton(
+                        onClick = {
+                            val selectedEmail = selectedAccount?.email
+                            val (mode, albumName, albumNickname) = when (val c = albumChoice) {
+                                is AlbumChoice.AutoFolderName -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
+                                is AlbumChoice.CustomAlbum -> {
+                                    if (!c.album.accountEmail.isNullOrBlank() && !selectedEmail.isNullOrBlank() && !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
+                                        albumChoice = AlbumChoice.None
+                                        return@ExpressiveTonalButton
+                                    }
+                                    Triple(AlbumTargetMode.CUSTOM_NAME, c.album.mediaKey, c.album.title)
+                                }
+                                else -> Triple(AlbumTargetMode.NONE, null, null)
+                            }
+                            if (mode != AlbumTargetMode.NONE) {
+                                val updated = folder.copy(
+                                    displayName = displayName.ifBlank { folder.displayName },
+                                    includeSubfolders = includeSubfolders,
+                                    targetAlbumMode = mode,
+                                    customAlbumName = albumName,
+                                    customAlbumNickname = albumNickname,
+                                    accountEmail = selectedAccount?.email ?: assignedAccountEmail ?: folder.accountEmail ?: activeAccount?.email ?: accounts.firstOrNull()?.email
+                                )
+                                onSaveFolder(updated)
+                                onSyncToAlbum(updated)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.btn_sync_to_album_now))
+                    }
+                }
+
+                val editHaptic = LocalHapticFeedback.current
+                val toggleSubfolders: (Boolean) -> Unit = { next ->
+                    try { editHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                    includeSubfolders = next
+                }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -154,17 +207,18 @@ fun EditFolderDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { toggleSubfolders(!includeSubfolders) }
                             .padding(14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Include Subfolders", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                            Text("Scan files in nested subfolders", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.edit_folder_include_subfolders), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.edit_folder_include_subfolders_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         ExpressiveSwitch(
                             checked = includeSubfolders,
-                            onCheckedChange = { includeSubfolders = it }
+                            onCheckedChange = toggleSubfolders
                         )
                     }
                 }
@@ -178,7 +232,7 @@ fun EditFolderDialog(
                         is AlbumChoice.None -> Triple(AlbumTargetMode.NONE, null, null)
                         is AlbumChoice.AutoFolderName -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
                         is AlbumChoice.CustomAlbum -> {
-                            if (c.album.accountEmail.isNullOrBlank() || !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
+                            if (!c.album.accountEmail.isNullOrBlank() && !selectedEmail.isNullOrBlank() && !c.album.accountEmail.equals(selectedEmail, ignoreCase = true)) {
                                 albumChoice = AlbumChoice.None
                                 return@ExpressiveButton
                             }
@@ -199,12 +253,12 @@ fun EditFolderDialog(
                 },
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text("Save Changes")
+                Text(stringResource(R.string.edit_folder_save_changes))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         }
     )

@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,9 +83,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
@@ -110,9 +113,10 @@ fun AboutScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showLogViewer by remember { mutableStateOf(false) }
-    var showLicensesDialog by remember { mutableStateOf(false) }
-    var showMatrixDialog by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    var showLogViewer by rememberSaveable { mutableStateOf(false) }
+    var showLicensesDialog by rememberSaveable { mutableStateOf(false) }
+    var showMatrixDialog by rememberSaveable { mutableStateOf(false) }
     var showPrismBurst by remember { mutableStateOf(false) }
     var lastLogOpenTime by remember { mutableLongStateOf(0L) }
 
@@ -269,7 +273,7 @@ fun AboutScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "About",
+                                text = stringResource(R.string.about_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -284,8 +288,8 @@ fun AboutScreen(
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     AboutActionRow(
                                         icon = Icons.Rounded.Code,
-                                        title = "Source code",
-                                        subtitle = "View repository on GitHub",
+                                        title = stringResource(R.string.about_source_code_title),
+                                        subtitle = stringResource(R.string.about_source_code_desc),
                                         onClick = {
                                             openWebUrl(context, "https://github.com/Reiux/lumen-android")
                                         }
@@ -296,8 +300,8 @@ fun AboutScreen(
                                     )
                                     AboutActionRow(
                                         icon = Icons.Rounded.Description,
-                                        title = "Open source licenses",
-                                        subtitle = "Third-party libraries and licenses",
+                                        title = stringResource(R.string.about_licenses_title),
+                                        subtitle = stringResource(R.string.about_licenses_desc),
                                         onClick = {
                                             LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
                                             showLicensesDialog = true
@@ -309,10 +313,10 @@ fun AboutScreen(
                                     )
                                     AboutActionRow(
                                         icon = Icons.Rounded.SystemUpdate,
-                                        title = "Check for updates",
-                                        subtitle = "Check GitHub for latest release",
+                                        title = stringResource(R.string.about_check_updates_title),
+                                        subtitle = stringResource(R.string.about_check_updates_desc),
                                         onClick = {
-                                            android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
                                             onCheckForUpdates()
                                         }
                                     )
@@ -328,7 +332,7 @@ fun AboutScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Debug",
+                                    text = stringResource(R.string.about_debug_title),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -341,23 +345,28 @@ fun AboutScreen(
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
+                                        val toggleLogs: (Boolean) -> Unit = { next ->
+                                            try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                                            onToggleSaveLogs(next)
+                                        }
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .clickable { toggleLogs(!saveLogsEnabled) }
                                                 .padding(horizontal = 20.dp, vertical = 16.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                                                 Text(
-                                                    text = "Save Logs",
+                                                    text = stringResource(R.string.about_save_logs_title),
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = MaterialTheme.colorScheme.onSurface
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
-                                                    text = "Save logs to local files on your device",
+                                                    text = stringResource(R.string.about_save_logs_desc),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -365,7 +374,7 @@ fun AboutScreen(
 
                                             ExpressiveSwitch(
                                                 checked = saveLogsEnabled,
-                                                onCheckedChange = onToggleSaveLogs
+                                                onCheckedChange = toggleLogs
                                             )
                                         }
 
@@ -376,8 +385,8 @@ fun AboutScreen(
 
                                         AboutActionRow(
                                             icon = Icons.Rounded.UploadFile,
-                                            title = "Export Logs",
-                                            subtitle = "Share or save a text file of your logs",
+                                            title = stringResource(R.string.about_export_logs_title),
+                                            subtitle = stringResource(R.string.about_export_logs_desc),
                                             onClick = {
                                                 LumenLogger.exportLogs(context)
                                             }
@@ -390,8 +399,8 @@ fun AboutScreen(
 
                                         AboutActionRow(
                                             icon = Icons.Rounded.BugReport,
-                                            title = "View Live Logs",
-                                            subtitle = "View live app activity in real time",
+                                            title = stringResource(R.string.about_view_live_logs_title),
+                                            subtitle = stringResource(R.string.about_view_live_logs_desc),
                                             onClick = {
                                                 val now = System.currentTimeMillis()
                                                 if (now - lastLogOpenTime > 600L) {
@@ -399,6 +408,21 @@ fun AboutScreen(
                                                     LumenLogger.i("AboutUI") { "Opened Live Log Viewer dialog" }
                                                     showLogViewer = true
                                                 }
+                                            }
+                                        )
+
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+
+                                        AboutActionRow(
+                                            icon = Icons.Rounded.SystemUpdate,
+                                            title = stringResource(R.string.about_force_update_title),
+                                            subtitle = stringResource(R.string.about_force_update_desc),
+                                            onClick = {
+                                                android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
+                                                onForceUpdateDialog()
                                             }
                                         )
                                     }
@@ -440,7 +464,7 @@ fun AboutScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "About",
+                            text = stringResource(R.string.about_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -455,8 +479,8 @@ fun AboutScreen(
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 AboutActionRow(
                                     icon = Icons.Rounded.Code,
-                                    title = "Source code",
-                                    subtitle = "View repository on GitHub",
+                                    title = stringResource(R.string.about_source_code_title),
+                                    subtitle = stringResource(R.string.about_source_code_desc),
                                     onClick = {
                                         openWebUrl(context, "https://github.com/Reiux/lumen-android")
                                     }
@@ -467,8 +491,8 @@ fun AboutScreen(
                                 )
                                 AboutActionRow(
                                     icon = Icons.Rounded.Description,
-                                    title = "Open source licenses",
-                                    subtitle = "Third-party libraries and licenses",
+                                    title = stringResource(R.string.about_licenses_title),
+                                    subtitle = stringResource(R.string.about_licenses_desc),
                                     onClick = {
                                         LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
                                         showLicensesDialog = true
@@ -480,10 +504,10 @@ fun AboutScreen(
                                 )
                                 AboutActionRow(
                                     icon = Icons.Rounded.SystemUpdate,
-                                    title = "Check for updates",
-                                    subtitle = "Check GitHub for latest release",
+                                    title = stringResource(R.string.about_check_updates_title),
+                                    subtitle = stringResource(R.string.about_check_updates_desc),
                                     onClick = {
-                                        android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
                                         onCheckForUpdates()
                                     }
                                 )
@@ -503,7 +527,7 @@ fun AboutScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Debug",
+                                text = stringResource(R.string.about_debug_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -516,23 +540,28 @@ fun AboutScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
+                                    val toggleLogs: (Boolean) -> Unit = { next ->
+                                        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                                        onToggleSaveLogs(next)
+                                    }
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .clickable { toggleLogs(!saveLogsEnabled) }
                                             .padding(horizontal = 20.dp, vertical = 16.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                                             Text(
-                                                text = "Save Logs",
+                                                text = stringResource(R.string.about_save_logs_title),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = "Save logs to local files on your device",
+                                                text = stringResource(R.string.about_save_logs_desc),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -540,7 +569,7 @@ fun AboutScreen(
 
                                         ExpressiveSwitch(
                                             checked = saveLogsEnabled,
-                                            onCheckedChange = onToggleSaveLogs
+                                            onCheckedChange = toggleLogs
                                         )
                                     }
 
@@ -551,8 +580,8 @@ fun AboutScreen(
 
                                     AboutActionRow(
                                         icon = Icons.Rounded.UploadFile,
-                                        title = "Export Logs",
-                                        subtitle = "Share or save a text file of your logs",
+                                        title = stringResource(R.string.about_export_logs_title),
+                                        subtitle = stringResource(R.string.about_export_logs_desc),
                                         onClick = {
                                             LumenLogger.exportLogs(context)
                                         }
@@ -565,8 +594,8 @@ fun AboutScreen(
 
                                     AboutActionRow(
                                         icon = Icons.Rounded.BugReport,
-                                        title = "View Live Logs",
-                                        subtitle = "View live app activity in real time",
+                                        title = stringResource(R.string.about_view_live_logs_title),
+                                        subtitle = stringResource(R.string.about_view_live_logs_desc),
                                         onClick = {
                                             val now = System.currentTimeMillis()
                                             if (now - lastLogOpenTime > 600L) {
@@ -584,10 +613,10 @@ fun AboutScreen(
 
                                     AboutActionRow(
                                         icon = Icons.Rounded.SystemUpdate,
-                                        title = "Force Update",
-                                        subtitle = "Reinstall or force update to the latest release",
+                                        title = stringResource(R.string.about_force_update_title),
+                                        subtitle = stringResource(R.string.about_force_update_desc),
                                         onClick = {
-                                            android.widget.Toast.makeText(context, "Checking for updates...", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
                                             onForceUpdateDialog()
                                         }
                                     )
@@ -826,7 +855,7 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Open Source Licenses",
+                text = stringResource(R.string.about_licenses_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -856,7 +885,7 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
         },
         confirmButton = {
             ExpressiveButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.btn_close))
             }
         },
         shape = RoundedCornerShape(28.dp),
@@ -869,7 +898,7 @@ private fun openWebUrl(context: Context, url: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         context.startActivity(intent)
     } catch (_: Exception) {
-        Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.toast_cannot_open_browser), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -880,7 +909,7 @@ private fun CreditsAndDisclaimerSection(context: Context) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "Credits & Acknowledgments",
+            text = stringResource(R.string.about_credits_title),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -895,7 +924,7 @@ private fun CreditsAndDisclaimerSection(context: Context) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 AboutActionRow(
                     icon = Icons.Rounded.Person,
-                    title = "Developer",
+                    title = stringResource(R.string.about_developer_title),
                     subtitle = "Reiux (GitHub @Reiux)",
                     onClick = {
                         openWebUrl(context, "https://github.com/Reiux")
@@ -907,7 +936,7 @@ private fun CreditsAndDisclaimerSection(context: Context) {
                 )
                 AboutActionRow(
                     icon = Icons.Rounded.Favorite,
-                    title = "Original Core Protocol Logic",
+                    title = stringResource(R.string.about_core_protocol_title),
                     subtitle = "xob0t/gotohp",
                     onClick = {
                         openWebUrl(context, "https://github.com/xob0t/gotohp")
@@ -925,14 +954,14 @@ private fun CreditsAndDisclaimerSection(context: Context) {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = "Disclaimer",
+                    text = stringResource(R.string.about_disclaimer_title),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Lumen is an independent open-source application and is not affiliated with, endorsed by, or sponsored by Google LLC. Users use this app and services at their own discretion.",
+                    text = stringResource(R.string.about_disclaimer_text),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

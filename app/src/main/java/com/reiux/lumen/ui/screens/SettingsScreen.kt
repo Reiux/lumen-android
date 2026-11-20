@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,9 +16,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
@@ -50,6 +53,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Card
@@ -64,14 +69,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -79,14 +89,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.ui.components.DynamicLumenIcon
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogCallout
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.rememberHapticClick
 import com.reiux.lumen.ui.theme.ColorPreset
 import com.reiux.lumen.ui.theme.getAvailablePresets
 import com.reiux.lumen.util.DeviceConditions
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -104,6 +120,7 @@ fun SettingsScreen(
     isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
+    onReplayAccountSwipeNudge: () -> Unit = {},
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
@@ -113,100 +130,66 @@ fun SettingsScreen(
     onUpdateForcedSeason: (String) -> Unit = {},
     onUpdateDeleteAfterBackup: (Boolean) -> Unit = {},
     onUpdateEnableBlurEffects: (Boolean) -> Unit = {},
+    onUpdateAutoSyncAlbums: (Boolean) -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
-    var showOemGuideDialog by remember { mutableStateOf(false) }
-    var showAccountSafetyDialog by remember { mutableStateOf(false) }
-    var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
-    var showConfirmDeleteAfterBackupDialog by remember { mutableStateOf(false) }
-    var showAllFilesPermissionDialog by remember { mutableStateOf(false) }
-    var pendingDeleteAfterBackup by remember { mutableStateOf(false) }
-    var returningFromAllFilesPermission by remember { mutableStateOf(false) }
+    var showOemGuideDialog by rememberSaveable { mutableStateOf(false) }
+    var showAccountSafetyDialog by rememberSaveable { mutableStateOf(false) }
+    var showUploadActiveBlockedDialog by rememberSaveable { mutableStateOf<String?>(null) }
+    var showConfirmDeleteAfterBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showAllFilesPermissionDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteAfterBackup by rememberSaveable { mutableStateOf(false) }
+    var returningFromAllFilesPermission by rememberSaveable { mutableStateOf(false) }
     var isBatteryOptimizedExempt by remember {
         mutableStateOf(DeviceConditions.isIgnoringBatteryOptimizations(context))
     }
 
     if (showConfirmDeleteAfterBackupDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showConfirmDeleteAfterBackupDialog = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier
-                .widthIn(max = 560.dp)
-                .padding(horizontal = 24.dp),
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
+            icon = Icons.Rounded.DeleteForever,
+            title = stringResource(R.string.dialog_delete_after_backup_title),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.dialog_delete_after_backup_confirm),
+            onConfirm = {
+                showConfirmDeleteAfterBackupDialog = false
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+                    onUpdateDeleteAfterBackup(true)
+                } else {
+                    // Don't arm the destructive flag yet: the permission screen opens
+                    // next and the user may decline. The flag is only applied in the
+                    // ON_RESUME handler once the grant is verified.
+                    pendingDeleteAfterBackup = true
+                    showAllFilesPermissionDialog = true
+                }
             },
-            title = {
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            ExpressiveDialogCallout(tone = ExpressiveDialogTone.ERROR) {
                 Text(
-                    text = "Delete Media After Backup?",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = stringResource(R.string.dialog_delete_after_backup_lead),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Enabling this option will permanently delete backed up photos and videos from your phone's storage to free up space.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = "• Photos and videos uploaded after enabling this will be removed from this device once Google Photos confirms the upload.\n" +
-                               "• If you delete a photo from Google Photos in the future, it will no longer exist on your phone.\n" +
-                               "• Files that failed to upload or haven't been backed up yet will never be deleted.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
-                    )
-                    Text(
-                        text = "Are you sure you want to enable automatic local deletion?",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        showConfirmDeleteAfterBackupDialog = false
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
-                            onUpdateDeleteAfterBackup(true)
-                        } else {
-                            // Don't arm the destructive flag yet: the permission screen opens
-                            // next and the user may decline. The flag is only applied in the
-                            // ON_RESUME handler once the grant is verified.
-                            pendingDeleteAfterBackup = true
-                            showAllFilesPermissionDialog = true
-                        }
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("I Understand, Enable")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDeleteAfterBackupDialog = false }) {
-                    Text("Cancel")
-                }
+                Text(
+                    text = stringResource(R.string.dialog_delete_after_backup_bullets),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    lineHeight = 18.sp
+                )
             }
-        )
+            Text(
+                text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 
     if (showAllFilesPermissionDialog) {
@@ -216,7 +199,10 @@ fun SettingsScreen(
                 // treat this as a cancel when we didn't just confirm.
                 showAllFilesPermissionDialog = false
                 if (!returningFromAllFilesPermission) {
-                    // User declined the permission flow — leave the destructive flag off.
+                    // User declined or settings failed to launch — leave the destructive flag off.
+                    if (pendingDeleteAfterBackup) {
+                        Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
+                    }
                     pendingDeleteAfterBackup = false
                 }
             },
@@ -236,49 +222,26 @@ fun SettingsScreen(
     }
 
     if (showUploadActiveBlockedDialog != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showUploadActiveBlockedDialog = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Upload in Progress",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = "You cannot change the ${showUploadActiveBlockedDialog} while an upload is currently running.\n\n" +
-                            "Changing quota or compression profiles mid-transfer alters device emulation headers and will corrupt active file chunks or trigger Google storage quota lockouts.\n\n" +
-                            "Please wait for your uploads to finish or cancel the active backup first.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = { showUploadActiveBlockedDialog = null }
-                ) {
-                    Text("Got it")
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showUploadActiveBlockedDialog = null }
+        ) {
+            Text(
+                text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleStorageSaverToggle: (Boolean) -> Unit = { newValue ->
         if (isUploading) {
-            showUploadActiveBlockedDialog = "Storage Saver Quality"
-            Toast.makeText(context, "Cannot change quality while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = context.getString(R.string.pref_storage_saver_title)
+            Toast.makeText(context, context.getString(R.string.toast_cannot_change_quality_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onUpdateStorageSaver(newValue)
         }
@@ -286,8 +249,8 @@ fun SettingsScreen(
 
     val handleUseQuotaToggle: (Boolean) -> Unit = { newValue ->
         if (isUploading) {
-            showUploadActiveBlockedDialog = "Account Quota setting"
-            Toast.makeText(context, "Cannot change quota setting while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = context.getString(R.string.pref_use_quota_title)
+            Toast.makeText(context, context.getString(R.string.toast_cannot_change_quota_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onUpdateUseQuota(newValue)
         }
@@ -362,19 +325,19 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Settings",
+                    text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Upload preferences and app theme",
+                    text = stringResource(R.string.settings_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Text(
-                    text = "Theme Palette",
+                    text = stringResource(R.string.settings_theme_palette),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -387,13 +350,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Accent Palette",
+                            text = stringResource(R.string.settings_accent_palette),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Dynamic Monet color matches your wallpaper by default. Pick any preset to customize.",
+                            text = stringResource(R.string.settings_accent_palette_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -419,7 +382,7 @@ fun SettingsScreen(
 
                 if (settings.developerModeUnlocked) {
                     Text(
-                        text = "Developer Tools",
+                        text = stringResource(R.string.settings_dev_tools),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -433,8 +396,8 @@ fun SettingsScreen(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         if (com.reiux.lumen.BuildConfig.DEBUG) {
                             SettingSwitchRow(
-                                title = "Gaussian Blur on Dialogs & Sheets",
-                                subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                title = stringResource(R.string.settings_blur_dialogs_title),
+                                subtitle = stringResource(R.string.settings_blur_dialogs_desc),
                                 checked = settings.enableBlurEffects,
                                 onCheckedChange = onUpdateEnableBlurEffects
                             )
@@ -443,8 +406,8 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingSwitchRow(
-                                title = "Screenshot Showcase Mode",
-                                subtitle = "Freeze UI into static sample data for banner screenshots",
+                                title = stringResource(R.string.settings_showcase_mode_title),
+                                subtitle = stringResource(R.string.settings_showcase_mode_desc),
                                 checked = isShowcaseMode,
                                 onCheckedChange = { onToggleShowcaseMode() }
                             )
@@ -453,16 +416,32 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingSwitchRow(
-                                title = "Frontend Mock Simulation",
-                                subtitle = "Run active background upload loops and timers",
+                                title = stringResource(R.string.settings_mock_sim_title),
+                                subtitle = stringResource(R.string.settings_mock_sim_desc),
                                 checked = isMockMode,
                                 onCheckedChange = { onToggleMockMode() }
                             )
+                            if (isMockMode) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                                SettingActionRow(
+                                    title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
+                                    subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
+                                    actionLabel = stringResource(R.string.settings_action_replay),
+                                    onClick = onReplayAccountSwipeNudge
+                                )
+                            }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                         SettingActionRow(
-                            title = "Run Diagnostics",
-                            subtitle = "Check endpoints, hashing speed, and permissions",
-                            actionLabel = "Run",
+                            title = stringResource(R.string.settings_run_diagnostics_title),
+                            subtitle = stringResource(R.string.settings_run_diagnostics_desc),
+                            actionLabel = stringResource(R.string.settings_action_run),
                             onClick = onOpenDevDiagnostics
                         )
                         HorizontalDivider(
@@ -470,9 +449,9 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
                         SettingActionRow(
-                            title = "Replay Setup Walkthrough",
-                            subtitle = "Go through the initial setup screens again",
-                            actionLabel = "Replay",
+                            title = stringResource(R.string.settings_replay_walkthrough_title),
+                            subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
+                            actionLabel = stringResource(R.string.settings_action_replay),
                             onClick = onReplayOnboarding
                         )
                         HorizontalDivider(
@@ -482,28 +461,28 @@ fun SettingsScreen(
                         if (com.reiux.lumen.BuildConfig.DEBUG) {
                             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                 Text(
-                                    text = "Force Season Theme",
+                                    text = stringResource(R.string.settings_force_season_title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Override date-based seasonal tints",
+                                    text = stringResource(R.string.settings_force_season_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Row(
+                                FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
                                     seasons.forEach { s ->
                                         val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
                                         ExpressiveTonalButton(
                                             onClick = { onUpdateForcedSeason(s) },
-                                            modifier = Modifier.weight(1f),
-                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                         ) {
                                             Text(
                                                 text = when (s) {
@@ -513,7 +492,8 @@ fun SettingsScreen(
                                                     "NEW_YEAR" -> "New Year"
                                                     else -> s
                                                 },
-                                                fontSize = 10.sp,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
                                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                                 color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -527,9 +507,9 @@ fun SettingsScreen(
                             )
                         }
                             SettingActionRow(
-                                title = "Turn Off Developer Mode",
-                                subtitle = "Hide developer tools across the app",
-                                actionLabel = "Lock",
+                                title = stringResource(R.string.settings_disable_dev_mode_title),
+                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
+                                actionLabel = stringResource(R.string.settings_action_lock),
                                 onClick = { onToggleDeveloperMode(false) }
                             )
                         }
@@ -550,7 +530,7 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Network & Upload Speed",
+                    text = stringResource(R.string.settings_network_speed_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -568,59 +548,23 @@ fun SettingsScreen(
                 )
 
                 Text(
-                    text = "Storage & Quality",
+                    text = stringResource(R.string.settings_storage_quality_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = "Storage Saver Quality",
-                            subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
-                            checked = settings.storageSaverQuality,
-                            onCheckedChange = handleStorageSaverToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Use Account Quota",
-                            subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
-                            checked = settings.useQuota,
-                            onCheckedChange = handleUseQuotaToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Upload Notifications",
-                            subtitle = "Show upload progress in the notification shade",
-                            checked = settings.notificationsEnabled,
-                            onCheckedChange = onUpdateNotifications
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingActionRow(
-                            title = stringResource(R.string.account_safety_title),
-                            subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = "View",
-                            onClick = { showAccountSafetyDialog = true }
-                        )
-                    }
-                }
+                StorageAndQualityCard(
+                    settings = settings,
+                    onStorageSaverToggle = handleStorageSaverToggle,
+                    onUseQuotaToggle = handleUseQuotaToggle,
+                    onUpdateNotifications = onUpdateNotifications,
+                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                    onOpenAccountSafety = { showAccountSafetyDialog = true }
+                )
 
                 Text(
-                    text = "Storage Cleanup",
+                    text = stringResource(R.string.settings_storage_cleanup_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -634,8 +578,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Delete photos from phone after backup",
-                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            title = stringResource(R.string.pref_delete_after_backup_title),
+                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
                             checked = settings.deleteAfterBackup,
                             onCheckedChange = { next ->
                                 if (next) {
@@ -649,7 +593,7 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "Updates",
+                    text = stringResource(R.string.settings_updates_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -671,7 +615,7 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.settings_about_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -705,7 +649,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "About Lumen",
+                                    text = stringResource(R.string.settings_about_lumen),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -721,7 +665,7 @@ fun SettingsScreen(
 
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Open About",
+                            contentDescription = stringResource(R.string.settings_about_lumen),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -744,13 +688,13 @@ fun SettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Settings",
+                    text = stringResource(R.string.settings_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Upload preferences and app theme",
+                    text = stringResource(R.string.settings_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -759,7 +703,7 @@ fun SettingsScreen(
             // Appearance & Palette Style Presets
             item {
                 Text(
-                    text = "Theme",
+                    text = stringResource(R.string.settings_theme_palette),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -774,13 +718,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Accent Palette",
+                            text = stringResource(R.string.settings_accent_palette),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Dynamic Monet color matches your wallpaper by default. Pick any preset to customize.",
+                            text = stringResource(R.string.settings_accent_palette_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -808,7 +752,7 @@ fun SettingsScreen(
             // Network & Threads
             item {
                 Text(
-                    text = "Network & Upload Speed",
+                    text = stringResource(R.string.settings_network_speed_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -831,7 +775,7 @@ fun SettingsScreen(
             // Upload Quality & Quota
             item {
                 Text(
-                    text = "Storage & Quality",
+                    text = stringResource(R.string.settings_storage_quality_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -839,56 +783,20 @@ fun SettingsScreen(
             }
 
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = "Storage Saver Quality",
-                            subtitle = if (settings.storageSaverQuality) "Pixel 2 profile (slightly compressed)" else "Original resolution (Pixel 1 profile)",
-                            checked = settings.storageSaverQuality,
-                            onCheckedChange = handleStorageSaverToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Use Account Quota",
-                            subtitle = "Uploads count against your Google storage quota (Pixel 8 profile)",
-                            checked = settings.useQuota,
-                            onCheckedChange = handleUseQuotaToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = "Upload Notifications",
-                            subtitle = "Show upload progress in the notification shade",
-                            checked = settings.notificationsEnabled,
-                            onCheckedChange = onUpdateNotifications
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingActionRow(
-                            title = stringResource(R.string.account_safety_title),
-                            subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = "View",
-                            onClick = { showAccountSafetyDialog = true }
-                        )
-                    }
-                }
+                StorageAndQualityCard(
+                    settings = settings,
+                    onStorageSaverToggle = handleStorageSaverToggle,
+                    onUseQuotaToggle = handleUseQuotaToggle,
+                    onUpdateNotifications = onUpdateNotifications,
+                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                    onOpenAccountSafety = { showAccountSafetyDialog = true }
+                )
             }
 
             // Storage Cleanup (Red section)
             item {
                 Text(
-                    text = "Storage Cleanup",
+                    text = stringResource(R.string.settings_storage_cleanup_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -904,8 +812,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingSwitchRow(
-                            title = "Delete photos from phone after backup",
-                            subtitle = "Permanently deletes backed up media from this device once confirmed in Google Photos",
+                            title = stringResource(R.string.pref_delete_after_backup_title),
+                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
                             checked = settings.deleteAfterBackup,
                             onCheckedChange = { next ->
                                 if (next) {
@@ -923,7 +831,7 @@ fun SettingsScreen(
             if (settings.developerModeUnlocked) {
                 item {
                     Text(
-                        text = "Developer Tools",
+                        text = stringResource(R.string.settings_dev_tools),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -939,8 +847,8 @@ fun SettingsScreen(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (com.reiux.lumen.BuildConfig.DEBUG) {
                                 SettingSwitchRow(
-                                    title = "Gaussian Blur on Dialogs & Sheets",
-                                    subtitle = "Use window-level hardware Gaussian blur on dialog and sheet backdrops",
+                                    title = stringResource(R.string.settings_blur_dialogs_title),
+                                    subtitle = stringResource(R.string.settings_blur_dialogs_desc),
                                     checked = settings.enableBlurEffects,
                                     onCheckedChange = onUpdateEnableBlurEffects
                                 )
@@ -949,8 +857,8 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                                 SettingSwitchRow(
-                                    title = "Screenshot Showcase Mode",
-                                    subtitle = "Freeze UI into static sample data for banner screenshots",
+                                    title = stringResource(R.string.settings_showcase_mode_title),
+                                    subtitle = stringResource(R.string.settings_showcase_mode_desc),
                                     checked = isShowcaseMode,
                                     onCheckedChange = { onToggleShowcaseMode() }
                                 )
@@ -959,20 +867,32 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                                 SettingSwitchRow(
-                                    title = "Frontend Mock Simulation",
-                                    subtitle = "Run active background upload loops and timers",
+                                    title = stringResource(R.string.settings_mock_sim_title),
+                                    subtitle = stringResource(R.string.settings_mock_sim_desc),
                                     checked = isMockMode,
                                     onCheckedChange = { onToggleMockMode() }
                                 )
+                                if (isMockMode) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    )
+                                    SettingActionRow(
+                                        title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
+                                        subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
+                                        actionLabel = stringResource(R.string.settings_action_replay),
+                                        onClick = onReplayAccountSwipeNudge
+                                    )
+                                }
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                             }
                             SettingActionRow(
-                                title = "Run Diagnostics",
-                                subtitle = "Check endpoints, hashing speed, and permissions",
-                                actionLabel = "Run",
+                                title = stringResource(R.string.settings_run_diagnostics_title),
+                                subtitle = stringResource(R.string.settings_run_diagnostics_desc),
+                                actionLabel = stringResource(R.string.settings_action_run),
                                 onClick = onOpenDevDiagnostics
                             )
                             HorizontalDivider(
@@ -980,9 +900,9 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                             SettingActionRow(
-                                title = "Replay Setup Walkthrough",
-                                subtitle = "Go through the initial setup screens again",
-                                actionLabel = "Replay",
+                                title = stringResource(R.string.settings_replay_walkthrough_title),
+                                subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
+                                actionLabel = stringResource(R.string.settings_action_replay),
                                 onClick = onReplayOnboarding
                             )
                             HorizontalDivider(
@@ -992,28 +912,28 @@ fun SettingsScreen(
                             if (com.reiux.lumen.BuildConfig.DEBUG) {
                                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                     Text(
-                                        text = "Force Season Theme",
+                                        text = stringResource(R.string.settings_force_season_title),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Override date-based seasonal tints",
+                                        text = stringResource(R.string.settings_force_season_desc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
+                                    FlowRow(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
                                         seasons.forEach { s ->
                                             val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
                                             ExpressiveTonalButton(
                                                 onClick = { onUpdateForcedSeason(s) },
-                                                modifier = Modifier.weight(1f),
-                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                             ) {
                                                 Text(
                                                     text = when (s) {
@@ -1023,7 +943,8 @@ fun SettingsScreen(
                                                         "NEW_YEAR" -> "New Year"
                                                         else -> s
                                                     },
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
                                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                                     color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1037,9 +958,9 @@ fun SettingsScreen(
                                 )
                             }
                             SettingActionRow(
-                                title = "Turn Off Developer Mode",
-                                subtitle = "Hide developer tools across the app",
-                                actionLabel = "Lock",
+                                title = stringResource(R.string.settings_disable_dev_mode_title),
+                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
+                                actionLabel = stringResource(R.string.settings_action_lock),
                                 onClick = { onToggleDeveloperMode(false) }
                             )
                         }
@@ -1050,7 +971,7 @@ fun SettingsScreen(
             // Updates
             item {
                 Text(
-                    text = "Updates",
+                    text = stringResource(R.string.settings_updates_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -1076,7 +997,7 @@ fun SettingsScreen(
             // About
             item {
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.settings_about_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -1112,7 +1033,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "About Lumen",
+                                    text = stringResource(R.string.settings_about_lumen),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -1128,7 +1049,7 @@ fun SettingsScreen(
 
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Open About",
+                            contentDescription = stringResource(R.string.settings_about_lumen),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -1150,20 +1071,83 @@ fun PalettePresetCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val hapticClick = rememberHapticClick(onClick = onClick)
-    val shape = RoundedCornerShape(16.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    val cornerRadius by animateDpAsState(
+        targetValue = when {
+            isPressed -> 10.dp
+            isSelected -> 22.dp
+            else -> 14.dp
+        },
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 750f),
+        label = "paletteCardCorner"
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        label = "paletteCardScale"
+    )
+    val swatchScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 700f),
+        label = "paletteSwatchScale"
+    )
+    val swatchSpacing by animateDpAsState(
+        targetValue = if (isSelected) (-4).dp else (-6).dp,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 700f),
+        label = "paletteSwatchSpacing"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteContainerColor"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteBorderColor"
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 1.5.dp else 1.dp,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteBorderWidth"
+    )
+    val labelColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteLabelColor"
+    )
+    val shape = RoundedCornerShape(cornerRadius)
 
     Surface(
         modifier = Modifier
+            .scale(pressScale)
             .clip(shape)
-            .clickable(onClick = hapticClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = hapticClick
+            )
             .border(
-                width = 1.5.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                width = borderWidth,
+                color = borderColor,
                 shape = shape
             ),
         shape = shape,
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = containerColor,
         tonalElevation = if (isSelected) 2.dp else 0.dp
     ) {
         Row(
@@ -1171,7 +1155,10 @@ fun PalettePresetCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Three overlapping mini swatches
-            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+            Row(
+                modifier = Modifier.scale(swatchScale),
+                horizontalArrangement = Arrangement.spacedBy(swatchSpacing)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(18.dp)
@@ -1201,7 +1188,7 @@ fun PalettePresetCard(
                 text = preset.name,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                color = labelColor
             )
         }
     }
@@ -1214,9 +1201,15 @@ fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+    val toggleWithHaptic: (Boolean) -> Unit = { next ->
+        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+        onCheckedChange(next)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { toggleWithHaptic(!checked) }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1237,7 +1230,7 @@ fun SettingSwitchRow(
         Spacer(modifier = Modifier.width(16.dp))
         ExpressiveSwitch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = toggleWithHaptic
         )
     }
 }
@@ -1247,6 +1240,7 @@ fun SettingActionRow(
     title: String,
     subtitle: String,
     actionLabel: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
@@ -1272,9 +1266,75 @@ fun SettingActionRow(
         Spacer(modifier = Modifier.width(16.dp))
         ExpressiveTonalButton(
             onClick = onClick,
+            enabled = enabled,
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(actionLabel)
+        }
+    }
+}
+
+@Composable
+private fun StorageAndQualityCard(
+    settings: BackupSettings,
+    onStorageSaverToggle: (Boolean) -> Unit,
+    onUseQuotaToggle: (Boolean) -> Unit,
+    onUpdateNotifications: (Boolean) -> Unit,
+    onUpdateAutoSyncAlbums: (Boolean) -> Unit,
+    onOpenAccountSafety: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_storage_saver_title),
+                subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
+                checked = settings.storageSaverQuality,
+                onCheckedChange = onStorageSaverToggle
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_use_quota_title),
+                subtitle = stringResource(R.string.pref_use_quota_desc),
+                checked = settings.useQuota,
+                onCheckedChange = onUseQuotaToggle
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_auto_sync_albums_title),
+                subtitle = stringResource(R.string.pref_auto_sync_albums_desc),
+                checked = settings.autoSyncAlbums,
+                onCheckedChange = onUpdateAutoSyncAlbums
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_upload_notifs_title),
+                subtitle = stringResource(R.string.pref_upload_notifs_desc),
+                checked = settings.notificationsEnabled,
+                onCheckedChange = onUpdateNotifications
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingActionRow(
+                title = stringResource(R.string.account_safety_title),
+                subtitle = stringResource(R.string.account_safety_subtitle),
+                actionLabel = stringResource(R.string.settings_action_view),
+                onClick = onOpenAccountSafety
+            )
         }
     }
 }
@@ -1298,8 +1358,8 @@ private fun NetworkAndSpeedCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             // 1. Back up new photos and videos
             SettingSwitchRow(
-                title = "Back up new photos and videos",
-                subtitle = "Automatically back up new files in enabled folders",
+                title = stringResource(R.string.pref_auto_backup_title),
+                subtitle = stringResource(R.string.pref_auto_backup_desc),
                 checked = settings.autoBackupEnabled,
                 onCheckedChange = onUpdateAutoBackup
             )
@@ -1311,8 +1371,8 @@ private fun NetworkAndSpeedCard(
 
             // 2. Wi-Fi only
             SettingSwitchRow(
-                title = "Wi-Fi only",
-                subtitle = "Only upload when connected to Wi-Fi",
+                title = stringResource(R.string.pref_wifi_only_title),
+                subtitle = stringResource(R.string.pref_wifi_only_desc),
                 checked = settings.wifiOnly,
                 onCheckedChange = onUpdateWifiOnly
             )
@@ -1324,8 +1384,8 @@ private fun NetworkAndSpeedCard(
 
             // 3. While charging only
             SettingSwitchRow(
-                title = "While charging only",
-                subtitle = "Only upload when plugged in",
+                title = stringResource(R.string.pref_charging_only_title),
+                subtitle = stringResource(R.string.pref_charging_only_desc),
                 checked = settings.chargingOnly,
                 onCheckedChange = onUpdateChargingOnly
             )
@@ -1336,6 +1396,9 @@ private fun NetworkAndSpeedCard(
             )
 
             // 4. Simultaneous Uploads
+            var sliderThreads by remember(settings.uploadThreads) {
+                mutableFloatStateOf(settings.uploadThreads.toFloat())
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1347,27 +1410,28 @@ private fun NetworkAndSpeedCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Simultaneous Uploads",
+                        text = stringResource(R.string.pref_upload_threads_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${settings.uploadThreads} threads",
+                        text = stringResource(R.string.pref_upload_threads_count, sliderThreads.roundToInt()),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Text(
-                    text = "Number of files to upload at the same time",
+                    text = stringResource(R.string.pref_upload_threads_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Slider(
-                    value = settings.uploadThreads.toFloat(),
-                    onValueChange = { onUpdateUploadThreads(it.toInt()) },
+                    value = sliderThreads,
+                    onValueChange = { sliderThreads = it },
+                    onValueChangeFinished = { onUpdateUploadThreads(sliderThreads.roundToInt()) },
                     valueRange = 1f..20f,
                     steps = 18
                 )
@@ -1388,14 +1452,14 @@ private fun NetworkAndSpeedCard(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
-                        text = "Allow Background Activity",
+                        text = stringResource(R.string.pref_background_activity_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Turn off battery optimization so backups keep running in the background",
+                        text = stringResource(R.string.pref_background_activity_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1417,7 +1481,7 @@ private fun NetworkAndSpeedCard(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Allowed",
+                                text = stringResource(R.string.status_allowed),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -1431,7 +1495,7 @@ private fun NetworkAndSpeedCard(
                         },
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                     ) {
-                        Text("Allow")
+                        Text(stringResource(R.string.btn_allow))
                     }
                 }
             }
@@ -1452,14 +1516,14 @@ private fun NetworkAndSpeedCard(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
-                        text = "Background Guide for Your Phone",
+                        text = stringResource(R.string.pref_oem_guide_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Steps for Xiaomi, Samsung, and other brands to keep backups alive",
+                        text = stringResource(R.string.pref_oem_guide_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1470,7 +1534,7 @@ private fun NetworkAndSpeedCard(
                 ) {
                     Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Guide")
+                    Text(stringResource(R.string.btn_guide))
                 }
             }
         }

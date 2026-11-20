@@ -36,8 +36,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,7 +75,10 @@ import coil.compose.AsyncImage
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.ui.components.AddAccountDialog
 import com.reiux.lumen.ui.components.EditDisplayNameDialog
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogCallout
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.groupPositionOf
@@ -100,57 +106,47 @@ fun AccountsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showAddDialog by remember { mutableStateOf(false) }
-    var accountToRename by remember { mutableStateOf<GoogleAccount?>(null) }
-    var accountToRemove by remember { mutableStateOf<GoogleAccount?>(null) }
-    var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
-    var targetAvatarAccountEmail by remember { mutableStateOf<String?>(null) }
-    var showTimeCapsule by remember { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var accountToRenameEmail by rememberSaveable { mutableStateOf<String?>(null) }
+    var accountToRemoveEmail by rememberSaveable { mutableStateOf<String?>(null) }
+    var showUploadActiveBlockedDialog by rememberSaveable { mutableStateOf<String?>(null) }
+    var targetAvatarAccountEmail by rememberSaveable { mutableStateOf<String?>(null) }
+    var showTimeCapsule by rememberSaveable { mutableStateOf(false) }
+
+    val accountToRename = remember(accountToRenameEmail, accounts) {
+        accountToRenameEmail?.let { email -> accounts.find { it.email.equals(email, ignoreCase = true) } }
+    }
+    val accountToRemove = remember(accountToRemoveEmail, accounts) {
+        accountToRemoveEmail?.let { email -> accounts.find { it.email.equals(email, ignoreCase = true) } }
+    }
 
     if (showUploadActiveBlockedDialog != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        val activeLabel = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
+        val msg = if (showUploadActiveBlockedDialog == "switch") {
+            stringResource(R.string.accounts_upload_active_switch_msg, activeLabel)
+        } else {
+            stringResource(R.string.accounts_upload_active_remove_msg, activeLabel)
+        }
+        ExpressiveAlertDialog(
             onDismissRequest = { showUploadActiveBlockedDialog = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Upload in Progress",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = "You cannot ${showUploadActiveBlockedDialog} while an upload is currently running.\n\n" +
-                            "Files are actively streaming to ${selectedAccount?.displayName ?: selectedAccount?.email ?: "your active account"}.\n\n" +
-                            "Please wait for the current upload batch to complete or cancel the backup first.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = { showUploadActiveBlockedDialog = null }
-                ) {
-                    Text("Got it")
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showUploadActiveBlockedDialog = null }
+        ) {
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleSelectAccount: (String) -> Unit = { targetEmail ->
         if (isUploading && targetEmail != selectedAccount?.email) {
-            showUploadActiveBlockedDialog = "switch accounts"
-            Toast.makeText(context, "Cannot switch accounts while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = "switch"
+            Toast.makeText(context, context.getString(R.string.toast_cannot_switch_uploading), Toast.LENGTH_SHORT).show()
         } else {
             onSelectAccount(targetEmail)
         }
@@ -158,10 +154,10 @@ fun AccountsScreen(
 
     val handleRemoveAccount: (GoogleAccount) -> Unit = { targetAccount ->
         if (isUploading) {
-            showUploadActiveBlockedDialog = "remove an account"
-            Toast.makeText(context, "Cannot remove an account while uploading", Toast.LENGTH_SHORT).show()
+            showUploadActiveBlockedDialog = "remove"
+            Toast.makeText(context, context.getString(R.string.toast_cannot_remove_uploading), Toast.LENGTH_SHORT).show()
         } else {
-            accountToRemove = targetAccount
+            accountToRemoveEmail = targetAccount.email
         }
     }
 
@@ -178,7 +174,7 @@ fun AccountsScreen(
         LumenTimeCapsuleDialog(onDismiss = { showTimeCapsule = false })
     }
 
-    var isAddSubmitInFlight by remember { mutableStateOf(false) }
+    var isAddSubmitInFlight by rememberSaveable { mutableStateOf(false) }
 
     if (showAddDialog || isAddingAccount || addAccountError != null) {
         AddAccountDialog(
@@ -196,7 +192,10 @@ fun AccountsScreen(
                 isAddSubmitInFlight = true
                 onAddAccountCredential(it)
             },
-            onClearError = onClearError,
+            onClearError = {
+                showAddDialog = true
+                onClearError()
+            },
             isLoading = isAddingAccount,
             errorMessage = addAccountError,
             hasAcknowledgedAccountRisk = hasAcknowledgedAccountRisk,
@@ -218,77 +217,62 @@ fun AccountsScreen(
 
     if (accountToRename != null) {
         EditDisplayNameDialog(
-            initialName = accountToRename?.displayName ?: "",
-            onDismiss = { accountToRename = null },
+            initialName = accountToRename.displayName ?: "",
+            onDismiss = { accountToRenameEmail = null },
             onSave = {
-                onUpdateDisplayName(accountToRename!!.email, it)
-                accountToRename = null
+                onUpdateDisplayName(accountToRename.email, it)
+                accountToRenameEmail = null
             }
         )
     }
 
     if (accountToRemove != null) {
-        val targetAcc = accountToRemove!!
+        val targetAcc = accountToRemove
         val attachedFolders = folders.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
         val attachedAlbums = albums.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
 
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
-            onDismissRequest = { accountToRemove = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = {
-                Text(
-                    text = "Remove Account",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+        ExpressiveAlertDialog(
+            onDismissRequest = { accountToRemoveEmail = null },
+            icon = Icons.Rounded.PersonRemove,
+            title = stringResource(R.string.accounts_btn_remove),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_delete),
+            onConfirm = {
+                onRemoveAccount(targetAcc.email)
+                accountToRemoveEmail = null
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_account_desc, targetAcc.displayName ?: targetAcc.email),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (attachedFolders > 0 || attachedAlbums > 0) {
+                ExpressiveDialogCallout(tone = ExpressiveDialogTone.ERROR) {
                     Text(
-                        text = "Are you sure you want to remove ${targetAcc.displayName ?: targetAcc.email} from Lumen?",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (attachedFolders > 0 || attachedAlbums > 0) {
-                        Text(
-                            text = "This will affect $attachedFolders ${if (attachedFolders == 1) "folder" else "folders"} and $attachedAlbums ${if (attachedAlbums == 1) "album" else "albums"} attached to this account.",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.remove_account_device_warning),
+                        text = stringResource(R.string.dialog_remove_account_affects, attachedFolders, attachedAlbums),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.sp
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAccount(targetAcc.email)
-                        accountToRemove = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { accountToRemove = null }) {
-                    Text(stringResource(R.string.btn_cancel))
                 }
             }
-        )
+            ExpressiveDialogCallout(tone = ExpressiveDialogTone.SECONDARY) {
+                Text(
+                    text = stringResource(R.string.remove_account_device_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+            }
+        }
     }
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
-    val lazyListState = rememberLazyListState()
+    val wideLazyListState = rememberLazyListState()
+    val portraitLazyListState = rememberLazyListState()
 
     val otherAccounts = accounts.filterNot { it.email == selectedAccount?.email }
 
@@ -310,13 +294,13 @@ fun AccountsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Accounts",
+                    text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Manage your connected Google Photos accounts",
+                    text = stringResource(R.string.accounts_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -330,7 +314,7 @@ fun AccountsScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                        onRename = { accountToRename = selectedAccount },
+                        onRename = { accountToRenameEmail = selectedAccount.email },
                         onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
@@ -358,18 +342,21 @@ fun AccountsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 if (otherAccounts.isNotEmpty()) {
                     Text(
-                        text = "Other Accounts (${otherAccounts.size})",
+                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyColumn(
-                        state = lazyListState,
+                        state = wideLazyListState,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        itemsIndexed(otherAccounts) { index, account ->
+                        itemsIndexed(
+                            items = otherAccounts,
+                            key = { _, account -> account.email }
+                        ) { index, account ->
                             OtherAccountRowItem(
                                 account = account,
                                 position = groupPositionOf(index, otherAccounts.size),
@@ -392,7 +379,7 @@ fun AccountsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "No other accounts connected",
+                                text = stringResource(R.string.accounts_no_other_connected),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -404,7 +391,7 @@ fun AccountsScreen(
     } else {
         // Single Column Layout
         LazyColumn(
-            state = lazyListState,
+            state = portraitLazyListState,
             modifier = modifier
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
@@ -415,13 +402,13 @@ fun AccountsScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Accounts",
+                    text = stringResource(R.string.accounts_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Manage your connected Google Photos accounts",
+                    text = stringResource(R.string.accounts_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -437,7 +424,7 @@ fun AccountsScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                        onRename = { accountToRename = selectedAccount },
+                        onRename = { accountToRenameEmail = selectedAccount.email },
                         onRemove = { handleRemoveAccount(selectedAccount) },
                         onTriggerCapsule = { showTimeCapsule = true }
                     )
@@ -447,14 +434,17 @@ fun AccountsScreen(
             if (otherAccounts.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Other Accounts",
+                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                itemsIndexed(otherAccounts) { index, account ->
+                itemsIndexed(
+                    items = otherAccounts,
+                    key = { _, account -> account.email }
+                ) { index, account ->
                     OtherAccountRowItem(
                         account = account,
                         position = groupPositionOf(index, otherAccounts.size),
@@ -584,7 +574,7 @@ private fun ActiveAccountHeroCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = "Active",
+                            contentDescription = stringResource(R.string.accounts_active_badge),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
                         )
@@ -607,7 +597,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = "Remove account",
+                        contentDescription = stringResource(R.string.btn_delete),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(24.dp)
                     )
@@ -628,7 +618,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Change Avatar", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(R.string.accounts_btn_change_avatar), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
                 ExpressiveTonalButton(
@@ -638,7 +628,7 @@ private fun ActiveAccountHeroCard(
                 ) {
                     Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Rename", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(R.string.accounts_btn_rename_short), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
