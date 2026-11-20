@@ -6,10 +6,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -23,13 +25,17 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Arrangement
@@ -75,16 +81,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.PersonOff
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.ui.res.stringResource
@@ -103,6 +113,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,8 +122,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -173,6 +187,12 @@ fun BackupScreen(
     onClearCompleted: () -> Unit,
     onRetryFailed: () -> Unit = {},
     onSelectAccount: (GoogleAccount) -> Unit = {},
+    shouldShowAccountSwipeNudge: Boolean = false,
+    accountSwipeNudgeNonce: Int = 0,
+    scrollToAccountForNudge: Boolean = false,
+    onConsumedScrollToAccountForNudge: () -> Unit = {},
+    onAccountSwipeNudgeShown: () -> Unit = {},
+    onReplayAccountSwipeNudge: () -> Unit = {},
     addAccountError: String? = null,
     onAddAccountToken: (String) -> Unit = {},
     onAddAccountCredential: (String) -> Unit = {},
@@ -186,50 +206,31 @@ fun BackupScreen(
     onSimulateUpdateAvailable: () -> Unit = {},
     onSimulateBlock: (AuthFailureKind) -> Unit = {},
     onClearBlock: () -> Unit = {},
+    isAlbumsScreenOpen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showSignInDialog by remember { mutableStateOf(false) }
-    var showRestrictedRemoveDialog by remember { mutableStateOf(false) }
-    var showAccountSwitchBlockedDialog by remember { mutableStateOf(false) }
+    var showSignInDialog by rememberSaveable { mutableStateOf(false) }
+    var hasPendingReauth by rememberSaveable { mutableStateOf(false) }
+    var showRestrictedRemoveDialog by rememberSaveable { mutableStateOf(false) }
+    var showAccountSwitchBlockedDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showAccountSwitchBlockedDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { showAccountSwitchBlockedDialog = false },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_msg, accountName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = { showAccountSwitchBlockedDialog = false }
-                ) {
-                    Text(stringResource(R.string.btn_got_it))
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showAccountSwitchBlockedDialog = false }
+        ) {
+            Text(
+                text = stringResource(R.string.backup_upload_in_progress_msg, accountName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleSelectAccount: (GoogleAccount) -> Unit = { targetAccount ->
@@ -248,6 +249,7 @@ fun BackupScreen(
                 onClearAddAccountError()
             },
             onTokenCaptured = {
+                hasPendingReauth = true
                 onAddAccountToken(it)
                 showSignInDialog = false
             },
@@ -255,74 +257,101 @@ fun BackupScreen(
         )
     }
 
-    if (addAccountError != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
-            onDismissRequest = onClearAddAccountError,
-            title = { Text(stringResource(R.string.dialog_auth_error_title), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
-            text = { Text(addAccountError) },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    onClearAddAccountError()
-                    showSignInDialog = true
-                }) {
-                    Text(stringResource(R.string.btn_try_again))
-                }
+    LaunchedEffect(accountBlock) {
+        if (accountBlock == null && addAccountError == null) {
+            hasPendingReauth = false
+        }
+    }
+
+    if (hasPendingReauth && addAccountError != null) {
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
+            onDismissRequest = {
+                hasPendingReauth = false
+                onClearAddAccountError()
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = onClearAddAccountError) { Text(stringResource(R.string.btn_cancel)) }
+            icon = Icons.Rounded.ErrorOutline,
+            title = stringResource(R.string.dialog_auth_error_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            isDestructiveConfirm = false,
+            confirmText = stringResource(R.string.btn_try_again),
+            onConfirm = {
+                onClearAddAccountError()
+                showSignInDialog = true
             },
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            dismissText = stringResource(R.string.btn_cancel),
+            onDismissAction = {
+                hasPendingReauth = false
+                onClearAddAccountError()
+            }
+        ) {
+            com.reiux.lumen.ui.components.ExpressiveDialogCallout(
+                tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR
+            ) {
+                Text(
+                    text = addAccountError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
     }
 
     if (showRestrictedRemoveDialog && accountBlock != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { showRestrictedRemoveDialog = false },
-            title = { Text(stringResource(R.string.dialog_remove_restricted_title), fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    text = stringResource(R.string.dialog_remove_restricted_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            icon = Icons.Rounded.PersonOff,
+            title = stringResource(R.string.dialog_remove_restricted_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_remove),
+            onConfirm = {
+                onRemoveAccount(accountBlock.accountEmail)
+                showRestrictedRemoveDialog = false
+                onClearBlock()
             },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAccount(accountBlock.accountEmail)
-                        showRestrictedRemoveDialog = false
-                        onClearBlock()
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_remove))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showRestrictedRemoveDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
-            },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_restricted_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
-    var pendingPickedUris by remember { mutableStateOf<List<Uri>?>(null) }
+    var pendingPickedUriStrings by rememberSaveable { mutableStateOf<ArrayList<String>?>(null) }
+    val pendingPickedUris = remember(pendingPickedUriStrings) {
+        pendingPickedUriStrings?.map { Uri.parse(it) }
+    }
+    var pendingPickedFileNames by remember(pendingPickedUriStrings) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(pendingPickedUriStrings) {
+        val uris = pendingPickedUris
+        pendingPickedFileNames = if (uris.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.take(5).map { uri ->
+                    com.reiux.lumen.util.MediaFileReader.getFileNameFromUri(context, uri)
+                }
+            }
+        }
+    }
+    val actualIsOffline = !isOnline || simulateOffline
 
-    if (pendingPickedUris != null) {
+    if (pendingPickedUris != null && !isAlbumsScreenOpen) {
         com.reiux.lumen.ui.components.ManualUploadDestinationDialog(
-            itemCount = pendingPickedUris?.size ?: 0,
+            itemCount = pendingPickedUris.size,
+            fileNames = pendingPickedFileNames,
+            accounts = accounts,
             activeAccount = selectedAccount,
             remoteAlbums = remoteAlbums,
+            isOnline = !actualIsOffline,
             onAddAlbum = onAddAlbum,
             onOpenAlbumManager = onOpenAlbumManager,
             onConfirm = { albumMode, customName, customNickname ->
-                pendingPickedUris?.let { uris ->
-                    onUploadFilesWithAlbumTarget(uris, albumMode, customName, customNickname)
-                }
-                pendingPickedUris = null
+                onUploadFilesWithAlbumTarget(pendingPickedUris, albumMode, customName, customNickname)
+                pendingPickedUriStrings = null
             },
-            onDismiss = { pendingPickedUris = null }
+            onDismiss = { pendingPickedUriStrings = null }
         )
     }
 
@@ -330,7 +359,7 @@ fun BackupScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            pendingPickedUris = uris
+            pendingPickedUriStrings = ArrayList(uris.map { it.toString() })
         }
     }
 
@@ -338,7 +367,7 @@ fun BackupScreen(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            pendingPickedUris = uris
+            pendingPickedUriStrings = ArrayList(uris.map { it.toString() })
         }
     }
 
@@ -378,13 +407,27 @@ fun BackupScreen(
     val configuration = LocalConfiguration.current
     val isTwoPane = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
-    val actualIsOffline = !isOnline || simulateOffline
     val missingAlbum = remoteAlbums.find { it.isMissing }
     val hasMissingAlbum = simulateMissingAlbum || queue.any { it.status == UploadStatus.STOPPED }
 
-    val lazyListState = rememberLazyListState()
+    val twoPaneQueueListState = rememberLazyListState()
+    val portraitListState = rememberLazyListState()
+    val leftScrollState = rememberScrollState()
+    var accountCardTopPx by remember { mutableIntStateOf(0) }
 
-    var selectedQueueStatusFilter by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(scrollToAccountForNudge, isTwoPane) {
+        if (scrollToAccountForNudge) {
+            if (isTwoPane) {
+                leftScrollState.animateScrollTo(accountCardTopPx)
+            } else {
+                val targetIndex = if (developerModeUnlocked && isMockMode) 2 else 1
+                portraitListState.animateScrollToItem(targetIndex)
+            }
+            onConsumedScrollToAccountForNudge()
+        }
+    }
+
+    var selectedQueueStatusFilter by rememberSaveable { mutableStateOf<String?>(null) }
 
     if (isTwoPane) {
         // Tablet / Landscape 2-Pane Adaptive Layout
@@ -396,7 +439,6 @@ fun BackupScreen(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Left Pane: Controls & Hero Status
-            val leftScrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .weight(0.48f)
@@ -442,15 +484,20 @@ fun BackupScreen(
                         onSimulateLargeScan = onSimulateLargeScan,
                         onSimulateUpdateAvailable = onSimulateUpdateAvailable,
                         onSimulateBlock = onSimulateBlock,
-                        onClearBlock = onClearBlock
+                        onClearBlock = onClearBlock,
+                        onReplayAccountSwipeNudge = onReplayAccountSwipeNudge
                     )
                 }
 
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
                     accounts = accounts,
+                    shouldShowSwipeNudge = shouldShowAccountSwipeNudge,
+                    nudgeReplayNonce = accountSwipeNudgeNonce,
+                    onSwipeNudgeShown = onAccountSwipeNudgeShown,
                     onSelectAccount = handleSelectAccount,
-                    onNavigateToAccounts = onNavigateToAccounts
+                    onNavigateToAccounts = onNavigateToAccounts,
+                    modifier = Modifier.onGloballyPositioned { accountCardTopPx = it.positionInParent().y.toInt() }
                 )
 
                 HeroBackupCard(
@@ -635,7 +682,7 @@ fun BackupScreen(
                             }
                         } else {
                             LazyColumn(
-                                state = lazyListState,
+                                state = twoPaneQueueListState,
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -654,7 +701,7 @@ fun BackupScreen(
     } else {
         // Single-Column Layout (Phones in Portrait & Landscape)
         LazyColumn(
-            state = lazyListState,
+            state = portraitListState,
             modifier = modifier
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
@@ -703,7 +750,8 @@ fun BackupScreen(
                         onToggleSimulateMissingAlbum = onToggleSimulateMissingAlbum,
                         onSimulateUpdateAvailable = onSimulateUpdateAvailable,
                         onSimulateBlock = onSimulateBlock,
-                        onClearBlock = onClearBlock
+                        onClearBlock = onClearBlock,
+                        onReplayAccountSwipeNudge = onReplayAccountSwipeNudge
                     )
                 }
             }
@@ -712,6 +760,9 @@ fun BackupScreen(
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
                     accounts = accounts,
+                    shouldShowSwipeNudge = shouldShowAccountSwipeNudge,
+                    nudgeReplayNonce = accountSwipeNudgeNonce,
+                    onSwipeNudgeShown = onAccountSwipeNudgeShown,
                     onSelectAccount = handleSelectAccount,
                     onNavigateToAccounts = onNavigateToAccounts
                 )
@@ -898,7 +949,9 @@ fun BackupScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 currentFilteredQueue.takeLast(25).reversed().forEach { item ->
-                                    UploadItemRow(item = item, accounts = accounts, showAccountBadge = accounts.size > 1)
+                                    androidx.compose.runtime.key(item.id) {
+                                        UploadItemRow(item = item, accounts = accounts, showAccountBadge = accounts.size > 1)
+                                    }
                                 }
                             }
                         }
@@ -955,16 +1008,21 @@ private fun BackupTopHeader(
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "prismSpin")
-    val prismSpinAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "prismSpinAngle"
-    )
+    val prismSpinAngle = if (unlockedPrismTheme) {
+        val infiniteTransition = rememberInfiniteTransition(label = "prismSpin")
+        val angle by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(3600, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "prismSpinAngle"
+        )
+        angle
+    } else {
+        0f
+    }
 
     if (showBurst) {
         PlayfulParticleBurstOverlay(
@@ -1079,7 +1137,8 @@ private fun MockModeCard(
     onSimulateLargeScan: () -> Unit = {},
     onSimulateUpdateAvailable: () -> Unit = {},
     onSimulateBlock: (AuthFailureKind) -> Unit = {},
-    onClearBlock: () -> Unit = {}
+    onClearBlock: () -> Unit = {},
+    onReplayAccountSwipeNudge: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -1320,6 +1379,16 @@ private fun MockModeCard(
                 ) {
                     Text("Show Update Dialog", fontSize = 10.sp)
                 }
+
+                ExpressiveTonalButton(
+                    onClick = {
+                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
+                        onReplayAccountSwipeNudge()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Replay Swipe Nudge", fontSize = 10.sp)
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -1397,9 +1466,15 @@ private fun MockModeCard(
 private fun AccountStatusCard(
     selectedAccount: GoogleAccount?,
     accounts: List<GoogleAccount> = emptyList(),
+    shouldShowSwipeNudge: Boolean = false,
+    nudgeReplayNonce: Int = 0,
+    onSwipeNudgeShown: () -> Unit = {},
     onSelectAccount: (GoogleAccount) -> Unit = {},
-    onNavigateToAccounts: () -> Unit
+    onNavigateToAccounts: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     var offsetX by remember { mutableFloatStateOf(0f) }
     val animatedOffsetX by animateFloatAsState(
@@ -1407,20 +1482,65 @@ private fun AccountStatusCard(
         animationSpec = spring(dampingRatio = 0.7f, stiffness = 800f),
         label = "accountCardSwipeOffset"
     )
+    val nudgeOffsetX = remember { Animatable(0f) }
+
+    LaunchedEffect(accounts.size > 1, shouldShowSwipeNudge, nudgeReplayNonce) {
+        if (accounts.size > 1 && shouldShowSwipeNudge) {
+            val animScale = try {
+                android.provider.Settings.Global.getFloat(
+                    context.contentResolver,
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                    1f
+                )
+            } catch (_: Exception) {
+                1f
+            }
+            if (animScale > 0f) {
+                val nudgePx = with(density) { 24.dp.toPx() }
+                try {
+                    // Wait slightly so any tab transition or scroll-into-view settles first,
+                    // and mark shown only after the animation finishes so flipping the state
+                    // key doesn't cancel this coroutine mid-flight.
+                    delay(500L)
+                    nudgeOffsetX.snapTo(0f)
+                    nudgeOffsetX.animateTo(
+                        targetValue = nudgePx,
+                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 300f)
+                    )
+                    delay(150L)
+                    nudgeOffsetX.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 350f)
+                    )
+                    onSwipeNudgeShown()
+                } catch (e: CancellationException) {
+                    withContext(NonCancellable) {
+                        nudgeOffsetX.snapTo(0f)
+                    }
+                    throw e
+                }
+            } else {
+                onSwipeNudgeShown()
+            }
+        }
+    }
 
     val currentIdx = remember(selectedAccount, accounts) {
         accounts.indexOfFirst { it.email.equals(selectedAccount?.email, ignoreCase = true) }
     }
 
+    val swipeThresholdPx = with(density) { 56.dp.toPx() }
+    val maxDragPx = with(density) { 84.dp.toPx() }
+
     val swipeModifier = if (accounts.size > 1 && currentIdx >= 0) {
-        Modifier.pointerInput(accounts, currentIdx) {
+        Modifier.pointerInput(accounts, currentIdx, swipeThresholdPx, maxDragPx) {
             detectHorizontalDragGestures(
                 onDragEnd = {
-                    if (offsetX < -70f) {
+                    if (offsetX < -swipeThresholdPx) {
                         val nextIdx = (currentIdx + 1) % accounts.size
                         try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                         onSelectAccount(accounts[nextIdx])
-                    } else if (offsetX > 70f) {
+                    } else if (offsetX > swipeThresholdPx) {
                         val prevIdx = (currentIdx - 1 + accounts.size) % accounts.size
                         try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                         onSelectAccount(accounts[prevIdx])
@@ -1431,19 +1551,21 @@ private fun AccountStatusCard(
                     offsetX = 0f
                 },
                 onHorizontalDrag = { _, dragAmount ->
-                    offsetX = (offsetX + dragAmount * 0.4f).coerceIn(-100f, 100f)
+                    offsetX = (offsetX + dragAmount * 0.4f).coerceIn(-maxDragPx, maxDragPx)
                 }
             )
         }
     } else Modifier
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .then(swipeModifier)
             .graphicsLayer {
-                translationX = animatedOffsetX
-            },
+                translationX = animatedOffsetX + nudgeOffsetX.value
+            }
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onNavigateToAccounts)
+            .then(swipeModifier),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
@@ -1502,11 +1624,53 @@ private fun AccountStatusCard(
                 }
             }
 
-            ExpressiveTonalButton(
-                onClick = onNavigateToAccounts,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(if (selectedAccount == null) stringResource(R.string.btn_connect) else stringResource(R.string.btn_switch))
+            if (selectedAccount == null) {
+                ExpressiveTonalButton(
+                    onClick = onNavigateToAccounts,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(stringResource(R.string.btn_connect))
+                }
+            } else {
+                Spacer(modifier = Modifier.width(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (accounts.size > 1) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            accounts.forEachIndexed { index, _ ->
+                                val isActive = index == currentIdx
+                                val dotWidth by animateDpAsState(
+                                    targetValue = if (isActive) 18.dp else 6.dp,
+                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 450f),
+                                    label = "accountDotWidth"
+                                )
+                                val dotColor by animateColorAsState(
+                                    targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                                    animationSpec = spring(dampingRatio = 1.0f, stiffness = 800f),
+                                    label = "accountDotColor"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .height(6.dp)
+                                        .width(dotWidth)
+                                        .clip(CircleShape)
+                                        .background(dotColor)
+                                )
+                            }
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = stringResource(R.string.nav_accounts),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
     }
@@ -1602,13 +1766,13 @@ private fun HeroBackupCard(
 
     val totalInQueue = queue.size
     val isDone = totalInQueue == 0 || queue.all { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
-    val completedRecently = !isOffline && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null && queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED } && queue.none { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
+    val completedRecently = !isOffline && !hasMissingAlbum && isDone && queue.isNotEmpty() && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null
 
     if (completedRecently || showMockCompletionCelebration) {
         PlayfulCompletionCelebration(
             completedCount = completedCount,
             skippedCount = skippedCount,
-            enabledButtons = selectedAccount != null,
+            enabledButtons = selectedAccount != null && !isOffline,
             onStartBackup = onStartBackup,
             onPickPhotos = onPickPhotos,
             onPickFiles = onPickFiles,
@@ -1798,7 +1962,7 @@ private fun HeroBackupCard(
 
                     ExpressiveTonalButton(
                         onClick = onPickPhotos,
-                        enabled = selectedAccount != null,
+                        enabled = selectedAccount != null && !isOffline,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1809,7 +1973,7 @@ private fun HeroBackupCard(
 
                     ExpressiveTonalButton(
                         onClick = onPickFiles,
-                        enabled = selectedAccount != null,
+                        enabled = selectedAccount != null && !isOffline,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -2033,7 +2197,7 @@ private fun QueueFilterChips(
         modifier = Modifier.fillMaxWidth()
     ) {
         item {
-            androidx.compose.material3.FilterChip(
+            com.reiux.lumen.ui.components.ExpressiveFilterChip(
                 selected = selectedFilter == null,
                 onClick = { onSelectFilter(null) },
                 label = { Text("${stringResource(R.string.albums_filter_all)} (${queue.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
@@ -2042,7 +2206,7 @@ private fun QueueFilterChips(
         if (uploadingCount > 0) {
             item {
                 val isSelected = selectedFilter == "uploading"
-                androidx.compose.material3.FilterChip(
+                com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "uploading") },
                     label = { Text(stringResource(R.string.filter_uploading, uploadingCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
@@ -2052,7 +2216,7 @@ private fun QueueFilterChips(
         if (failedCount > 0) {
             item {
                 val isSelected = selectedFilter == "failed"
-                androidx.compose.material3.FilterChip(
+                com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "failed") },
                     label = { Text(stringResource(R.string.filter_failed, failedCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
@@ -2066,7 +2230,7 @@ private fun QueueFilterChips(
         if (doneCount > 0) {
             item {
                 val isSelected = selectedFilter == "done"
-                androidx.compose.material3.FilterChip(
+                com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "done") },
                     label = { Text(stringResource(R.string.filter_done, doneCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }

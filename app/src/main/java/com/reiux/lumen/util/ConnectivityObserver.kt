@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class ConnectivityObserver(context: Context) {
     private val appContext = context.applicationContext ?: context
     private val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val stateLock = Any()
     private val validatedNetworks = java.util.concurrent.ConcurrentHashMap.newKeySet<Network>()
 
     private val _isConnected = MutableStateFlow(checkCurrentConnectivity())
@@ -19,59 +21,75 @@ class ConnectivityObserver(context: Context) {
 
     private val defaultCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            if (hasInternet(network)) {
-                validatedNetworks.add(network)
+            synchronized(stateLock) {
+                if (hasInternet(network)) {
+                    validatedNetworks.add(network)
+                }
+                refreshConnectivityLocked()
             }
-            refreshConnectivity()
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            if (isCapsUsable(networkCapabilities)) {
-                validatedNetworks.add(network)
-            } else {
-                validatedNetworks.remove(network)
+            synchronized(stateLock) {
+                if (isCapsUsable(networkCapabilities)) {
+                    validatedNetworks.add(network)
+                } else {
+                    validatedNetworks.remove(network)
+                }
+                refreshConnectivityLocked()
             }
-            refreshConnectivity()
         }
 
         override fun onLost(network: Network) {
-            validatedNetworks.remove(network)
-            refreshConnectivity()
+            synchronized(stateLock) {
+                validatedNetworks.remove(network)
+                refreshConnectivityLocked()
+            }
         }
 
         override fun onUnavailable() {
-            validatedNetworks.clear()
-            refreshConnectivity()
+            synchronized(stateLock) {
+                validatedNetworks.clear()
+                refreshConnectivityLocked()
+            }
         }
     }
 
     private val allNetworksCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            if (hasInternet(network)) {
-                validatedNetworks.add(network)
+            synchronized(stateLock) {
+                if (hasInternet(network)) {
+                    validatedNetworks.add(network)
+                }
+                refreshConnectivityLocked()
             }
-            refreshConnectivity()
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            if (isCapsUsable(networkCapabilities)) {
-                validatedNetworks.add(network)
-            } else {
-                validatedNetworks.remove(network)
+            synchronized(stateLock) {
+                if (isCapsUsable(networkCapabilities)) {
+                    validatedNetworks.add(network)
+                } else {
+                    validatedNetworks.remove(network)
+                }
+                refreshConnectivityLocked()
             }
-            refreshConnectivity()
         }
 
         override fun onLost(network: Network) {
-            validatedNetworks.remove(network)
-            refreshConnectivity()
+            synchronized(stateLock) {
+                validatedNetworks.remove(network)
+                refreshConnectivityLocked()
+            }
         }
     }
 
     @Suppress("DEPRECATION")
     private val connectivityReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: android.content.Intent?) {
-            refreshConnectivity()
+            synchronized(stateLock) {
+                refreshConnectivityLocked()
+            }
         }
     }
 
@@ -92,7 +110,12 @@ class ConnectivityObserver(context: Context) {
             val filter = android.content.IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION).apply {
                 addAction(android.content.Intent.ACTION_AIRPLANE_MODE_CHANGED)
             }
-            appContext.registerReceiver(connectivityReceiver, filter)
+            ContextCompat.registerReceiver(
+                appContext,
+                connectivityReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
         } catch (_: Exception) {}
     }
 
@@ -102,7 +125,7 @@ class ConnectivityObserver(context: Context) {
         try { appContext.unregisterReceiver(connectivityReceiver) } catch (_: Exception) {}
     }
 
-    private fun refreshConnectivity() {
+    private fun refreshConnectivityLocked() {
         // Always re-verify tracked networks against ConnectivityManager so a newly turned-off
         // radio immediately drops out even before onLost finishes firing.
         validatedNetworks.removeAll { !hasInternet(it) }

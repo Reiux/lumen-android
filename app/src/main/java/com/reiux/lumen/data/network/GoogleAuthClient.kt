@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -19,8 +21,19 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 
 class GoogleAuthClient(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder().build()
+    httpClient: OkHttpClient = OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
 ) {
+    private val httpClient: OkHttpClient = if (!httpClient.followRedirects && !httpClient.followSslRedirects) {
+        httpClient
+    } else {
+        httpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
     private val tokenCache = ConcurrentHashMap<String, CachedToken>()
     private val refreshLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -33,7 +46,7 @@ class GoogleAuthClient(
         val cleanToken = rawOAuthToken.trim().removePrefix("oauth_token=")
         val androidId = generateAndroidId()
 
-        val formBuilder = FormBody.Builder()
+        val formBody = FormBody.Builder()
             .add("accountType", "HOSTED_OR_GOOGLE")
             .add("Email", "oauth-token@example.com")
             .add("has_permission", "1")
@@ -51,19 +64,22 @@ class GoogleAuthClient(
             .add("client_sig", GOOGLE_PLAY_SERVICES_SIG)
             .add("callerSig", GOOGLE_PLAY_SERVICES_SIG)
             .add("droidguard_results", "dummy123")
+            .build()
 
         val request = Request.Builder()
             .url(AUTH_ENDPOINT)
-            .post(formBuilder.build())
+            .post(formBody)
             .header("Accept-Encoding", "identity")
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("User-Agent", "GoogleAuth/1.4")
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
+        val (responseCode, isSuccessful, respBytes) = httpClient.newCall(request).execute().use { response ->
+            val bytes = readBoundedAuthBytes(response.body, MAX_AUTH_RESPONSE_BYTES)
+            Triple(response.code, response.isSuccessful, bytes)
+        }
         val duration = System.currentTimeMillis() - start
-        val respBytes = response.body?.bytes() ?: ByteArray(0)
         val body = respBytes.decodeToString()
         val parsed = parseKeyValueResponse(body)
 
@@ -79,15 +95,15 @@ class GoogleAuthClient(
             throw IOException(userFriendlyMsg)
         }
 
-        if (!response.isSuccessful) {
+        if (!isSuccessful) {
             LumenLogger.w("Network") {
-                "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+                "[POST $responseCode ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBody.contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
             }
-            throw IOException("Google token exchange failed: HTTP ${response.code}")
+            throw IOException("Google token exchange failed: HTTP $responseCode")
         }
 
         LumenLogger.d("Network") {
-            "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+            "[POST $responseCode] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBody.contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
         }
 
         val masterToken = parsed["Token"] ?: throw IOException("Google auth missing master Token")
@@ -121,47 +137,57 @@ class GoogleAuthClient(
             LumenLogger.d("Auth", "Refreshing Google Photos bearer token for ${account.email}...")
             val formValues = parseQueryString(account.credentialString)
             val formBuilder = FormBody.Builder()
+            val excludedKeys = setOf(
+                "it_caveat_types",
+                "assertion_jwt",
+                "token_binding_alias",
+                "app",
+                "callerPkg"
+            )
             for ((k, v) in formValues) {
-                if (k != "it_caveat_types" && k != "assertion_jwt" && k != "token_binding_alias") {
+                if (k !in excludedKeys) {
                     formBuilder.add(k, v)
                 }
             }
             formBuilder.add("app", GOOGLE_PHOTOS_PKG)
             formBuilder.add("callerPkg", GOOGLE_PHOTOS_PKG)
+            val formBody = formBuilder.build()
 
             val request = Request.Builder()
                 .url(AUTH_ENDPOINT)
-                .post(formBuilder.build())
+                .post(formBody)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("device", account.androidId.ifEmpty { formValues["androidId"] ?: "" })
                 .header("User-Agent", "GoogleAuth/1.4 (Pixel XL PQ2A.190205.001); gzip")
                 .build()
 
             val start = System.currentTimeMillis()
-            val response = httpClient.newCall(request).execute()
+            val (responseCode, isSuccessful, respBytes) = httpClient.newCall(request).execute().use { response ->
+                val bytes = readBoundedAuthBytes(response.body, MAX_AUTH_RESPONSE_BYTES)
+                Triple(response.code, response.isSuccessful, bytes)
+            }
             val duration = System.currentTimeMillis() - start
-            val respBytes = response.body?.bytes() ?: ByteArray(0)
             val body = respBytes.decodeToString()
             val parsed = parseKeyValueResponse(body)
             val googleError = parsed["Error"] ?: parsed["Info"]
 
-            if (response.isSuccessful) {
+            if (isSuccessful) {
                 LumenLogger.d("Network") {
-                    "[POST ${response.code}] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+                    "[POST $responseCode] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBody.contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
                 }
             } else {
                 LumenLogger.w("Network") {
-                    "[POST ${response.code} ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBuilder.build().contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
+                    "[POST $responseCode ERROR] ${LumenLogger.redact(AUTH_ENDPOINT)} reqSize=${formBody.contentLength()}B respSize=${respBytes.size}B duration=${duration}ms"
                 }
             }
 
             // Transient server errors (5xx) should be retried as network failures, not permanent blocks
-            if (response.code in 500..599 && googleError.isNullOrEmpty()) {
-                throw IOException("Failed to obtain Photos bearer token: HTTP ${response.code}")
+            if (responseCode in 500..599 && googleError.isNullOrEmpty()) {
+                throw IOException("Failed to obtain Photos bearer token: HTTP $responseCode")
             }
 
-            if (!response.isSuccessful || !googleError.isNullOrEmpty()) {
-                val errCode = response.code
+            if (!isSuccessful || !googleError.isNullOrEmpty()) {
+                val errCode = responseCode
                 val rawDetail = "HTTP $errCode: ${googleError ?: "Auth error"}"
                 val kind = when (googleError) {
                     "NeedsBrowser", "NeedsVerification", "CaptchaRequired", "DeviceManagementRequired", "BadAuthentication", "NeedPermission", "TermsOfServiceNotAccepted" -> AuthFailureKind.SIGN_IN_REQUIRED
@@ -169,10 +195,10 @@ class GoogleAuthClient(
                     else -> if (errCode == 429) AuthFailureKind.RATE_LIMITED else AuthFailureKind.SIGN_IN_REQUIRED
                 }
                 LumenLogger.w("Auth") { "getBearerToken failed ($kind): $rawDetail" }
-                throw com.reiux.lumen.util.AuthFailureException(kind = kind, rawDetail = rawDetail)
+                throw AuthFailureException(kind = kind, rawDetail = rawDetail)
             }
 
-            val bearerToken = parsed["Auth"] ?: throw com.reiux.lumen.util.AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response")
+            val bearerToken = parsed["Auth"] ?: throw AuthFailureException(AuthFailureKind.SIGN_IN_REQUIRED, rawDetail = "Missing Auth field in response")
             val expirySec = parsed["Expiry"]?.toLongOrNull() ?: (now + 3600)
 
             tokenCache[cacheKey] = CachedToken(bearerToken, expirySec)
@@ -248,5 +274,33 @@ class GoogleAuthClient(
         const val GOOGLE_PHOTOS_PKG = "com.google.android.apps.photos"
         const val GOOGLE_PHOTOS_SIG = "24bb24c05e47e0aefa68a58a766179d9b613a600"
         const val PHOTOS_SERVICE = "oauth2:openid https://www.googleapis.com/auth/mobileapps.native https://www.googleapis.com/auth/photos.native"
+        const val MAX_AUTH_RESPONSE_BYTES = 1024 * 1024
+
+        @JvmOverloads
+        internal fun readBoundedAuthBytes(
+            body: ResponseBody?,
+            maxBytes: Int = MAX_AUTH_RESPONSE_BYTES
+        ): ByteArray {
+            if (body == null) return ByteArray(0)
+            val declaredLen = body.contentLength()
+            if (declaredLen > maxBytes) {
+                throw IOException("Auth response exceeded maximum allowed size ($maxBytes bytes)")
+            }
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            var totalRead = 0
+            body.byteStream().use { stream ->
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read == -1) break
+                    if (read > maxBytes - totalRead) {
+                        throw IOException("Auth response exceeded maximum allowed size ($maxBytes bytes)")
+                    }
+                    out.write(buffer, 0, read)
+                    totalRead += read
+                }
+            }
+            return out.toByteArray()
+        }
     }
 }

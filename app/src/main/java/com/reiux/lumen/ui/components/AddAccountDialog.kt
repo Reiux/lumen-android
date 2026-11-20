@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,11 +64,11 @@ fun AddAccountDialog(
     onAcknowledgeRisk: () -> Unit = {},
     isManualOnly: Boolean = false
 ) {
-    var showWebView by remember { mutableStateOf(false) }
-    var input by remember { mutableStateOf("") }
-    var isRawCredential by remember { mutableStateOf(false) }
-    var showManualInput by remember { mutableStateOf(isManualOnly) }
-    var localAcknowledged by remember(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
+    var showWebView by rememberSaveable { mutableStateOf(false) }
+    var input by rememberSaveable { mutableStateOf("") }
+    var isRawCredential by rememberSaveable { mutableStateOf(false) }
+    var showManualInput by rememberSaveable(isManualOnly) { mutableStateOf(isManualOnly) }
+    var localAcknowledged by rememberSaveable(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
@@ -78,14 +79,17 @@ fun AddAccountDialog(
             onTokenCaptured = { token ->
                 showWebView = false
                 onSubmitToken(token)
-                onDismiss()
             }
         )
     }
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isLoading,
+            dismissOnClickOutside = !isLoading
+        ),
         modifier = Modifier
             .widthIn(min = 340.dp, max = if (isWideLayout) 700.dp else 500.dp)
             .padding(horizontal = 16.dp),
@@ -179,12 +183,20 @@ fun AddAccountDialog(
                         shape = RoundedCornerShape(16.dp),
                         enabled = !isLoading && localAcknowledged
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        if (isLoading && !showManualInput) {
+                            ExpressiveLoadingIndicator(
+                                size = 20.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
                         Text(
                             text = stringResource(R.string.btn_sign_in_google),
                             style = MaterialTheme.typography.titleMedium
@@ -275,7 +287,6 @@ fun AddAccountDialog(
                         } else {
                             onSubmitToken(input.trim())
                         }
-                        onDismiss()
                     },
                     enabled = input.isNotBlank() && !isLoading && localAcknowledged
                 ) {

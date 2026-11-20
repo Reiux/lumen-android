@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -112,9 +113,10 @@ fun AboutScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showLogViewer by remember { mutableStateOf(false) }
-    var showLicensesDialog by remember { mutableStateOf(false) }
-    var showMatrixDialog by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    var showLogViewer by rememberSaveable { mutableStateOf(false) }
+    var showLicensesDialog by rememberSaveable { mutableStateOf(false) }
+    var showMatrixDialog by rememberSaveable { mutableStateOf(false) }
     var showPrismBurst by remember { mutableStateOf(false) }
     var lastLogOpenTime by remember { mutableLongStateOf(0L) }
 
@@ -343,9 +345,14 @@ fun AboutScreen(
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
+                                        val toggleLogs: (Boolean) -> Unit = { next ->
+                                            try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                                            onToggleSaveLogs(next)
+                                        }
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .clickable { toggleLogs(!saveLogsEnabled) }
                                                 .padding(horizontal = 20.dp, vertical = 16.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
@@ -367,7 +374,7 @@ fun AboutScreen(
 
                                             ExpressiveSwitch(
                                                 checked = saveLogsEnabled,
-                                                onCheckedChange = onToggleSaveLogs
+                                                onCheckedChange = toggleLogs
                                             )
                                         }
 
@@ -401,6 +408,21 @@ fun AboutScreen(
                                                     LumenLogger.i("AboutUI") { "Opened Live Log Viewer dialog" }
                                                     showLogViewer = true
                                                 }
+                                            }
+                                        )
+
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+
+                                        AboutActionRow(
+                                            icon = Icons.Rounded.SystemUpdate,
+                                            title = stringResource(R.string.about_force_update_title),
+                                            subtitle = stringResource(R.string.about_force_update_desc),
+                                            onClick = {
+                                                android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
+                                                onForceUpdateDialog()
                                             }
                                         )
                                     }
@@ -518,9 +540,14 @@ fun AboutScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
+                                    val toggleLogs: (Boolean) -> Unit = { next ->
+                                        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                                        onToggleSaveLogs(next)
+                                    }
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .clickable { toggleLogs(!saveLogsEnabled) }
                                             .padding(horizontal = 20.dp, vertical = 16.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
@@ -542,7 +569,7 @@ fun AboutScreen(
 
                                         ExpressiveSwitch(
                                             checked = saveLogsEnabled,
-                                            onCheckedChange = onToggleSaveLogs
+                                            onCheckedChange = toggleLogs
                                         )
                                     }
 

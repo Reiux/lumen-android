@@ -1,67 +1,109 @@
 package com.reiux.lumen.data.repository
 
-import android.content.Context
 import com.reiux.lumen.BuildConfig
 import com.reiux.lumen.data.model.UpdateInfo
 import com.reiux.lumen.util.LumenLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
-import java.io.FileOutputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.ResponseBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 class UpdateRepository(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder().build()
+    httpClient: OkHttpClient = OkHttpClient.Builder().build()
 ) {
+    private val noRedirectClient: OkHttpClient = if (!httpClient.followRedirects && !httpClient.followSslRedirects) {
+        httpClient
+    } else {
+        httpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
+
     suspend fun checkForUpdates(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val url = "https://api.github.com/repos/Reiux/lumen-android/releases/latest"
-            val request = Request.Builder().url(url).build()
+            val request = Request.Builder().url(LATEST_RELEASE_API_URL).build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                LumenLogger.w("Updater") { "Failed to fetch updates: HTTP ${response.code}" }
-                return@withContext null
+            val body = noRedirectClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    LumenLogger.w("Updater") { "Failed to fetch updates: HTTP ${response.code}" }
+                    return@withContext null
+                }
+                readBoundedUtf8String(response.body, MAX_RELEASE_JSON_BYTES) ?: return@withContext null
             }
-
-            val body = response.body?.string() ?: return@withContext null
             val release = JSONObject(body)
 
-            val latestVersion = release.optString("tag_name", "").removePrefix("v")
+            val rawTag = release.optString("tag_name", "").trim()
+            val latestVersion = rawTag.removePrefix("v").trim()
+            if (latestVersion.isEmpty() || latestVersion.contains('/') || latestVersion.contains('\\') || latestVersion.contains("..")) {
+                LumenLogger.w("Updater") { "Ignoring malformed release tag_name" }
+                return@withContext null
+            }
             val releaseNotes = release.optString("body", "")
-            
+
             val assets = release.optJSONArray("assets") ?: JSONArray()
-            var downloadUrl = ""
-            
+            var selectedAsset: JSONObject? = null
             val expectedApk = if (BuildConfig.DEBUG) "lumen-test-debug.apk" else "lumen-release.apk"
-            
+
             for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
+                val asset = assets.optJSONObject(i) ?: continue
                 val name = asset.optString("name", "")
-                if (name == expectedApk || (BuildConfig.DEBUG && name == "lumen-dev-debug.apk")) {
-                    downloadUrl = asset.optString("browser_download_url", "")
+                val url = asset.optString("browser_download_url", "")
+                if ((name == expectedApk || (BuildConfig.DEBUG && name == "lumen-dev-debug.apk")) &&
+                    isAllowedInitialDownloadUrl(url)
+                ) {
+                    selectedAsset = asset
                     break
                 }
             }
-            
-            if (downloadUrl.isEmpty()) {
-                // Fallback to any APK if expected isn't found
+
+            if (selectedAsset == null) {
                 for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    if (asset.optString("name", "").endsWith(".apk")) {
-                        downloadUrl = asset.optString("browser_download_url", "")
+                    val asset = assets.optJSONObject(i) ?: continue
+                    val name = asset.optString("name", "")
+                    val url = asset.optString("browser_download_url", "")
+                    val isDebugAsset = name.contains("debug", ignoreCase = true)
+                    if (name.endsWith(".apk", ignoreCase = true) &&
+                        (BuildConfig.DEBUG || !isDebugAsset) &&
+                        isAllowedInitialDownloadUrl(url)
+                    ) {
+                        selectedAsset = asset
                         break
                     }
                 }
             }
 
-            val hasUpdate = isNewerVersion(currentVersion, latestVersion)
+            val downloadUrl = selectedAsset?.optString("browser_download_url", "")?.takeIf {
+                isAllowedInitialDownloadUrl(it)
+            } ?: ""
+
+            if (selectedAsset != null && downloadUrl.isNotEmpty()) {
+                val assetName = selectedAsset.optString("name", "")
+                val sha256Hex = extractExpectedSha256(selectedAsset, assetName, releaseNotes)
+                if (sha256Hex != null) {
+                    expectedSha256ByUrl[downloadUrl] = sha256Hex
+                } else {
+                    expectedSha256ByUrl.remove(downloadUrl)
+                }
+            }
+
+            val hasUpdate = downloadUrl.isNotEmpty() && isNewerVersion(currentVersion, latestVersion)
 
             LumenLogger.i("Updater") { "Update check complete. Latest: $latestVersion, Current: $currentVersion, HasUpdate: $hasUpdate" }
 
@@ -71,58 +113,133 @@ class UpdateRepository(
                 downloadUrl = downloadUrl,
                 isUpdateAvailable = hasUpdate
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LumenLogger.e("Updater", tr = e) { "Error checking for updates: ${e.message}" }
             null
         }
     }
-    
+
     fun downloadUpdate(url: String, destFile: File): Flow<Int> = flow {
-        if (!url.startsWith("https://github.com/") && !url.startsWith("https://objects.githubusercontent.com/")) {
+        if (!isAllowedInitialDownloadUrl(url)) {
             throw SecurityException("Untrusted or insecure download URL: $url")
         }
-        val request = Request.Builder().url(url).build()
-        val response = httpClient.newCall(request).execute()
-        
-        if (!response.isSuccessful) {
-            throw Exception("Download failed with HTTP ${response.code}")
+
+        val expectedSha256 = expectedSha256ByUrl[url]
+        val parentDir = destFile.parentFile?.apply { mkdirs() }
+        val tempFile = if (parentDir != null) {
+            File(parentDir, "${destFile.name}.part")
+        } else {
+            File("${destFile.absolutePath}.part")
         }
-        
-        val body = response.body ?: throw Exception("Empty response body")
-        val contentLength = body.contentLength()
-        
-        body.byteStream().use { input ->
-            FileOutputStream(destFile).use { output ->
-                val buffer = ByteArray(8 * 1024)
-                var bytesCopied = 0L
-                var read: Int
-                var lastProgress = 0
-                
-                while (input.read(buffer).also { read = it } >= 0) {
-                    output.write(buffer, 0, read)
-                    bytesCopied += read
-                    
-                    if (contentLength > 0) {
-                        val progress = ((bytesCopied * 100) / contentLength).toInt()
-                        if (progress != lastProgress) {
-                            lastProgress = progress
-                            emit(progress)
+
+        var currentUrl: HttpUrl = url.toHttpUrlOrNull()
+            ?: throw SecurityException("Malformed download URL: $url")
+        var redirectCount = 0
+
+        try {
+            while (true) {
+                val request = Request.Builder().url(currentUrl).get().build()
+                var nextRedirect: HttpUrl? = null
+
+                noRedirectClient.newCall(request).execute().use { response ->
+                    if (response.code in REDIRECT_STATUS_CODES) {
+                        if (redirectCount >= MAX_REDIRECTS) {
+                            throw IOException("Too many redirects while downloading update")
+                        }
+                        val location = response.header("Location")
+                            ?: throw IOException("Redirect missing Location header")
+                        val resolved = response.request.url.resolve(location)
+                            ?: throw SecurityException("Invalid redirect Location: $location")
+                        if (!isAllowedRedirectUrl(resolved)) {
+                            throw SecurityException("Untrusted redirect URL host or path: ${resolved.host}")
+                        }
+                        nextRedirect = resolved
+                        redirectCount++
+                    } else {
+                        if (!response.isSuccessful) {
+                            throw IOException("Download failed with HTTP ${response.code}")
+                        }
+                        val body = response.body ?: throw IOException("Empty response body")
+                        val contentLength = body.contentLength()
+                        if (contentLength > MAX_APK_DOWNLOAD_BYTES) {
+                            throw IOException("Update APK exceeded maximum allowed size ($MAX_APK_DOWNLOAD_BYTES bytes)")
+                        }
+                        val sha256Digest = MessageDigest.getInstance("SHA-256")
+
+                        body.byteStream().use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                val buffer = ByteArray(8 * 1024)
+                                var bytesCopied = 0L
+                                var read: Int
+                                var lastProgress = 0
+
+                                while (input.read(buffer).also { read = it } >= 0) {
+                                    if (read > MAX_APK_DOWNLOAD_BYTES - bytesCopied) {
+                                        throw IOException("Update APK exceeded maximum allowed size ($MAX_APK_DOWNLOAD_BYTES bytes)")
+                                    }
+                                    output.write(buffer, 0, read)
+                                    sha256Digest.update(buffer, 0, read)
+                                    bytesCopied += read
+
+                                    if (contentLength > 0) {
+                                        val progress = ((bytesCopied * 100) / contentLength).toInt().coerceIn(0, 99)
+                                        if (progress != lastProgress) {
+                                            lastProgress = progress
+                                            emit(progress)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!expectedSha256.isNullOrBlank()) {
+                            val actualSha256 = sha256Digest.digest().joinToString("") { "%02x".format(it) }
+                            if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
+                                tempFile.delete()
+                                throw SecurityException("APK SHA-256 digest mismatch")
+                            }
                         }
                     }
                 }
+
+                val redirectTarget = nextRedirect
+                if (redirectTarget != null) {
+                    currentUrl = redirectTarget
+                } else {
+                    break
+                }
             }
+
+            if (destFile.exists() && !destFile.delete()) {
+                LumenLogger.w("Updater") { "Could not delete existing update destination before move" }
+            }
+            if (!tempFile.renameTo(destFile)) {
+                tempFile.inputStream().use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                tempFile.delete()
+            }
+            emit(100)
+        } catch (t: Throwable) {
+            try {
+                if (tempFile.exists()) tempFile.delete()
+            } catch (_: Exception) {}
+            throw t
         }
-        emit(100)
     }.flowOn(Dispatchers.IO)
 
     private fun isNewerVersion(current: String, latest: String): Boolean {
         try {
             val currentClean = current.substringBefore("-").replace(Regex("[^0-9.]"), "")
             val latestClean = latest.substringBefore("-").replace(Regex("[^0-9.]"), "")
-            
+
             val currentParts = currentClean.split(".").map { it.toIntOrNull() ?: 0 }
             val latestParts = latestClean.split(".").map { it.toIntOrNull() ?: 0 }
-            
+
             for (i in 0 until maxOf(currentParts.size, latestParts.size)) {
                 val c = currentParts.getOrElse(i) { 0 }
                 val l = latestParts.getOrElse(i) { 0 }
@@ -138,6 +255,63 @@ class UpdateRepository(
     companion object {
         /** How often the background worker polls GitHub for a new release. */
         const val BACKGROUND_CHECK_INTERVAL_HOURS = 4L
+        const val MAX_RELEASE_JSON_BYTES = 2 * 1024 * 1024
+        const val MAX_APK_DOWNLOAD_BYTES = 256L * 1024L * 1024L
+
+        private const val LATEST_RELEASE_API_URL = "https://api.github.com/repos/Reiux/lumen-android/releases/latest"
+        private const val ALLOWED_RELEASE_PATH_PREFIX = "/Reiux/lumen-android/releases/download/"
+        private const val MAX_REDIRECTS = 5
+        private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
+        private val ALLOWED_REDIRECT_HOSTS = setOf(
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+        )
+        private val SHA256_HEX_REGEX = Regex("^[0-9a-fA-F]{64}$")
+        private val expectedSha256ByUrl = ConcurrentHashMap<String, String>()
+
+        internal fun isAllowedInitialDownloadUrl(rawUrl: String): Boolean {
+            if (rawUrl.isBlank() || rawUrl.contains("..") || rawUrl.contains('\\')) return false
+            val parsed = rawUrl.toHttpUrlOrNull() ?: return false
+            if (parsed.scheme != "https") return false
+            if (!parsed.host.equals("github.com", ignoreCase = true)) return false
+            if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return false
+            if (parsed.pathSegments.any { it == "." || it == ".." }) return false
+            return parsed.encodedPath.startsWith(ALLOWED_RELEASE_PATH_PREFIX) &&
+                parsed.encodedPath.length > ALLOWED_RELEASE_PATH_PREFIX.length
+        }
+
+        internal fun isAllowedRedirectUrl(url: HttpUrl): Boolean {
+            if (url.scheme != "https") return false
+            if (url.username.isNotEmpty() || url.password.isNotEmpty()) return false
+            if (url.pathSegments.any { it == "." || it == ".." }) return false
+            val hostLower = url.host.lowercase(Locale.US)
+            if (hostLower == "github.com") {
+                return url.encodedPath.startsWith(ALLOWED_RELEASE_PATH_PREFIX)
+            }
+            return hostLower in ALLOWED_REDIRECT_HOSTS
+        }
+
+        private fun extractExpectedSha256(asset: JSONObject, assetName: String, releaseNotes: String): String? {
+            if (!asset.isNull("digest")) {
+                val rawDigest = asset.optString("digest", "").trim()
+                if (rawDigest.startsWith("sha256:", ignoreCase = true)) {
+                    val hex = rawDigest.substringAfter(':').trim()
+                    if (SHA256_HEX_REGEX.matches(hex)) {
+                        return hex.lowercase(Locale.US)
+                    }
+                }
+            }
+            if (assetName.isNotBlank() && releaseNotes.isNotBlank()) {
+                val noteRegex = Regex(
+                    "(?m)^([0-9a-fA-F]{64})\\s+\\*?${Regex.escape(assetName)}\\s*$"
+                )
+                val match = noteRegex.find(releaseNotes)
+                if (match != null) {
+                    return match.groupValues[1].lowercase(Locale.US)
+                }
+            }
+            return null
+        }
 
         /**
          * Only notify once per release, so frequent background checks don't re-post
@@ -153,6 +327,33 @@ class UpdateRepository(
             intervalMillis: Long = 12L * 60 * 60 * 1000
         ): Boolean {
             return lastCheckMillis <= 0 || lastCheckMillis > nowMillis || (nowMillis - lastCheckMillis) >= intervalMillis
+        }
+
+        @JvmOverloads
+        internal fun readBoundedUtf8String(
+            body: ResponseBody?,
+            maxBytes: Int = MAX_RELEASE_JSON_BYTES
+        ): String? {
+            if (body == null) return null
+            val declaredLen = body.contentLength()
+            if (declaredLen > maxBytes) {
+                throw IOException("Response exceeded maximum allowed size ($maxBytes bytes)")
+            }
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            var totalRead = 0
+            body.byteStream().use { stream ->
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read == -1) break
+                    if (read > maxBytes - totalRead) {
+                        throw IOException("Response exceeded maximum allowed size ($maxBytes bytes)")
+                    }
+                    out.write(buffer, 0, read)
+                    totalRead += read
+                }
+            }
+            return out.toByteArray().toString(Charsets.UTF_8)
         }
     }
 }

@@ -9,6 +9,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,18 +19,28 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.nio.file.Files
+import java.util.Locale
 
 class FolderWatcherManager(
     private val context: Context,
     private val settingsRepository: SettingsRepository,
+    private val watermarkMutex: Mutex = Mutex(),
     private val onNewMediaDetected: (List<File>) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val watcherLock = Any()
+    private val pendingLock = Any()
+    private val mediaStoreQueryLock = Any()
     private val fileObservers = mutableListOf<FileObserver>()
     private var contentObserver: ContentObserver? = null
     private var debounceJob: Job? = null
     private val pendingFiles = mutableSetOf<File>()
+    private var mediaStoreScanJob: Job? = null
+    private var mediaStoreRescanPending = false
 
     private val supportedExts = setOf(
         "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
@@ -55,14 +66,15 @@ class FolderWatcherManager(
     }
 
     private fun syncWatchers(autoBackupEnabled: Boolean, enabledFolders: List<BackupFolder>, reason: String) {
-        stopWatchers()
+        synchronized(watcherLock) {
+            stopWatchers()
 
-        if (!autoBackupEnabled || enabledFolders.isEmpty()) {
-            LumenLogger.i(TAG) {
-                "Watcher idle (reason='$reason', autoBackupEnabled=$autoBackupEnabled, enabledFoldersCount=${enabledFolders.size})"
+            if (!autoBackupEnabled || enabledFolders.isEmpty()) {
+                LumenLogger.i(TAG) {
+                    "Watcher idle (reason='$reason', autoBackupEnabled=$autoBackupEnabled, enabledFoldersCount=${enabledFolders.size})"
+                }
+                return@synchronized
             }
-            return
-        }
 
         LumenLogger.i(TAG) {
             "Starting folder watchers (reason='$reason', count=${enabledFolders.size})"
@@ -79,24 +91,29 @@ class FolderWatcherManager(
             }
 
             val dirsToWatch = mutableListOf<File>()
-            if (folder.includeSubfolders) {
-                val stack = java.util.ArrayDeque<Pair<File, Int>>()
-                stack.push(rootDir to 0)
-                while (stack.isNotEmpty()) {
-                    val (dir, depth) = stack.pop()
-                    dirsToWatch.add(dir)
-                    if (fileObservers.size + dirsToWatch.size >= maxObservers) {
-                        LumenLogger.w(TAG) { "Reached maximum FileObserver cap ($maxObservers). Relying on MediaStore ContentObserver for remaining subdirectories." }
-                        break
-                    }
-                    if (depth < 8) {
-                        dir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { sub ->
-                            stack.push(sub to (depth + 1))
+            if (!isSymbolicLink(rootDir)) {
+                val rootCanonical = try { rootDir.canonicalPath.trimEnd('/') } catch (_: Exception) { rootDir.absolutePath.trimEnd('/') }
+                if (folder.includeSubfolders) {
+                    val stack = java.util.ArrayDeque<Pair<File, Int>>()
+                    stack.push(rootDir to 0)
+                    while (stack.isNotEmpty()) {
+                        val (dir, depth) = stack.pop()
+                        dirsToWatch.add(dir)
+                        if (fileObservers.size + dirsToWatch.size >= maxObservers) {
+                            LumenLogger.w(TAG) { "Reached maximum FileObserver cap ($maxObservers). Relying on MediaStore ContentObserver for remaining subdirectories." }
+                            break
+                        }
+                        if (depth < 8) {
+                            dir.listFiles()?.filter { sub ->
+                                sub.isDirectory && !sub.name.startsWith(".") && !isSymbolicLink(sub) && isWithinCanonicalRoot(sub, rootCanonical)
+                            }?.forEach { sub ->
+                                stack.push(sub to (depth + 1))
+                            }
                         }
                     }
+                } else {
+                    dirsToWatch.add(rootDir)
                 }
-            } else {
-                dirsToWatch.add(rootDir)
             }
 
             for (dir in dirsToWatch) {
@@ -132,7 +149,7 @@ class FolderWatcherManager(
             override fun onChange(selfChange: Boolean) {
                 super.onChange(selfChange)
                 LumenLogger.d(TAG) { "MediaStore ContentObserver triggered: onChange(selfChange=$selfChange)" }
-                queryRecentMediaStoreItems(enabledFolders)
+                queryRecentMediaStoreItems()
             }
         }
 
@@ -152,6 +169,7 @@ class FolderWatcherManager(
             }
         } catch (e: Exception) {
             LumenLogger.w(TAG) { "Failed to register MediaStore observer: ${e.message}" }
+        }
         }
     }
 
@@ -195,15 +213,38 @@ class FolderWatcherManager(
         }
     }
 
-    private fun queryRecentMediaStoreItems(enabledFolders: List<BackupFolder>) {
+    private fun queryRecentMediaStoreItems() {
+        synchronized(mediaStoreQueryLock) {
+            if (mediaStoreScanJob?.isActive == true) {
+                mediaStoreRescanPending = true
+                return
+            }
+            mediaStoreRescanPending = false
+            mediaStoreScanJob = scope.launch {
+                do {
+                    synchronized(mediaStoreQueryLock) {
+                        mediaStoreRescanPending = false
+                    }
+                    runMediaStoreWatermarkScan()
+                } while (synchronized(mediaStoreQueryLock) { mediaStoreRescanPending })
+            }
+        }
+    }
+
+    private suspend fun runMediaStoreWatermarkScan() {
+        if (!settingsRepository.settings.value.autoBackupEnabled) return
+        val enabledFolders = settingsRepository.getAllFolders().filter { it.enabled && !it.accountEmail.isNullOrBlank() }
         if (enabledFolders.isEmpty()) {
             LumenLogger.d(TAG) { "MediaStore ContentObserver triggered, but zero folders are enabled. Ignoring." }
             return
         }
 
-        scope.launch {
+        watermarkMutex.withLock {
             try {
-                val foldersByAccount = enabledFolders.groupBy { it.accountEmail }
+                val liveEnabled = settingsRepository.getAllFolders().filter { it.enabled && !it.accountEmail.isNullOrBlank() }
+                if (liveEnabled.isEmpty()) return@withLock
+
+                val foldersByAccount = liveEnabled.groupBy { it.accountEmail?.lowercase()?.trim() }
                 var totalMatchedCount = 0
 
                 val projection = mutableListOf(
@@ -214,6 +255,7 @@ class FolderWatcherManager(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         add(MediaStore.MediaColumns.RELATIVE_PATH)
                         add(MediaStore.MediaColumns.IS_PENDING)
+                        add(MediaStore.MediaColumns.VOLUME_NAME)
                     }
                     add(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
                 }.toTypedArray()
@@ -255,6 +297,7 @@ class FolderWatcherManager(
                                     val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
                                     val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                                     val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
+                                    val volCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.VOLUME_NAME) else -1
                                     val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
                                     val pendingCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getColumnIndex(MediaStore.MediaColumns.IS_PENDING) else -1
                                     val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
@@ -263,12 +306,13 @@ class FolderWatcherManager(
                                         val mediaId = if (idCol >= 0) cursor.getLong(idCol) else 0L
                                         val path = if (dataCol >= 0) cursor.getString(dataCol) else null
                                         val relPath = if (relCol >= 0) cursor.getString(relCol) else null
+                                        val volumeName = if (volCol >= 0) cursor.getString(volCol) else null
                                         val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) else null
 
-                                        if (isMediaStoreItemInFolder(path, relPath, bucketName, folder)) {
+                                        if (isMediaStoreItemInFolder(path, relPath, bucketName, folder, volumeName)) {
                                             val isPending = pendingCol >= 0 && cursor.getInt(pendingCol) == 1
                                             val file = if (!path.isNullOrEmpty()) File(path) else null
-                                            val fileReady = !isPending && file != null && file.exists() && file.length() > 0
+                                            val fileReady = !isPending && file != null && file.exists() && file.isFile && file.length() > 0 && isPathMatchingFolder(file.absolutePath, folder)
                                             val dateAdded = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
 
                                             if (shouldHoldWatermark(fileReady, dateAdded, nowSec)) {
@@ -286,6 +330,8 @@ class FolderWatcherManager(
                                         }
                                     }
                                 }
+                            } catch (ce: CancellationException) {
+                                throw ce
                             } catch (e: Exception) {
                                 LumenLogger.w(TAG) { "MediaStore query error for folder ${folder.path}: ${e.message}" }
                             }
@@ -304,6 +350,8 @@ class FolderWatcherManager(
                 } else {
                     LumenLogger.i(TAG) { "MediaStore ContentObserver: matched $totalMatchedCount new file(s) in enabled folders since watermark." }
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Exception) {
                 LumenLogger.w(TAG) { "MediaStore query execution error: ${e.message}" }
             }
@@ -316,23 +364,43 @@ class FolderWatcherManager(
             return
         }
 
-        synchronized(pendingFiles) {
+        synchronized(pendingLock) {
             pendingFiles.add(file)
+            scheduleDebounceLocked(delayMs = 2000L)
         }
+    }
 
+    private fun scheduleDebounceLocked(delayMs: Long) {
+        val countSnapshot = pendingFiles.size
         debounceJob?.cancel()
         debounceJob = scope.launch {
-            LumenLogger.d(TAG) { "Debounce timer started (2000ms) for ${pendingFiles.size} pending file(s)" }
-            delay(2000L)
+            LumenLogger.d(TAG) { "Debounce timer started (${delayMs}ms) for $countSnapshot pending file(s)" }
+            delay(delayMs)
 
-            val filesToSend: List<File>
-            synchronized(pendingFiles) {
-                filesToSend = pendingFiles.filter { it.exists() && it.isFile && it.length() > 0 }
-                val discarded = pendingFiles.size - filesToSend.size
+            val filesToSend = mutableListOf<File>()
+            synchronized(pendingLock) {
+                val nowMs = System.currentTimeMillis()
+                val stillWriting = mutableListOf<File>()
+                var discarded = 0
+                for (candidate in pendingFiles) {
+                    if (candidate.exists() && candidate.isFile && candidate.length() > 0L) {
+                        filesToSend.add(candidate)
+                    } else if (candidate.exists() && candidate.isFile && candidate.length() == 0L && (nowMs - candidate.lastModified()) < 60_000L) {
+                        // Keep newly created zero-length files still being flushed for the next debounce pass
+                        stillWriting.add(candidate)
+                    } else {
+                        discarded++
+                    }
+                }
                 if (discarded > 0) {
                     LumenLogger.d(TAG) { "Debounce discarded $discarded incomplete/deleted file(s)" }
                 }
                 pendingFiles.clear()
+                pendingFiles.addAll(stillWriting)
+                debounceJob = null
+                if (stillWriting.isNotEmpty()) {
+                    scheduleDebounceLocked(delayMs = 2000L)
+                }
             }
 
             if (filesToSend.isNotEmpty()) {
@@ -347,22 +415,24 @@ class FolderWatcherManager(
     }
 
     fun stopWatchers() {
-        if (fileObservers.isNotEmpty() || contentObserver != null) {
-            LumenLogger.d(TAG) { "Stopping ${fileObservers.size} FileObservers and ContentObserver" }
-        }
-        for (obs in fileObservers) {
-            try {
-                obs.stopWatching()
-            } catch (_: Exception) {}
-        }
-        fileObservers.clear()
+        synchronized(watcherLock) {
+            if (fileObservers.isNotEmpty() || contentObserver != null) {
+                LumenLogger.d(TAG) { "Stopping ${fileObservers.size} FileObservers and ContentObserver" }
+            }
+            for (obs in fileObservers) {
+                try {
+                    obs.stopWatching()
+                } catch (_: Exception) {}
+            }
+            fileObservers.clear()
 
-        contentObserver?.let {
-            try {
-                context.contentResolver.unregisterContentObserver(it)
-            } catch (_: Exception) {}
+            contentObserver?.let {
+                try {
+                    context.contentResolver.unregisterContentObserver(it)
+                } catch (_: Exception) {}
+            }
+            contentObserver = null
         }
-        contentObserver = null
     }
 
     companion object {
@@ -419,11 +489,92 @@ class FolderWatcherManager(
             return maxOf(lastWatermark, capped)
         }
 
-        fun isPathMatchingFolder(filePath: String, folder: BackupFolder): Boolean {
-            val folderCanonical = try { File(folder.path).canonicalPath } catch (_: Exception) { folder.path }.trimEnd('/')
-            val fileCanonical = try { File(filePath).canonicalPath } catch (_: Exception) { filePath }
+        private const val PRIMARY_STORAGE_ROOT = "/storage/emulated/0"
 
-            val fileParent = try { File(fileCanonical).parentFile?.canonicalPath } catch (_: Exception) { File(fileCanonical).parent }?.trimEnd('/')
+        private fun isSymbolicLink(file: File): Boolean = try {
+            Files.isSymbolicLink(file.toPath())
+        } catch (_: Exception) {
+            false
+        }
+
+        private fun isWithinCanonicalRoot(entry: File, rootCanonical: String): Boolean {
+            val canonical = try { entry.canonicalPath.trimEnd('/') } catch (_: Exception) { entry.absolutePath.trimEnd('/') }
+            return canonical == rootCanonical || canonical.startsWith("$rootCanonical/")
+        }
+
+        internal fun normalizeStoragePath(rawPath: String): String {
+            val cleaned = rawPath.trim().replace('\\', '/')
+            val canonical = try {
+                File(cleaned).canonicalPath
+            } catch (_: Exception) {
+                cleaned
+            }.replace('\\', '/').trimEnd('/')
+            if (canonical.isEmpty()) return "/"
+
+            return when {
+                canonical.equals("/sdcard", ignoreCase = true) -> PRIMARY_STORAGE_ROOT
+                canonical.startsWith("/sdcard/", ignoreCase = true) ->
+                    PRIMARY_STORAGE_ROOT + canonical.substring("/sdcard".length)
+                canonical.equals("/storage/self/primary", ignoreCase = true) -> PRIMARY_STORAGE_ROOT
+                canonical.startsWith("/storage/self/primary/", ignoreCase = true) ->
+                    PRIMARY_STORAGE_ROOT + canonical.substring("/storage/self/primary".length)
+                canonical.equals(PRIMARY_STORAGE_ROOT, ignoreCase = true) -> PRIMARY_STORAGE_ROOT
+                canonical.startsWith("$PRIMARY_STORAGE_ROOT/", ignoreCase = true) ->
+                    PRIMARY_STORAGE_ROOT + canonical.substring(PRIMARY_STORAGE_ROOT.length)
+                else -> canonical
+            }
+        }
+
+        internal fun resolveExpectedMediaStoreVolume(folderCanonical: String): String? {
+            val norm = normalizeStoragePath(folderCanonical)
+            if (norm == PRIMARY_STORAGE_ROOT || norm.startsWith("$PRIMARY_STORAGE_ROOT/")) {
+                return "external_primary"
+            }
+            if (norm.startsWith("/storage/")) {
+                val afterStorage = norm.removePrefix("/storage/")
+                val volSegment = afterStorage.substringBefore('/')
+                if (volSegment.isNotBlank() &&
+                    !volSegment.equals("emulated", ignoreCase = true) &&
+                    !volSegment.equals("self", ignoreCase = true)
+                ) {
+                    return volSegment.lowercase(Locale.US)
+                }
+            }
+            return null
+        }
+
+        internal fun extractRelativeFolderPath(folderCanonical: String): String? {
+            val norm = normalizeStoragePath(folderCanonical)
+            if (norm == PRIMARY_STORAGE_ROOT) return ""
+            if (norm.startsWith("$PRIMARY_STORAGE_ROOT/")) {
+                return norm.removePrefix("$PRIMARY_STORAGE_ROOT/").trim('/')
+            }
+            if (norm.startsWith("/storage/")) {
+                val afterStorage = norm.removePrefix("/storage/")
+                if (afterStorage.equals("emulated", ignoreCase = true) ||
+                    afterStorage.equals("self", ignoreCase = true) ||
+                    afterStorage.startsWith("self/", ignoreCase = true)
+                ) {
+                    return null
+                }
+                if (afterStorage.startsWith("emulated/", ignoreCase = true)) {
+                    val afterUser = afterStorage.substringAfter('/', "").substringAfter('/', "")
+                    return afterUser.trim('/')
+                }
+                return afterStorage.substringAfter('/', "").trim('/')
+            }
+            return null
+        }
+
+        fun isPathMatchingFolder(filePath: String, folder: BackupFolder): Boolean {
+            if (filePath.isBlank() || folder.path.isBlank()) return false
+            val folderCanonical = normalizeStoragePath(folder.path)
+            val fileCanonical = normalizeStoragePath(filePath)
+            if (folderCanonical == "/" || fileCanonical == "/") return false
+
+            val lastSlash = fileCanonical.lastIndexOf('/')
+            if (lastSlash <= 0) return false
+            val fileParent = fileCanonical.substring(0, lastSlash)
 
             if (fileParent == folderCanonical) return true
             if (folder.includeSubfolders && fileCanonical.startsWith("$folderCanonical/")) return true
@@ -431,31 +582,43 @@ class FolderWatcherManager(
             return false
         }
 
+        @JvmOverloads
         fun isMediaStoreItemInFolder(
             filePath: String?,
             relativePath: String?,
             bucketDisplayName: String?,
-            folder: BackupFolder
+            folder: BackupFolder,
+            volumeName: String? = null
         ): Boolean {
-            val folderCanonical = try { File(folder.path).canonicalPath } catch (_: Exception) { folder.path }.trimEnd('/')
+            val folderCanonical = normalizeStoragePath(folder.path)
 
-            if (!relativePath.isNullOrEmpty()) {
-                val relNorm = relativePath.trim('/').lowercase()
-                val folderRel = folderCanonical.substringAfter("/sdcard/").substringAfter("/storage/emulated/0/").trim('/').lowercase()
-                if (relNorm == folderRel || (folder.includeSubfolders && relNorm.startsWith("$folderRel/"))) {
-                    return true
+            if (!volumeName.isNullOrBlank()) {
+                val expectedVol = resolveExpectedMediaStoreVolume(folderCanonical)
+                if (expectedVol != null && !volumeName.trim().equals(expectedVol, ignoreCase = true)) {
+                    return false
                 }
             }
 
-            if (!bucketDisplayName.isNullOrEmpty() && bucketDisplayName.equals(folder.displayName, ignoreCase = true)) {
-                if (!filePath.isNullOrEmpty()) {
-                    return isPathMatchingFolder(filePath, folder)
-                }
-                return true
-            }
-
-            if (!filePath.isNullOrEmpty()) {
+            if (!filePath.isNullOrBlank()) {
                 return isPathMatchingFolder(filePath, folder)
+            }
+
+            if (!relativePath.isNullOrBlank()) {
+                val rawRel = relativePath.trim().replace('\\', '/')
+                val relSegments = rawRel.split('/').filter { it.isNotEmpty() }
+                if (relSegments.any { it == "." || it == ".." }) {
+                    return false
+                }
+                val relNorm = relSegments.joinToString("/").lowercase(Locale.US)
+                val folderRel = extractRelativeFolderPath(folderCanonical)?.lowercase(Locale.US) ?: return false
+                if (folderRel.isEmpty()) {
+                    return folder.includeSubfolders || relNorm.isEmpty()
+                }
+                return relNorm == folderRel || (folder.includeSubfolders && relNorm.startsWith("$folderRel/"))
+            }
+
+            if (!bucketDisplayName.isNullOrBlank() && bucketDisplayName.trim().equals(folder.displayName.trim(), ignoreCase = true)) {
+                return true
             }
 
             return false

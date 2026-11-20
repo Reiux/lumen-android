@@ -45,10 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import com.reiux.lumen.data.network.GoogleAlbum
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -185,29 +187,24 @@ fun AlbumManagerBottomSheet(
     // Natural Confirmation Dialog for Album Deletion
     if (albumToDelete != null) {
         val target = albumToDelete!!
-        PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { albumToDelete = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Remove this album?", fontWeight = FontWeight.Bold) },
-            text = { Text("This will remove '${target.title}' from Lumen's saved albums. Your photos in Google Photos won't be affected.") },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAlbum(target)
-                        albumToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Remove")
-                }
+            icon = Icons.Rounded.DeleteOutline,
+            title = stringResource(R.string.dialog_remove_album_title),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_remove),
+            onConfirm = {
+                onRemoveAlbum(target)
+                albumToDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { albumToDelete = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_album_msg, target.title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     // Add Album Dialog

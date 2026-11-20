@@ -3,8 +3,6 @@ name: Lumen Release Build
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -41,11 +39,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Tests and Lint
-        run: ./gradlew testDebugUnitTest lintDebug
+        run: env -u ANDROID_PREFS_ROOT ./gradlew testDebugUnitTest lintDebug lintRelease
 
   release:
     name: Build & Publish Release
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -70,22 +69,36 @@ jobs:
 
       - name: Determine Release Tag
         run: |
-          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+          VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1 || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to extract versionName from app/build.gradle"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG="$GITHUB_REF_NAME"
           else
-            VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
             TAG="v$VERSION"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)*(-[A-Za-z0-9._-]+)?$ ]]; then
+            echo "::error::Malformed release tag '$TAG'"
+            exit 1
           fi
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Check tag matches app version
         run: |
-          if [[ "$GITHUB_REF_NAME" == v* ]]; then
-            VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1)
-            if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME does not match app/build.gradle versionName v$VERSION"
-              exit 1
-            fi
+          VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -n1 || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::app/build.gradle versionName is empty"
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)*(-[A-Za-z0-9._-]+)?$ ]]; then
+            echo "::error::RELEASE_TAG '$RELEASE_TAG' does not match strict semver pattern"
+            exit 1
+          fi
+          if [ "v$VERSION" != "$RELEASE_TAG" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match app/build.gradle versionName v$VERSION"
+            exit 1
           fi
 
       - name: Setup keystore
@@ -99,16 +112,20 @@ jobs:
             echo "::error::Missing signing secrets"
             exit 1
           fi
+          umask 077
           echo "$KS_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          cat <<EOF > keystore.properties
-          storeFile=$RUNNER_TEMP/release.keystore
-          storePassword=$KS_PASS
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASS
-          EOF
 
       - name: Build
-        run: ./gradlew assembleRelease assembleDebug
+        env:
+          LUMEN_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          LUMEN_KEYSTORE_PASSWORD: ${{ secrets.LUMEN_KEYSTORE_PASSWORD }}
+          LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
+          LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
+        run: env -u ANDROID_PREFS_ROOT ./gradlew assembleRelease assembleDebug
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
 
       - name: Verify release signature
         run: |
@@ -148,13 +165,18 @@ jobs:
           if [ -f "$NOTES_FILE" ]; then
             cat "$NOTES_FILE" > dist/notes.md
           else
-            PREV_TAG=$(git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)
-            if [ -n "$PREV_TAG" ]; then
-              RAW_LOG=$(git log "$PREV_TAG..$RELEASE_TAG" --pretty=format:'- %s')
+            if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+              TARGET_REF="$RELEASE_TAG"
             else
-              RAW_LOG=$(git log "$RELEASE_TAG" 2>/dev/null || git log -n 10 --pretty=format:'- %s')
+              TARGET_REF="HEAD"
             fi
-            FILTERED_LOG=$(echo "$RAW_LOG" | grep -vE '^- (ci|chore|docs)([:\(].*)?$')
+            PREV_TAG=$(git describe --tags --abbrev=0 "${TARGET_REF}^" 2>/dev/null || true)
+            if [ -n "$PREV_TAG" ]; then
+              RAW_LOG=$(git log "$PREV_TAG..$TARGET_REF" --pretty=format:'- %s')
+            else
+              RAW_LOG=$(git log -n 10 "$TARGET_REF" --pretty=format:'- %s')
+            fi
+            FILTERED_LOG=$(printf '%s\n' "$RAW_LOG" | grep -vE '^- (ci|chore|docs)([:\(].*)?$' || true)
             
             echo "### Changes" > dist/notes.md
             if [ -n "$(echo "$FILTERED_LOG" | tr -d '[:space:]')" ]; then
@@ -164,10 +186,26 @@ jobs:
             fi
           fi
 
+          APK_SHA256=$(sha256sum dist/lumen-release.apk | awk '{print $1}')
+          if [ -z "$APK_SHA256" ]; then
+            echo "::error::Failed to compute SHA-256 digest for dist/lumen-release.apk"
+            exit 1
+          fi
+          DEBUG_APK_SHA256=$(sha256sum dist/lumen-test-debug.apk | awk '{print $1}')
+          if [ -z "$DEBUG_APK_SHA256" ]; then
+            echo "::error::Failed to compute SHA-256 digest for dist/lumen-test-debug.apk"
+            exit 1
+          fi
+
           echo "" >> dist/notes.md
           echo "### Verification" >> dist/notes.md
           echo "- **Release APK Certificate SHA-256:** \`$CERT_SHA256\`" >> dist/notes.md
-          echo "- \`lumen-test-debug.apk\` is signed with a CI debug key and is for testing only." >> dist/notes.md
+          echo "- \`lumen-test-debug.apk\` is signed with the debug key and is for testing only." >> dist/notes.md
+          echo "" >> dist/notes.md
+          echo '```text' >> dist/notes.md
+          echo "$APK_SHA256  lumen-release.apk" >> dist/notes.md
+          echo "$DEBUG_APK_SHA256  lumen-test-debug.apk" >> dist/notes.md
+          echo '```' >> dist/notes.md
 
       - name: Publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

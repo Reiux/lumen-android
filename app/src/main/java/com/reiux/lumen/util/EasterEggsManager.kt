@@ -18,6 +18,11 @@ enum class Season {
 
 object EasterEggsManager {
 
+    private fun resolveSettingsRepo(context: Context): SettingsRepository {
+        return (context.applicationContext as? com.reiux.lumen.LumenApplication)?.settingsRepository
+            ?: SettingsRepository(context.applicationContext ?: context)
+    }
+
     fun resolveActiveSeason(forcedSeasonStr: String): Season {
         return when (forcedSeasonStr.uppercase()) {
             "HALLOWEEN" -> Season.HALLOWEEN
@@ -52,7 +57,7 @@ object EasterEggsManager {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         if (hour in 0..3) { // 00:00 to 03:59 (between 00:00 and 04:00)
             val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            val repo = SettingsRepository(context)
+            val repo = resolveSettingsRepo(context)
             if (repo.getBoldChoiceDate() != todayStr) {
                 repo.setBoldChoiceDate(todayStr)
                 LumenLogger.i("EasterEgg") { "Triggered 'Bold choice.' Toast for late night switch to light theme" }
@@ -104,7 +109,7 @@ object EasterEggsManager {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         if (hour in 2..4) { // 02:00 to 04:59
             val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            val repo = SettingsRepository(context)
+            val repo = resolveSettingsRepo(context)
             if (repo.getLateNightDate() != todayStr) {
                 repo.setLateNightDate(todayStr)
                 val text = context.getString(R.string.toast_late_night)
@@ -147,7 +152,7 @@ object EasterEggsManager {
         }
 
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-        val repo = SettingsRepository(context)
+        val repo = resolveSettingsRepo(context)
 
         if (targetSeason != Season.NONE) {
             repo.unlockSeasonalTheme(targetSeason.name)

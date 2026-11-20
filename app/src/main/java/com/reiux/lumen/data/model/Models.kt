@@ -49,6 +49,8 @@ data class BackupSettings(
     val autoCheckUpdates: Boolean = true,
     val deleteAfterBackup: Boolean = false,
     val enableBlurEffects: Boolean = true,
+    val autoSyncAlbums: Boolean = true,
+    val hasShownAccountSwipeNudge: Boolean = false,
     val folders: List<BackupFolder> = listOf(
         BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", true),
         BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),
@@ -86,7 +88,8 @@ data class UploadItem(
     // Upload policy captured at enqueue time so each item keeps its owning account's
     // settings even when its items are processed by a queue started for another account.
     val storageSaver: Boolean = false,
-    val useQuota: Boolean = false
+    val useQuota: Boolean = false,
+    val allowDeleteAfterBackup: Boolean = false
 )
 
 enum class AuthFailureKind {

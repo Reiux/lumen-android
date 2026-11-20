@@ -48,19 +48,35 @@ class AccountRepository(
 
         val list = mutableListOf<GoogleAccount>()
         if (!json.isNullOrEmpty()) {
-            val array = JSONArray(json)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                list.add(
-                    GoogleAccount(
-                        email = obj.getString("email"),
-                        credentialString = obj.getString("credentialString"),
-                        displayName = obj.optString("displayName", null.toString()).takeIf { it != "null" && it.isNotEmpty() },
-                        avatarPath = obj.optString("avatarPath", null.toString()).takeIf { it != "null" && it.isNotEmpty() },
-                        androidId = obj.optString("androidId", ""),
-                        masterToken = obj.optString("masterToken", "")
-                    )
-                )
+            try {
+                val array = JSONArray(json)
+                for (i in 0 until array.length()) {
+                    try {
+                        val obj = array.getJSONObject(i)
+                        val email = obj.getString("email")
+                        val cred = obj.getString("credentialString")
+                        val displayName = if (!obj.isNull("displayName")) {
+                            obj.optString("displayName", "").takeIf { it != "null" && it.isNotEmpty() }
+                        } else null
+                        val avatarPath = if (!obj.isNull("avatarPath")) {
+                            obj.optString("avatarPath", "").takeIf { it != "null" && it.isNotEmpty() }
+                        } else null
+                        list.add(
+                            GoogleAccount(
+                                email = email,
+                                credentialString = cred,
+                                displayName = displayName,
+                                avatarPath = avatarPath,
+                                androidId = obj.optString("androidId", ""),
+                                masterToken = obj.optString("masterToken", "")
+                            )
+                        )
+                    } catch (itemErr: Exception) {
+                        LumenLogger.w("Storage") { "Skipping malformed account record at index $i: ${itemErr.javaClass.simpleName}" }
+                    }
+                }
+            } catch (e: Exception) {
+                LumenLogger.w("Storage") { "Failed to parse stored accounts JSON: ${e.javaClass.simpleName}" }
             }
         }
         _accounts.value = list
@@ -78,14 +94,34 @@ class AccountRepository(
 
     fun importCredentialString(credential: String): Result<GoogleAccount> {
         return runCatching {
-            val map = parseQueryString(credential)
-            val email = map["Email"] ?: throw IllegalArgumentException("Missing Email in credential")
-            val token = map["Token"] ?: throw IllegalArgumentException("Missing Token in credential")
-            val androidId = map["androidId"] ?: ""
+            val map = parseQueryString(credential.trim())
+            val email = map["Email"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException("Missing Email in credential")
+            val token = map["Token"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException("Missing Token in credential")
+            val androidId = map["androidId"]?.trim() ?: ""
+
+            val sanitizedEntries = LinkedHashMap<String, String>()
+            for ((rawKey, rawValue) in map) {
+                val canonicalKey = ALLOWED_CREDENTIAL_KEYS_BY_LOWER[rawKey.lowercase()] ?: continue
+                val cleanValue = rawValue.replace(Regex("[\\r\\n\\u0000]"), "").trim()
+                if (cleanValue.isNotEmpty()) {
+                    sanitizedEntries[canonicalKey] = cleanValue
+                }
+            }
+            sanitizedEntries["Email"] = email
+            sanitizedEntries["Token"] = token
+            if (androidId.isNotEmpty()) {
+                sanitizedEntries["androidId"] = androidId
+            }
+
+            val sanitizedCredential = sanitizedEntries.entries.joinToString("&") { (k, v) ->
+                java.net.URLEncoder.encode(k, "UTF-8") + "=" + java.net.URLEncoder.encode(v, "UTF-8")
+            }
 
             val account = GoogleAccount(
                 email = email,
-                credentialString = credential,
+                credentialString = sanitizedCredential,
                 androidId = androidId,
                 masterToken = token
             )
@@ -185,9 +221,31 @@ class AccountRepository(
     companion object {
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_SELECTED_ACCOUNT = "selected_account"
+        private const val LEGACY_PREFS_NAME = "lumen_accounts"
+
+        private val ALLOWED_CREDENTIAL_KEYS = listOf(
+            "androidId",
+            "app",
+            "callerPkg",
+            "callerSig",
+            "client_sig",
+            "device_country",
+            "Email",
+            "google_play_services_version",
+            "lang",
+            "oauth2_foreground",
+            "operatorCountry",
+            "sdk_version",
+            "service",
+            "source",
+            "Token",
+            "accountType",
+            "has_permission"
+        )
+        private val ALLOWED_CREDENTIAL_KEYS_BY_LOWER = ALLOWED_CREDENTIAL_KEYS.associateBy { it.lowercase() }
 
         internal fun createEncryptedSharedPreferences(context: Context): Pair<SharedPreferences, Boolean> {
-            val unencryptedPrefs = context.getSharedPreferences("lumen_accounts", Context.MODE_PRIVATE)
+            val unencryptedPrefs = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
 
             return try {
                 val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
@@ -200,7 +258,7 @@ class AccountRepository(
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
 
-                migrateLegacyAccountsIfNeeded(unencryptedPrefs, encryptedPrefs)
+                migrateLegacyAccountsIfNeeded(unencryptedPrefs, encryptedPrefs, context)
                 Pair(encryptedPrefs, true)
             } catch (e: Exception) {
                 LumenLogger.w("Storage") { "EncryptedSharedPreferences initialization failed (${e.javaClass.simpleName}: ${e.message})" }
@@ -208,7 +266,11 @@ class AccountRepository(
             }
         }
 
-        internal fun migrateLegacyAccountsIfNeeded(unencryptedPrefs: SharedPreferences, encryptedPrefs: SharedPreferences) {
+        internal fun migrateLegacyAccountsIfNeeded(
+            unencryptedPrefs: SharedPreferences,
+            encryptedPrefs: SharedPreferences,
+            context: Context? = null
+        ) {
             val legacyJson = unencryptedPrefs.getString(KEY_ACCOUNTS, null)
             val legacySelected = unencryptedPrefs.getString(KEY_SELECTED_ACCOUNT, null)
 
@@ -221,16 +283,30 @@ class AccountRepository(
                     }
                     val success = editor.commit()
                     val verifyJson = encryptedPrefs.getString(KEY_ACCOUNTS, null)
-                    
+
                     if (success && verifyJson == legacyJson) {
                         LumenLogger.i("Storage") { "Successfully migrated lumen_accounts to EncryptedSharedPreferences" }
-                        unencryptedPrefs.edit().clear().apply()
+                        unencryptedPrefs.edit().clear().commit()
+                        if (context != null) {
+                            try {
+                                context.deleteSharedPreferences(LEGACY_PREFS_NAME)
+                            } catch (_: Exception) {}
+                        }
                     } else {
                         LumenLogger.w("Storage") { "EncryptedSharedPreferences migration failed or data mismatch. Leaving legacy data intact." }
                     }
                 } else {
-                    unencryptedPrefs.edit().clear().apply()
+                    unencryptedPrefs.edit().clear().commit()
+                    if (context != null) {
+                        try {
+                            context.deleteSharedPreferences(LEGACY_PREFS_NAME)
+                        } catch (_: Exception) {}
+                    }
                 }
+            } else if (context != null) {
+                try {
+                    context.deleteSharedPreferences(LEGACY_PREFS_NAME)
+                } catch (_: Exception) {}
             }
         }
     }
