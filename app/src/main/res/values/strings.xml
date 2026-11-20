@@ -123,6 +123,8 @@
     <string name="folders_btn_add">Add Folder</string>
     <string name="folders_empty_title">No Folders Configured</string>
     <string name="folders_empty_subtitle">Tap Add Folder to select directories with photos and videos to back up.</string>
+    <string name="folders_empty_account_title">No Folders for This Account</string>
+    <string name="folders_empty_account_subtitle">Add folders for this account in Device Folders, or reassign an existing folder.</string>
     <string name="folders_status_enabled">Enabled</string>
     <string name="folders_status_disabled">Disabled</string>
     <string name="folders_btn_scan">Scan Device</string>
@@ -515,7 +517,7 @@
 
     <!-- Device Folders Browser Strings -->
     <string name="device_folders_title">Device Folders</string>
-    <string name="device_folders_subtitle">Toggle folders to back up and assign Google Photos albums</string>
+    <string name="device_folders_subtitle">Pick folders to back up</string>
     <string name="device_folders_btn_browse">Browse Device</string>
     <string name="device_folders_btn_add_custom">Add Custom</string>
     <string name="device_folders_btn_custom">Custom</string>

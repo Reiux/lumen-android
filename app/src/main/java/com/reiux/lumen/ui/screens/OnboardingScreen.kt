@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.HighQuality
@@ -219,32 +220,36 @@ fun OnboardingScreen(
     }
 
     if (hasPendingWebViewSubmit && !showManualTokenDialog && !showAddAccountDialog && addAccountError != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = {
                 hasPendingWebViewSubmit = false
                 viewModel.clearAddAccountError()
             },
-            title = { Text(stringResource(R.string.dialog_auth_error_title), fontWeight = FontWeight.Bold) },
-            text = { Text(addAccountError ?: "") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.clearAddAccountError()
-                    showSignInWebView = true
-                }) {
-                    Text(stringResource(R.string.btn_try_again))
-                }
+            icon = Icons.Rounded.ErrorOutline,
+            title = stringResource(R.string.dialog_auth_error_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            isDestructiveConfirm = false,
+            confirmText = stringResource(R.string.btn_try_again),
+            onConfirm = {
+                viewModel.clearAddAccountError()
+                showSignInWebView = true
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    hasPendingWebViewSubmit = false
-                    viewModel.clearAddAccountError()
-                }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
-            },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            dismissText = stringResource(R.string.btn_cancel),
+            onDismissAction = {
+                hasPendingWebViewSubmit = false
+                viewModel.clearAddAccountError()
+            }
+        ) {
+            com.reiux.lumen.ui.components.ExpressiveDialogCallout(
+                tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR
+            ) {
+                Text(
+                    text = addAccountError ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
     }
 
     if (showManualTokenDialog) {

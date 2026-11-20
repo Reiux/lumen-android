@@ -88,10 +88,13 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.PersonOff
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.ui.res.stringResource
@@ -213,42 +216,21 @@ fun BackupScreen(
     var showAccountSwitchBlockedDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showAccountSwitchBlockedDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { showAccountSwitchBlockedDialog = false },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_msg, accountName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = { showAccountSwitchBlockedDialog = false }
-                ) {
-                    Text(stringResource(R.string.btn_got_it))
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showAccountSwitchBlockedDialog = false }
+        ) {
+            Text(
+                text = stringResource(R.string.backup_upload_in_progress_msg, accountName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleSelectAccount: (GoogleAccount) -> Unit = { targetAccount ->
@@ -282,61 +264,58 @@ fun BackupScreen(
     }
 
     if (hasPendingReauth && addAccountError != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = {
                 hasPendingReauth = false
                 onClearAddAccountError()
             },
-            title = { Text(stringResource(R.string.dialog_auth_error_title), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
-            text = { Text(addAccountError) },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    onClearAddAccountError()
-                    showSignInDialog = true
-                }) {
-                    Text(stringResource(R.string.btn_try_again))
-                }
+            icon = Icons.Rounded.ErrorOutline,
+            title = stringResource(R.string.dialog_auth_error_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            isDestructiveConfirm = false,
+            confirmText = stringResource(R.string.btn_try_again),
+            onConfirm = {
+                onClearAddAccountError()
+                showSignInDialog = true
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    hasPendingReauth = false
-                    onClearAddAccountError()
-                }) { Text(stringResource(R.string.btn_cancel)) }
-            },
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            dismissText = stringResource(R.string.btn_cancel),
+            onDismissAction = {
+                hasPendingReauth = false
+                onClearAddAccountError()
+            }
+        ) {
+            com.reiux.lumen.ui.components.ExpressiveDialogCallout(
+                tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR
+            ) {
+                Text(
+                    text = addAccountError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
     }
 
     if (showRestrictedRemoveDialog && accountBlock != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { showRestrictedRemoveDialog = false },
-            title = { Text(stringResource(R.string.dialog_remove_restricted_title), fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    text = stringResource(R.string.dialog_remove_restricted_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            icon = Icons.Rounded.PersonOff,
+            title = stringResource(R.string.dialog_remove_restricted_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_remove),
+            onConfirm = {
+                onRemoveAccount(accountBlock.accountEmail)
+                showRestrictedRemoveDialog = false
+                onClearBlock()
             },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAccount(accountBlock.accountEmail)
-                        showRestrictedRemoveDialog = false
-                        onClearBlock()
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_remove))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showRestrictedRemoveDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
-            },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_restricted_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     var pendingPickedUriStrings by rememberSaveable { mutableStateOf<ArrayList<String>?>(null) }

@@ -8,10 +8,16 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -158,6 +164,7 @@ fun DeviceFoldersScreen(
             ?: accounts.firstOrNull()
     }
     var albumPickerTargetPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var albumPickerAccountEmail by rememberSaveable { mutableStateOf<String?>(null) }
     val albumPickerTarget = remember(albumPickerTargetPath, discoveredFolders) {
         albumPickerTargetPath?.let { p -> discoveredFolders.firstOrNull { SettingsRepository.matchesFolderPath(it.path, p) } }
     }
@@ -256,16 +263,25 @@ fun DeviceFoldersScreen(
 
     val targetEmail = targetAccount?.email
 
-    fun findConfiguredMatch(discovered: LocalMediaFolder): BackupFolder? {
+    fun findConfiguredMatchForEmail(discovered: LocalMediaFolder, email: String?): BackupFolder? {
+        if (!email.isNullOrBlank()) {
+            configuredFolders.firstOrNull { f ->
+                SettingsRepository.matchesFolderPath(f.path, discovered.path) &&
+                    f.accountEmail.equals(email, ignoreCase = true)
+            }?.let { return it }
+        }
         return configuredFolders.firstOrNull { f ->
             SettingsRepository.matchesFolderPath(f.path, discovered.path) &&
-                (targetEmail.isNullOrBlank() || f.accountEmail.isNullOrBlank() || f.accountEmail.equals(targetEmail, ignoreCase = true))
+                (email.isNullOrBlank() || f.accountEmail.isNullOrBlank())
         }
     }
 
-    val filteredFolders = remember(discoveredFolders, configuredFolders, targetEmail, searchQuery, sortMode) {
+    fun findConfiguredMatch(discovered: LocalMediaFolder): BackupFolder? =
+        findConfiguredMatchForEmail(discovered, targetEmail)
+
+    val searchedFolders = remember(discoveredFolders, searchQuery) {
         val q = searchQuery.trim()
-        val matched = if (q.isEmpty()) {
+        if (q.isEmpty()) {
             discoveredFolders
         } else {
             discoveredFolders.filter {
@@ -273,17 +289,6 @@ fun DeviceFoldersScreen(
                     MediaFileReader.toShortDisplayPath(it.path).contains(q, ignoreCase = true)
             }
         }
-        val comparator = when (sortMode) {
-            DeviceFolderSort.RECENT ->
-                compareByDescending<LocalMediaFolder> { findConfiguredMatch(it)?.enabled == true }
-                    .thenByDescending { it.latestDateAddedSec }
-                    .thenByDescending { it.mediaCount }
-            DeviceFolderSort.MOST_ITEMS ->
-                compareByDescending<LocalMediaFolder> { findConfiguredMatch(it)?.enabled == true }
-                    .thenByDescending { it.mediaCount }
-                    .thenByDescending { it.latestDateAddedSec }
-        }
-        matched.sortedWith(comparator)
     }
 
     val enabledCount = remember(discoveredFolders, configuredFolders, targetEmail) {
@@ -320,14 +325,19 @@ fun DeviceFoldersScreen(
 
     if (albumPickerTarget != null) {
         val folder = albumPickerTarget
-        val existing = findConfiguredMatch(folder)
+        val pickerEmail = albumPickerAccountEmail ?: targetEmail
+        val pickerAccount = remember(pickerEmail, accounts, targetAccount) {
+            accounts.firstOrNull { !pickerEmail.isNullOrBlank() && it.email.equals(pickerEmail, ignoreCase = true) }
+                ?: targetAccount
+        }
+        val existing = findConfiguredMatchForEmail(folder, pickerEmail)
         val currentChoice = when (existing?.targetAlbumMode) {
             AlbumTargetMode.AUTO_FOLDER_NAME -> AlbumChoice.AutoFolderName
             AlbumTargetMode.CUSTOM_NAME -> {
                 val key = existing.customAlbumName ?: ""
                 val matched = remoteAlbums.find {
                     (it.mediaKey == key || it.title == key) &&
-                        (it.accountEmail.isNullOrBlank() || targetEmail.isNullOrBlank() || it.accountEmail.equals(targetEmail, ignoreCase = true))
+                        (it.accountEmail.isNullOrBlank() || pickerEmail.isNullOrBlank() || it.accountEmail.equals(pickerEmail, ignoreCase = true))
                 } ?: remoteAlbums.find { it.mediaKey == key || it.title == key }
                 if (matched != null) AlbumChoice.CustomAlbum(matched)
                 else if (key.isNotBlank()) {
@@ -335,7 +345,7 @@ fun DeviceFoldersScreen(
                         GoogleAlbum(
                             mediaKey = key,
                             title = existing.customAlbumNickname ?: key,
-                            accountEmail = targetEmail
+                            accountEmail = pickerEmail
                         )
                     )
                 } else AlbumChoice.None
@@ -357,20 +367,25 @@ fun DeviceFoldersScreen(
                     pendingAlbumAssignment = arrayListOf(folder.path, mode.name, customName ?: "", customNick ?: "")
                     showAllFilesDialog = true
                 } else {
-                    onAssignAlbum(folder, mode, customName, customNick, targetEmail)
+                    onAssignAlbum(folder, mode, customName, customNick, pickerEmail)
                 }
                 albumPickerTargetPath = null
+                albumPickerAccountEmail = null
             },
             savedAlbums = remoteAlbums,
             accounts = accounts,
-            activeAccount = targetAccount,
+            activeAccount = pickerAccount,
             folderDisplayName = existing?.displayName ?: folder.displayName,
             onAddAlbum = onAddAlbum,
             onOpenAlbumManager = {
                 albumPickerTargetPath = null
+                albumPickerAccountEmail = null
                 onOpenAlbumManager()
             },
-            onDismiss = { albumPickerTargetPath = null }
+            onDismiss = {
+                albumPickerTargetPath = null
+                albumPickerAccountEmail = null
+            }
         )
     }
 
@@ -511,18 +526,18 @@ fun DeviceFoldersScreen(
             return@Scaffold
         }
 
-        val handleFolderToggle: (LocalMediaFolder, Boolean) -> Unit = { folder, next ->
+        val handleFolderToggle: (LocalMediaFolder, Boolean, String?) -> Unit = { folder, next, pageEmail ->
             try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
             if (next && requiresAllFilesPermission(context, folder.path)) {
                 pendingEnableFolderPath = folder.path
                 showAllFilesDialog = true
             } else {
-                onToggleDiscoveredFolder(folder, next, targetEmail)
+                onToggleDiscoveredFolder(folder, next, pageEmail ?: targetEmail)
             }
         }
 
-        val rememberedFindMatch = remember(configuredFolders, targetEmail) {
-            { discovered: LocalMediaFolder -> findConfiguredMatch(discovered) }
+        val rememberedFindMatchForEmail = remember(configuredFolders) {
+            { discovered: LocalMediaFolder, email: String? -> findConfiguredMatchForEmail(discovered, email) }
         }
 
         if (isWideLayout) {
@@ -558,14 +573,18 @@ fun DeviceFoldersScreen(
                         .fillMaxHeight()
                 ) {
                     DeviceFoldersListContent(
-                        folders = filteredFolders,
+                        folders = searchedFolders,
                         isDiscovering = isDiscovering,
                         searchQuery = searchQuery,
                         sortMode = sortMode,
-                        findMatch = rememberedFindMatch,
+                        selectedAccountEmail = targetEmail,
+                        findMatchForEmail = rememberedFindMatchForEmail,
                         remoteAlbums = remoteAlbums,
                         onToggle = handleFolderToggle,
-                        onPickAlbum = { albumPickerTargetPath = it.path }
+                        onPickAlbum = { folder, pageEmail ->
+                            albumPickerAccountEmail = pageEmail ?: targetEmail
+                            albumPickerTargetPath = folder.path
+                        }
                     )
                 }
             }
@@ -593,14 +612,18 @@ fun DeviceFoldersScreen(
 
                 Box(modifier = Modifier.weight(1f)) {
                     DeviceFoldersListContent(
-                        folders = filteredFolders,
+                        folders = searchedFolders,
                         isDiscovering = isDiscovering,
                         searchQuery = searchQuery,
                         sortMode = sortMode,
-                        findMatch = rememberedFindMatch,
+                        selectedAccountEmail = targetEmail,
+                        findMatchForEmail = rememberedFindMatchForEmail,
                         remoteAlbums = remoteAlbums,
                         onToggle = handleFolderToggle,
-                        onPickAlbum = { albumPickerTargetPath = it.path }
+                        onPickAlbum = { folder, pageEmail ->
+                            albumPickerAccountEmail = pageEmail ?: targetEmail
+                            albumPickerTargetPath = folder.path
+                        }
                     )
                 }
             }
@@ -723,22 +746,12 @@ private fun DeviceFoldersListContent(
     isDiscovering: Boolean,
     searchQuery: String,
     sortMode: DeviceFolderSort,
-    findMatch: (LocalMediaFolder) -> BackupFolder?,
+    selectedAccountEmail: String?,
+    findMatchForEmail: (LocalMediaFolder, String?) -> BackupFolder?,
     remoteAlbums: List<GoogleAlbum>,
-    onToggle: (LocalMediaFolder, Boolean) -> Unit,
-    onPickAlbum: (LocalMediaFolder) -> Unit
+    onToggle: (LocalMediaFolder, Boolean, String?) -> Unit,
+    onPickAlbum: (LocalMediaFolder, String?) -> Unit
 ) {
-    val listState = rememberLazyListState()
-    var lastSortMode by remember { mutableStateOf(sortMode) }
-    var lastSearchQuery by remember { mutableStateOf(searchQuery) }
-    LaunchedEffect(sortMode, searchQuery) {
-        if (lastSortMode != sortMode || lastSearchQuery != searchQuery) {
-            lastSortMode = sortMode
-            lastSearchQuery = searchQuery
-            listState.scrollToItem(0)
-        }
-    }
-
     if (isDiscovering && folders.isEmpty()) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -780,26 +793,67 @@ private fun DeviceFoldersListContent(
         return
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
-    ) {
-        itemsIndexed(
-            items = folders,
-            key = { _, item -> SettingsRepository.normalizeFolderPath(item.path) }
-        ) { index, folder ->
-            val configured = findMatch(folder)
-            DeviceFolderCardItem(
-                folder = folder,
-                configured = configured,
-                position = groupPositionOf(index, folders.size),
-                remoteAlbums = remoteAlbums,
-                onToggle = { next -> onToggle(folder, next) },
-                onPickAlbum = { onPickAlbum(folder) },
-                modifier = Modifier.animateItem()
+    val accountKey = selectedAccountEmail?.lowercase().orEmpty()
+    AnimatedContent(
+        targetState = accountKey,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(durationMillis = 220)) + slideInVertically(
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 500f),
+                initialOffsetY = { it / 28 }
+            )).togetherWith(
+                fadeOut(animationSpec = tween(durationMillis = 130))
             )
+        },
+        modifier = Modifier.fillMaxSize(),
+        label = "deviceFoldersAccountSwitch"
+    ) { pageAccountKey ->
+        val pageEmail = pageAccountKey.ifBlank { null }
+        val sortedFolders = remember(folders, findMatchForEmail, pageEmail, sortMode) {
+            val comparator = when (sortMode) {
+                DeviceFolderSort.RECENT ->
+                    compareByDescending<LocalMediaFolder> { findMatchForEmail(it, pageEmail)?.enabled == true }
+                        .thenByDescending { it.latestDateAddedSec }
+                        .thenByDescending { it.mediaCount }
+                DeviceFolderSort.MOST_ITEMS ->
+                    compareByDescending<LocalMediaFolder> { findMatchForEmail(it, pageEmail)?.enabled == true }
+                        .thenByDescending { it.mediaCount }
+                        .thenByDescending { it.latestDateAddedSec }
+            }
+            folders.sortedWith(comparator)
+        }
+
+        val listState = rememberLazyListState()
+        var lastSortMode by remember { mutableStateOf(sortMode) }
+        var lastSearchQuery by remember { mutableStateOf(searchQuery) }
+        LaunchedEffect(sortMode, searchQuery) {
+            if (lastSortMode != sortMode || lastSearchQuery != searchQuery) {
+                lastSortMode = sortMode
+                lastSearchQuery = searchQuery
+                listState.animateScrollToItem(0)
+            }
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            itemsIndexed(
+                items = sortedFolders,
+                key = { _, item -> SettingsRepository.normalizeFolderPath(item.path) }
+            ) { index, folder ->
+                val configured = findMatchForEmail(folder, pageEmail)
+                DeviceFolderCardItem(
+                    folder = folder,
+                    configured = configured,
+                    position = groupPositionOf(index, sortedFolders.size),
+                    remoteAlbums = remoteAlbums,
+                    onToggle = { next -> onToggle(folder, next, pageEmail) },
+                    onPickAlbum = { onPickAlbum(folder, pageEmail) },
+                    modifier = Modifier.animateItem()
+                )
+            }
         }
     }
 }

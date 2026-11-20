@@ -53,6 +53,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Card
@@ -87,7 +89,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.ui.components.DynamicLumenIcon
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogCallout
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
@@ -144,80 +149,47 @@ fun SettingsScreen(
     }
 
     if (showConfirmDeleteAfterBackupDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showConfirmDeleteAfterBackupDialog = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier
-                .widthIn(max = 560.dp)
-                .padding(horizontal = 24.dp),
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
+            icon = Icons.Rounded.DeleteForever,
+            title = stringResource(R.string.dialog_delete_after_backup_title),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.dialog_delete_after_backup_confirm),
+            onConfirm = {
+                showConfirmDeleteAfterBackupDialog = false
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+                    onUpdateDeleteAfterBackup(true)
+                } else {
+                    // Don't arm the destructive flag yet: the permission screen opens
+                    // next and the user may decline. The flag is only applied in the
+                    // ON_RESUME handler once the grant is verified.
+                    pendingDeleteAfterBackup = true
+                    showAllFilesPermissionDialog = true
+                }
             },
-            title = {
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            ExpressiveDialogCallout(tone = ExpressiveDialogTone.ERROR) {
                 Text(
-                    text = stringResource(R.string.dialog_delete_after_backup_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = stringResource(R.string.dialog_delete_after_backup_lead),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_lead),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_bullets),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
-                    )
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        showConfirmDeleteAfterBackupDialog = false
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
-                            onUpdateDeleteAfterBackup(true)
-                        } else {
-                            // Don't arm the destructive flag yet: the permission screen opens
-                            // next and the user may decline. The flag is only applied in the
-                            // ON_RESUME handler once the grant is verified.
-                            pendingDeleteAfterBackup = true
-                            showAllFilesPermissionDialog = true
-                        }
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text(stringResource(R.string.dialog_delete_after_backup_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDeleteAfterBackupDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
+                Text(
+                    text = stringResource(R.string.dialog_delete_after_backup_bullets),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    lineHeight = 18.sp
+                )
             }
-        )
+            Text(
+                text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 
     if (showAllFilesPermissionDialog) {
@@ -250,41 +222,20 @@ fun SettingsScreen(
     }
 
     if (showUploadActiveBlockedDialog != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showUploadActiveBlockedDialog = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = { showUploadActiveBlockedDialog = null }
-                ) {
-                    Text(stringResource(R.string.btn_got_it))
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showUploadActiveBlockedDialog = null }
+        ) {
+            Text(
+                text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleStorageSaverToggle: (Boolean) -> Unit = { newValue ->

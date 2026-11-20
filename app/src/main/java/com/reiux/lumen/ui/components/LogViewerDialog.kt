@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
@@ -302,40 +303,33 @@ fun LogViewerDialog(
 
     if (showCrashReportDialog && crashLogFile != null) {
         val crashText = cachedCrashText ?: ""
-        PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showCrashReportDialog = false },
-            title = { Text("Last Session Crash Report", fontWeight = FontWeight.Bold) },
-            text = {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
-                ) {
-                    Text(
-                        text = crashText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .horizontalScroll(rememberScrollState())
-                    )
-                }
+            icon = Icons.Rounded.BugReport,
+            title = "Last Session Crash Report",
+            tone = ExpressiveDialogTone.ERROR,
+            isDestructiveConfirm = false,
+            confirmText = "Copy Report",
+            onConfirm = {
+                copySensitiveClipboardText(context, "Crash Report", crashText)
+                Toast.makeText(context, "Copied crash report to clipboard", Toast.LENGTH_SHORT).show()
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        copySensitiveClipboardText(context, "Crash Report", crashText)
-                        Toast.makeText(context, "Copied crash report to clipboard", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("Copy Report")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCrashReportDialog = false }) {
-                    Text("Close")
-                }
+            dismissText = "Close"
+        ) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
+            ) {
+                Text(
+                    text = crashText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .horizontalScroll(rememberScrollState())
+                )
             }
-        )
+        }
     }
 
     if (showShareReportDialog) {
@@ -1072,46 +1066,53 @@ private fun ShareReportDialog(
         return sb.toString()
     }
 
-    PredictiveAlertDialog(
+    ExpressiveAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Share Diagnostics Report", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Generate a privacy-safe diagnostic report for troubleshooting.", style = MaterialTheme.typography.bodyMedium)
+        icon = Icons.Rounded.Share,
+        title = "Share Diagnostics Report",
+        tone = ExpressiveDialogTone.PRIMARY,
+        confirmText = "Copy Report",
+        onConfirm = {
+            val text = generateReport(asGitHubMarkdown = false)
+            copySensitiveClipboardText(context, "Lumen Report", text)
+            Toast.makeText(context, "Copied report to clipboard", Toast.LENGTH_SHORT).show()
+            onDismiss()
+        },
+        dismissText = "Cancel"
+    ) {
+        Text(
+            text = "Generate a privacy-safe diagnostic report for troubleshooting.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { hideFileNames = !hideFileNames }
-                ) {
-                    androidx.compose.material3.Checkbox(
-                        checked = hideFileNames,
-                        onCheckedChange = { hideFileNames = it }
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Hide file names in shared report", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val text = generateReport(asGitHubMarkdown = false)
-                    copySensitiveClipboardText(context, "Lumen Report", text)
-                    Toast.makeText(context, "Copied report to clipboard", Toast.LENGTH_SHORT).show()
-                    onDismiss()
-                }
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { hideFileNames = !hideFileNames }
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Text("Copy Report")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                androidx.compose.material3.Checkbox(
+                    checked = hideFileNames,
+                    onCheckedChange = { hideFileNames = it }
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Hide file names in shared report",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
-    )
+    }
 }
 
 private fun copySensitiveClipboardText(context: Context, label: String, text: String) {

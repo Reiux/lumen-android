@@ -379,29 +379,24 @@ fun AlbumsScreen(
     if (albumToDelete != null) {
         val target = albumToDelete!!
 
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { albumToDelete = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.dialog_remove_album_title), fontWeight = FontWeight.Bold) },
-            text = { Text(stringResource(R.string.dialog_remove_album_msg, target.title)) },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAlbum(target)
-                        albumToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_remove))
-                }
+            icon = Icons.Rounded.DeleteOutline,
+            title = stringResource(R.string.dialog_remove_album_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_remove),
+            onConfirm = {
+                onRemoveAlbum(target)
+                albumToDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { albumToDelete = null }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
-            }
-        )
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_album_msg, target.title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     // Rename / Edit Album Dialog
@@ -417,56 +412,52 @@ fun AlbumsScreen(
                 ?: accounts.firstOrNull()
         }
 
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        com.reiux.lumen.ui.components.ExpressiveAlertDialog(
             onDismissRequest = { albumToRename = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.dialog_edit_album_title), fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.dialog_edit_album_nickname_prompt), style = MaterialTheme.typography.bodyMedium)
-                    OutlinedTextField(
-                        value = newNickname,
-                        onValueChange = { newNickname = it },
-                        label = { Text(stringResource(R.string.dialog_edit_album_nickname_label)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    if (accounts.isNotEmpty()) {
-                        Text(stringResource(R.string.dialog_edit_album_assign_account), style = MaterialTheme.typography.bodyMedium)
-                        AccountPickerRow(
-                            accounts = accounts,
-                            selectedAccount = targetAccount,
-                            onSelectAccount = { targetAccountEmail = it.email }
-                        )
+            icon = Icons.Rounded.Edit,
+            title = stringResource(R.string.dialog_edit_album_title),
+            tone = com.reiux.lumen.ui.components.ExpressiveDialogTone.PRIMARY,
+            confirmText = stringResource(R.string.btn_save),
+            confirmEnabled = newNickname.isNotBlank(),
+            onConfirm = {
+                if (newNickname.isNotBlank()) {
+                    val newEmail = targetAccount?.email
+                    if (!target.accountEmail.isNullOrBlank() && !target.accountEmail.equals(newEmail, ignoreCase = true)) {
+                        onRemoveAlbum(target)
                     }
+                    onAddAlbum(target.mediaKey, newNickname.trim(), newEmail)
+                    albumToRename = null
                 }
             },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        if (newNickname.isNotBlank()) {
-                            val newEmail = targetAccount?.email
-                            if (!target.accountEmail.isNullOrBlank() && !target.accountEmail.equals(newEmail, ignoreCase = true)) {
-                                onRemoveAlbum(target)
-                            }
-                            onAddAlbum(target.mediaKey, newNickname.trim(), newEmail)
-                            albumToRename = null
-                        }
-                    },
-                    enabled = newNickname.isNotBlank()
-                ) {
-                    Text(stringResource(R.string.btn_save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { albumToRename = null }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_edit_album_nickname_prompt),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = newNickname,
+                onValueChange = { newNickname = it },
+                label = { Text(stringResource(R.string.dialog_edit_album_nickname_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true
+            )
+
+            if (accounts.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.dialog_edit_album_assign_account),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AccountPickerRow(
+                    accounts = accounts,
+                    selectedAccount = targetAccount,
+                    onSelectAccount = { targetAccountEmail = it.email }
+                )
             }
-        )
+        }
     }
 
     // Add Album Modal Bottom Sheet

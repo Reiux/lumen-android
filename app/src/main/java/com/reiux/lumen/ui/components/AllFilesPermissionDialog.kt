@@ -6,16 +6,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.reiux.lumen.R
 import java.io.File
 import java.util.Locale
@@ -27,65 +24,50 @@ fun AllFilesPermissionDialog(
     onLaunchFailed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    PredictiveAlertDialog(
+    ExpressiveAlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = stringResource(R.string.all_files_dialog_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Text(
-                text = stringResource(R.string.all_files_dialog_message),
-                style = MaterialTheme.typography.bodyMedium
-            )
-        },
-        confirmButton = {
-            ExpressiveButton(
-                onClick = {
-                    val launched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        try {
-                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                data = Uri.parse("package:${context.packageName}")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(intent)
-                            true
-                        } catch (_: Exception) {
-                            try {
-                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                                true
-                            } catch (_: Exception) {
-                                false
-                            }
+        icon = Icons.Rounded.FolderOpen,
+        title = stringResource(R.string.all_files_dialog_title),
+        tone = ExpressiveDialogTone.PRIMARY,
+        confirmText = stringResource(R.string.all_files_dialog_button),
+        onConfirm = {
+            val launched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    true
+                } catch (_: Exception) {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                    } else {
+                        context.startActivity(intent)
                         true
+                    } catch (_: Exception) {
+                        false
                     }
-                    if (launched) {
-                        onConfirm()
-                    } else {
-                        onLaunchFailed()
-                    }
-                    onDismiss()
                 }
-            ) {
-                Text(stringResource(R.string.all_files_dialog_button))
+            } else {
+                true
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.btn_cancel))
+            if (launched) {
+                onConfirm()
+            } else {
+                onLaunchFailed()
             }
+            onDismiss()
         },
-        shape = RoundedCornerShape(28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    )
+        dismissText = stringResource(R.string.btn_cancel)
+    ) {
+        Text(
+            text = stringResource(R.string.all_files_dialog_message),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 private fun getCanonicalPrimaryStorageRoot(): String {

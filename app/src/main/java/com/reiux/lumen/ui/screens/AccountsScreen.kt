@@ -36,8 +36,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ButtonDefaults
@@ -73,7 +75,10 @@ import coil.compose.AsyncImage
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.ui.components.AddAccountDialog
 import com.reiux.lumen.ui.components.EditDisplayNameDialog
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogCallout
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.groupPositionOf
@@ -116,47 +121,26 @@ fun AccountsScreen(
     }
 
     if (showUploadActiveBlockedDialog != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        val activeLabel = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
+        val msg = if (showUploadActiveBlockedDialog == "switch") {
+            stringResource(R.string.accounts_upload_active_switch_msg, activeLabel)
+        } else {
+            stringResource(R.string.accounts_upload_active_remove_msg, activeLabel)
+        }
+        ExpressiveAlertDialog(
             onDismissRequest = { showUploadActiveBlockedDialog = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                val activeLabel = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
-                val msg = if (showUploadActiveBlockedDialog == "switch") {
-                    stringResource(R.string.accounts_upload_active_switch_msg, activeLabel)
-                } else {
-                    stringResource(R.string.accounts_upload_active_remove_msg, activeLabel)
-                }
-                Text(
-                    text = msg,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = { showUploadActiveBlockedDialog = null }
-                ) {
-                    Text(stringResource(R.string.btn_got_it))
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showUploadActiveBlockedDialog = null }
+        ) {
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleSelectAccount: (String) -> Unit = { targetEmail ->
@@ -247,58 +231,42 @@ fun AccountsScreen(
         val attachedFolders = folders.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
         val attachedAlbums = albums.count { it.accountEmail == null || it.accountEmail.equals(targetAcc.email, ignoreCase = true) }
 
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { accountToRemoveEmail = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = {
-                Text(
-                    text = stringResource(R.string.accounts_btn_remove),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            icon = Icons.Rounded.PersonRemove,
+            title = stringResource(R.string.accounts_btn_remove),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_delete),
+            onConfirm = {
+                onRemoveAccount(targetAcc.email)
+                accountToRemoveEmail = null
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_account_desc, targetAcc.displayName ?: targetAcc.email),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (attachedFolders > 0 || attachedAlbums > 0) {
+                ExpressiveDialogCallout(tone = ExpressiveDialogTone.ERROR) {
                     Text(
-                        text = stringResource(R.string.dialog_remove_account_desc, targetAcc.displayName ?: targetAcc.email),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (attachedFolders > 0 || attachedAlbums > 0) {
-                        Text(
-                            text = stringResource(R.string.dialog_remove_account_affects, attachedFolders, attachedAlbums),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.remove_account_device_warning),
+                        text = stringResource(R.string.dialog_remove_account_affects, attachedFolders, attachedAlbums),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.sp
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        onRemoveAccount(targetAcc.email)
-                        accountToRemoveEmail = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { accountToRemoveEmail = null }) {
-                    Text(stringResource(R.string.btn_cancel))
                 }
             }
-        )
+            ExpressiveDialogCallout(tone = ExpressiveDialogTone.SECONDARY) {
+                Text(
+                    text = stringResource(R.string.remove_account_device_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+            }
+        }
     }
 
     val configuration = LocalConfiguration.current

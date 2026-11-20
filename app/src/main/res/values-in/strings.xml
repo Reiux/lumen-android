@@ -123,6 +123,8 @@
     <string name="folders_btn_add">Tambah Folder</string>
     <string name="folders_empty_title">Belum Ada Folder yang Dipilih</string>
     <string name="folders_empty_subtitle">Ketuk Tambah Folder untuk memilih direktori foto dan video yang ingin dicadangkan.</string>
+    <string name="folders_empty_account_title">Tidak Ada Folder untuk Akun Ini</string>
+    <string name="folders_empty_account_subtitle">Tambahkan folder untuk akun ini di Folder Perangkat, atau tetapkan ulang folder yang ada.</string>
     <string name="folders_status_enabled">Aktif</string>
     <string name="folders_status_disabled">Nonaktif</string>
     <string name="folders_btn_scan">Pindai Perangkat</string>
@@ -515,7 +517,7 @@
 
     <!-- Device Folders Browser Strings -->
     <string name="device_folders_title">Folder Perangkat</string>
-    <string name="device_folders_subtitle">Aktifkan folder untuk dicadangkan dan atur album Google Foto</string>
+    <string name="device_folders_subtitle">Pilih folder cadangan</string>
     <string name="device_folders_btn_browse">Jelajahi Perangkat</string>
     <string name="device_folders_btn_add_custom">Tambah Kustom</string>
     <string name="device_folders_btn_custom">Kustom</string>

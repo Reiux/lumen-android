@@ -42,6 +42,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.FolderDelete
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Warning
@@ -66,6 +68,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +76,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.R
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
@@ -229,29 +234,24 @@ fun FoldersScreen(
 
     if (folderToRemove != null) {
         val target = folderToRemove!!
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { folderToRemove = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text(stringResource(R.string.dialog_remove_folder_title), fontWeight = FontWeight.Bold) },
-            text = { Text(stringResource(R.string.dialog_remove_folder_msg, target.displayName)) },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = {
-                        onRemoveFolder(target.path, target.accountEmail)
-                        folderToRemove = null
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.btn_delete))
-                }
+            icon = Icons.Rounded.FolderDelete,
+            title = stringResource(R.string.dialog_remove_folder_title),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.btn_delete),
+            onConfirm = {
+                onRemoveFolder(target.path, target.accountEmail)
+                folderToRemove = null
             },
-            dismissButton = {
-                TextButton(onClick = { folderToRemove = null }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
-            }
-        )
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            Text(
+                text = stringResource(R.string.dialog_remove_folder_msg, target.displayName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     if (showAddDialog) {
@@ -352,27 +352,35 @@ fun FoldersScreen(
                         onSelectFilter = { selectedAccountFilter = it }
                     )
                 }
-                itemsIndexed(
-                    items = filteredFolders,
-                    key = { _, folder -> "${folder.accountEmail.orEmpty().lowercase()}:${SettingsRepository.normalizeFolderPath(folder.path)}" }
-                ) { index, folder ->
-                    FolderRowItem(
-                        folder = folder,
-                        position = groupPositionOf(index, filteredFolders.size),
-                        accounts = accounts,
-                        remoteAlbums = remoteAlbums,
-                        mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
-                        accountsCount = accounts.size,
-                        onToggleFolder = onToggleFolder,
-                        onRequestAllFilesToggle = { targetFolder ->
-                            pendingFolderToToggle = targetFolder
-                            showAllFilesDialog = true
-                        },
-                        onSetIncludeSubfolders = onSetIncludeSubfolders,
-                        onEditFolder = { folderToEdit = it },
-                        onRemoveFolder = { folderToRemove = it },
-                        modifier = Modifier.animateItem()
-                    )
+                if (filteredFolders.isEmpty()) {
+                    item(key = "folders_empty_wide") {
+                        FoldersEmptyStateCard(
+                            isFilteredByAccount = selectedAccountFilter != null && folders.isNotEmpty()
+                        )
+                    }
+                } else {
+                    itemsIndexed(
+                        items = filteredFolders,
+                        key = { _, folder -> "${folder.accountEmail.orEmpty().lowercase()}:${SettingsRepository.normalizeFolderPath(folder.path)}" }
+                    ) { index, folder ->
+                        FolderRowItem(
+                            folder = folder,
+                            position = groupPositionOf(index, filteredFolders.size),
+                            accounts = accounts,
+                            remoteAlbums = remoteAlbums,
+                            mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
+                            accountsCount = accounts.size,
+                            onToggleFolder = onToggleFolder,
+                            onRequestAllFilesToggle = { targetFolder ->
+                                pendingFolderToToggle = targetFolder
+                                showAllFilesDialog = true
+                            },
+                            onSetIncludeSubfolders = onSetIncludeSubfolders,
+                            onEditFolder = { folderToEdit = it },
+                            onRemoveFolder = { folderToRemove = it },
+                            modifier = Modifier.animateItem()
+                        )
+                    }
                 }
                 item { Spacer(modifier = Modifier.height(16.dp)) }
             }
@@ -414,27 +422,35 @@ fun FoldersScreen(
                 }
             }
 
-            itemsIndexed(
-                items = filteredFolders,
-                key = { _, folder -> "${folder.accountEmail.orEmpty().lowercase()}:${SettingsRepository.normalizeFolderPath(folder.path)}" }
-            ) { index, folder ->
-                FolderRowItem(
-                    folder = folder,
-                    position = groupPositionOf(index, filteredFolders.size),
-                    accounts = accounts,
-                    remoteAlbums = remoteAlbums,
-                    mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
-                    accountsCount = accounts.size,
-                    onToggleFolder = onToggleFolder,
-                    onRequestAllFilesToggle = { targetFolder ->
-                        pendingFolderToToggle = targetFolder
-                        showAllFilesDialog = true
-                    },
-                    onSetIncludeSubfolders = onSetIncludeSubfolders,
-                    onEditFolder = { folderToEdit = it },
-                    onRemoveFolder = { folderToRemove = it },
-                    modifier = Modifier.animateItem()
-                )
+            if (filteredFolders.isEmpty()) {
+                item(key = "folders_empty_portrait") {
+                    FoldersEmptyStateCard(
+                        isFilteredByAccount = selectedAccountFilter != null && folders.isNotEmpty()
+                    )
+                }
+            } else {
+                itemsIndexed(
+                    items = filteredFolders,
+                    key = { _, folder -> "${folder.accountEmail.orEmpty().lowercase()}:${SettingsRepository.normalizeFolderPath(folder.path)}" }
+                ) { index, folder ->
+                    FolderRowItem(
+                        folder = folder,
+                        position = groupPositionOf(index, filteredFolders.size),
+                        accounts = accounts,
+                        remoteAlbums = remoteAlbums,
+                        mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
+                        accountsCount = accounts.size,
+                        onToggleFolder = onToggleFolder,
+                        onRequestAllFilesToggle = { targetFolder ->
+                            pendingFolderToToggle = targetFolder
+                            showAllFilesDialog = true
+                        },
+                        onSetIncludeSubfolders = onSetIncludeSubfolders,
+                        onEditFolder = { folderToEdit = it },
+                        onRemoveFolder = { folderToRemove = it },
+                        modifier = Modifier.animateItem()
+                    )
+                }
             }
 
             item {
@@ -445,6 +461,61 @@ fun FoldersScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun FoldersEmptyStateCard(
+    isFilteredByAccount: Boolean
+) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    if (isFilteredByAccount) R.string.folders_empty_account_title else R.string.folders_empty_title
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+
+            Text(
+                text = stringResource(
+                    if (isFilteredByAccount) R.string.folders_empty_account_subtitle else R.string.folders_empty_subtitle
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

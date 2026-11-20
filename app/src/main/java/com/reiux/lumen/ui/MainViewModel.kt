@@ -1307,16 +1307,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun findConfiguredFolderForDiscovered(path: String, targetEmail: String?): BackupFolder? {
+        val folders = settings.value.folders
+        if (!targetEmail.isNullOrBlank()) {
+            folders.firstOrNull {
+                SettingsRepository.matchesFolderPath(it.path, path) &&
+                    matchesAccount(it.accountEmail, targetEmail)
+            }?.let { return it }
+        }
+        return folders.firstOrNull {
+            SettingsRepository.matchesFolderPath(it.path, path) &&
+                (targetEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank())
+        }
+    }
+
     fun toggleDiscoveredFolder(
         discovered: LocalMediaFolder,
         enabled: Boolean,
         accountEmail: String?
     ) {
         val targetEmail = accountEmail ?: selectedAccount.value?.email
-        val existing = settings.value.folders.firstOrNull {
-            SettingsRepository.matchesFolderPath(it.path, discovered.path) &&
-                (targetEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank() || matchesAccount(it.accountEmail, targetEmail))
-        }
+        val existing = findConfiguredFolderForDiscovered(discovered.path, targetEmail)
         if (existing != null) {
             if (existing.accountEmail.isNullOrBlank() && !targetEmail.isNullOrBlank()) {
                 addFolder(
@@ -1347,10 +1358,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         accountEmail: String?
     ) {
         val targetEmail = accountEmail ?: selectedAccount.value?.email
-        val existing = settings.value.folders.firstOrNull {
-            SettingsRepository.matchesFolderPath(it.path, discovered.path) &&
-                (targetEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank() || matchesAccount(it.accountEmail, targetEmail))
-        }
+        val existing = findConfiguredFolderForDiscovered(discovered.path, targetEmail)
         val resolvedEmail = existing?.accountEmail?.takeIf { it.isNotBlank() } ?: targetEmail
         val prevEmail = if (existing != null && existing.accountEmail.isNullOrBlank() && !resolvedEmail.isNullOrBlank()) {
             ""
