@@ -93,6 +93,14 @@ android {
 }
 
 gradle.taskGraph.whenReady { taskGraph ->
+    def explicitReleaseArtifactRequested = gradle.startParameter.taskNames.any { rawName ->
+        def simpleName = rawName.substring(rawName.lastIndexOf(':') + 1).toLowerCase(java.util.Locale.ROOT)
+        simpleName == "assemblerelease" ||
+            simpleName == "bundlerelease" ||
+            simpleName == "packagerelease" ||
+            simpleName == "packagereleasebundle" ||
+            simpleName == "signreleasebundle"
+    }
     def packagesReleaseArtifact = taskGraph.allTasks.any { task ->
         task.project == project && (
             task.name == "packageRelease" ||
@@ -100,7 +108,7 @@ gradle.taskGraph.whenReady { taskGraph ->
             task.name == "signReleaseBundle"
         )
     }
-    if (packagesReleaseArtifact && android.signingConfigs.release.storeFile == null) {
+    if (explicitReleaseArtifactRequested && packagesReleaseArtifact && android.signingConfigs.release.storeFile == null) {
         throw new GradleException("Release keystore is not configured. Refusing to sign or package release build without release credentials.")
     }
 }
