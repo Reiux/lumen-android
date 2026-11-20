@@ -1,0 +1,112 @@
+name: Downloads Badge
+
+# Keeps the README downloads badge accurate. GitHub's own download
+# counters are live-only stats: when release assets get re-published
+# (same filename) their counters reset to zero with no history. This
+# job reads the live total and adds a fixed historical offset for the
+# downloads lost that way, then publishes it as a shields.io endpoint
+# badge (see .github/badges/downloads.json).
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily, off-peak
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: downloads-badge
+  cancel-in-progress: true
+
+env:
+  # Historical offset: v1.3.2's release APK had 310 downloads before an
+  # accidental CI re-publish on 2026-11-17 reset it to 0 (4 downloads had
+  # already re-accumulated inside the live total by the time this offset
+  # was set, so the constant is 310 - 4 = 306). Remove this constant once
+  # the live total alone surpasses it.
+  OFFSET: "306"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Compute Total and Update Badge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          REPO = "Reiux/lumen-android"
+          OFFSET = int(os.environ["OFFSET"])
+          HEADERS = {
+              "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+              "Accept": "application/vnd.github+json",
+          }
+
+          total = 0
+          page = 1
+          while True:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}",
+                  headers=HEADERS,
+              )
+              with urllib.request.urlopen(req) as resp:
+                  releases = json.load(resp)
+              if not releases:
+                  break
+              for release in releases:
+                  for asset in release.get("assets", []):
+                      total += asset.get("download_count", 0)
+              page += 1
+
+          grand_total = total + OFFSET
+
+          def fmt(n: int) -> str:
+              # Match the old shields.io github-downloads badge, which
+              # truncates to one decimal place (1956 -> "1.9k").
+              if n >= 1_000_000:
+                  return f"{int(n / 100_000) / 10:.1f}m"
+              if n >= 1_000:
+                  return f"{int(n / 100) / 10:.1f}k"
+              return str(n)
+
+          badge = {
+              "schemaVersion": 1,
+              "label": "downloads",
+              "message": fmt(grand_total),
+              "color": "brightgreen",
+          }
+
+          path = ".github/badges/downloads.json"
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          existing = None
+          if os.path.exists(path):
+              with open(path) as f:
+                  existing = json.load(f)
+          if existing != badge:
+              with open(path, "w") as f:
+                  json.dump(badge, f, indent=2)
+                  f.write("\n")
+              print(f"Badge updated: {existing} -> {badge}")
+          else:
+              print("Badge unchanged, nothing to commit")
+          PY
+
+      - name: Commit Badge If Changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/downloads.json
+          if git diff --cached --quiet; then
+            echo "No badge change to commit"
+          else
+            git commit -m "chore: update downloads badge [skip ci]"
+            git push
+          fi

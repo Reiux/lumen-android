@@ -2,9 +2,10 @@
 
 **Fast, open-source Android backup client for Google Photos.**
 
-![Downloads](https://img.shields.io/github/downloads/Reiux/lumen-android/total?style=for-the-badge)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReiux%2Flumen-android%2Fmain%2F.github%2Fbadges%2Fdownloads.json&style=for-the-badge)](https://github.com/Reiux/lumen-android/releases)
 ![License](https://img.shields.io/github/license/Reiux/lumen-android?style=for-the-badge)
 [![Android](https://img.shields.io/badge/Android-8.0%20or%20Later-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Translation status](https://hosted.weblate.org/widgets/lumen-android/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/lumen-android/)
 
 <p align="center">
   <img src=".github/assets/banner.png" alt="Lumen Android Banner">
@@ -15,6 +16,8 @@
 >
 > **No root or mods needed.** Works on standard Android phones (Android 8.0+).  
 > *Looking for the desktop version? Check out **[Lumen for Desktop](https://github.com/Reiux/Lumen)**.*
+>
+> *Product website & screenshots: **[reiux.github.io/lumen-site](https://reiux.github.io/lumen-site/)**.*
 
 Lumen is an open-source Android app that backs up your camera roll directly to Google Photos in original quality.
 

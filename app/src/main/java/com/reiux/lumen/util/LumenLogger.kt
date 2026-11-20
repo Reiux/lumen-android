@@ -140,6 +140,7 @@ object LumenLogger {
     private var isFileLoggingEnabled = false
     private var logDir: File? = null
     private var currentFileIndex = 0
+    private val fileLogLock = Any()
     private val scope = CoroutineScope(Dispatchers.IO)
     private var snapshotJob: Job? = null
     private var batchEmitJob: Job? = null
@@ -150,8 +151,46 @@ object LumenLogger {
 
     // Redaction patterns
     private val emailPattern = Pattern.compile("(?i)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+")
-    private val bearerPattern = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9_\\-\\.]+")
-    private val sensitiveParamPattern = Pattern.compile("(?i)(token|masterToken|credentialString|upload_token|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)=([^&\\s]+)")
+    private val bearerPattern = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9_\\-\\./+=~:]+")
+    private val sensitiveParamPattern = Pattern.compile(
+        "(?i)(token|masterToken|credentialString|upload_token|upload_id|uploadId|mediaKey|albumMediaKey|initialMediaKey|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)=([^&\\s'\"\\)]+)"
+    )
+    private val sensitiveJsonPattern = Pattern.compile(
+        "(?i)(\"(?:token|masterToken|credentialString|upload_token|upload_id|uploadId|mediaKey|albumMediaKey|initialMediaKey|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)\"\\s*:\\s*\")([^\"]+)(\")"
+    )
+    private val spaceTolerantMediaPathPattern = Pattern.compile(
+        "(?i)(?:/storage/(?:emulated/\\d+|[A-Za-z0-9_-]+)|/sdcard|/data/(?:user/\\d+|data)/[^\\s:'\"\\]\\)]+)" +
+            "(?:/(?:(?!\\s*(?:/storage/|/sdcard/|/data/)|\\s+[A-Za-z_][A-Za-z0-9_]*=)(?:[^\\n:'\"\\]\\)=;,()]|\\([^\\n\\)]{1,32}\\)))*?)" +
+            "\\.(?:jpe?g|png|webp|gif|heic|heif|dng|cr2|nef|arw|mp4|mov|mkv|avi|3gp|webm|tmp|apk)\\b"
+    )
+    private val spaceTolerantFolderPathPattern = Pattern.compile(
+        "(?:/storage/(?:emulated/\\d+|[A-Za-z0-9_-]+)|/sdcard|/data/(?:user/\\d+|data)/[^\\s:'\"\\]\\)]+)" +
+            "(?:/(?:(?!\\s*(?:/storage/|/sdcard/|/data/)|\\s+(?:and|or|to|from|into|in|on|at|with|for)\\s+(?:/storage/|/sdcard/|/data/)|\\s+[A-Za-z_][A-Za-z0-9_]*=)(?:[^\\n:'\"\\]\\)=;,()]|\\([^\\n\\)]{1,32}\\)))*)"
+    )
+    private val kvPathOrFilePattern = Pattern.compile(
+        "(?i)\\b(path|targetPath|file|fileName|folder)=('[^']*'|\"[^\"]*\"|[^\\s)]+)"
+    )
+    private val absoluteMediaPathPattern = Pattern.compile(
+        "(?:/storage/(?:emulated/\\d+|[A-Za-z0-9_-]+)|/sdcard|/data/(?:user/\\d+|data)/[^\\s:'\"\\]\\)]+)(?:/[^\\s'\"\\]\\)]*)*"
+    )
+    private val bracketedMediaNamePattern = Pattern.compile(
+        "(?i)\\[[^\\]\\n]*?\\.(?:jpe?g|png|webp|gif|heic|heif|dng|cr2|nef|arw|mp4|mov|mkv|avi|3gp|webm|tmp|apk)\\]"
+    )
+    private val singleQuotedMediaNamePattern = Pattern.compile(
+        "(?i)'[^'\\n]*?\\.(?:jpe?g|png|webp|gif|heic|heif|dng|cr2|nef|arw|mp4|mov|mkv|avi|3gp|webm|tmp|apk)'"
+    )
+    private val doubleQuotedMediaNamePattern = Pattern.compile(
+        "(?i)\"[^\"\\n]*?\\.(?:jpe?g|png|webp|gif|heic|heif|dng|cr2|nef|arw|mp4|mov|mkv|avi|3gp|webm|tmp|apk)\""
+    )
+    private val unquotedMediaNamePattern = Pattern.compile(
+        "(?i)\\b[A-Za-z0-9_.\\-]+\\.(?:jpe?g|png|webp|gif|heic|heif|dng|cr2|nef|arw|mp4|mov|mkv|avi|3gp|webm|tmp)\\b"
+    )
+    private val singleQuotedAlbumOrFolderPattern = Pattern.compile(
+        "(?i)\\b(album|folder)\\s+'[^']*'"
+    )
+    private val doubleQuotedAlbumOrFolderPattern = Pattern.compile(
+        "(?i)\\b(album|folder)\\s+\"[^\"]*\""
+    )
 
     fun init(context: Context, saveLogsEnabled: Boolean, isDevDiagnostics: Boolean = BuildConfig.DEBUG) {
         appContext = context.applicationContext
@@ -164,7 +203,7 @@ object LumenLogger {
         startPeriodicSnapshot()
         startBatchEmitter()
 
-        // Append Session Start Marker to file log
+        // Append Session Start Marker to file log only when file logging is active
         writeSessionStartMarker()
 
         i("LumenLogger") {
@@ -173,14 +212,17 @@ object LumenLogger {
     }
 
     private fun writeSessionStartMarker() {
+        if (!isFileLoggingEnabled) return
         val dir = logDir ?: return
-        try {
-            val file = File(dir, "lumen_$currentFileIndex.log")
-            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            FileWriter(file, true).use { writer ->
-                writer.appendLine("=== SESSION STARTED: $dateStr ===")
-            }
-        } catch (_: Exception) {}
+        synchronized(fileLogLock) {
+            try {
+                val file = File(dir, "lumen_$currentFileIndex.log")
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                FileWriter(file, true).use { writer ->
+                    writer.appendLine("=== SESSION STARTED: $dateStr ===")
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun startBatchEmitter() {
@@ -242,8 +284,41 @@ object LumenLogger {
 
         result = bearerPattern.matcher(result).replaceAll("$1[REDACTED]")
         result = sensitiveParamPattern.matcher(result).replaceAll("$1=[REDACTED]")
+        result = sensitiveJsonPattern.matcher(result).replaceAll("$1[REDACTED]$3")
 
         return result
+    }
+
+    @JvmOverloads
+    fun redactFileNamesAndPaths(text: String, explicitFileName: String? = null): String {
+        var result = redact(text)
+        result = spaceTolerantMediaPathPattern.matcher(result).replaceAll("[path_hidden]")
+        result = spaceTolerantFolderPathPattern.matcher(result).replaceAll("[path_hidden]")
+        if (!explicitFileName.isNullOrBlank()) {
+            result = result.replace(explicitFileName, "[file_hidden]")
+        }
+        result = kvPathOrFilePattern.matcher(result).replaceAll("$1=[file_hidden]")
+        result = absoluteMediaPathPattern.matcher(result).replaceAll("[path_hidden]")
+        result = bracketedMediaNamePattern.matcher(result).replaceAll("[file_hidden]")
+        result = singleQuotedMediaNamePattern.matcher(result).replaceAll("'[file_hidden]'")
+        result = doubleQuotedMediaNamePattern.matcher(result).replaceAll("\"[file_hidden]\"")
+        result = unquotedMediaNamePattern.matcher(result).replaceAll("[file_hidden]")
+        result = singleQuotedAlbumOrFolderPattern.matcher(result).replaceAll("$1 '[hidden]'")
+        result = doubleQuotedAlbumOrFolderPattern.matcher(result).replaceAll("$1 \"[hidden]\"")
+        return result
+    }
+
+    fun formatProblemsForReport(problems: List<LogEntry>, hideFileNames: Boolean): List<String> {
+        return problems.map { p ->
+            val rawBody = p.userMessage ?: p.message
+            val safeBody = if (hideFileNames) redactFileNamesAndPaths(rawBody, p.fileName) else redact(rawBody)
+            val fileNamePart = when {
+                p.fileName == null -> ""
+                hideFileNames -> " [file_hidden]"
+                else -> " ${redact(p.fileName)}"
+            }
+            "- [${p.formattedTime}] [${p.reasonCode ?: p.tag}] $safeBody$fileNamePart".trimEnd()
+        }
     }
 
     // --- Category Resolver ---
@@ -384,14 +459,14 @@ object LumenLogger {
                 isMock = isMock
             )
 
-            // Mirror to logcat
+            // Mirror to logcat (do not pass raw throwable; fullFormattedText already has redacted stack trace)
             try {
                 when (level) {
                     LogLevel.VERBOSE -> Log.v(tag, entry.fullFormattedText)
                     LogLevel.DEBUG -> Log.d(tag, entry.fullFormattedText)
                     LogLevel.INFO -> Log.i(tag, entry.fullFormattedText)
-                    LogLevel.WARN -> Log.w(tag, entry.fullFormattedText, throwable)
-                    LogLevel.ERROR -> Log.e(tag, entry.fullFormattedText, throwable)
+                    LogLevel.WARN -> Log.w(tag, entry.fullFormattedText)
+                    LogLevel.ERROR -> Log.e(tag, entry.fullFormattedText)
                 }
             } catch (_: Throwable) {}
 
@@ -413,24 +488,27 @@ object LumenLogger {
     }
 
     private fun appendToFileRotating(entry: LogEntry) {
-        try {
-            val dir = logDir ?: return
-            val file = File(dir, "lumen_$currentFileIndex.log")
+        synchronized(fileLogLock) {
+            try {
+                if (!isFileLoggingEnabled) return
+                val dir = logDir ?: return
+                val file = File(dir, "lumen_$currentFileIndex.log")
 
-            if (file.exists() && file.length() >= MAX_FILE_SIZE_BYTES) {
-                currentFileIndex = (currentFileIndex + 1) % ROTATING_FILE_COUNT
-                val nextFile = File(dir, "lumen_$currentFileIndex.log")
-                if (nextFile.exists()) {
-                    nextFile.delete()
+                if (file.exists() && file.length() >= MAX_FILE_SIZE_BYTES) {
+                    currentFileIndex = (currentFileIndex + 1) % ROTATING_FILE_COUNT
+                    val nextFile = File(dir, "lumen_$currentFileIndex.log")
+                    if (nextFile.exists()) {
+                        nextFile.delete()
+                    }
                 }
-            }
 
-            val targetFile = File(dir, "lumen_$currentFileIndex.log")
-            FileWriter(targetFile, true).use { writer ->
-                writer.appendLine(entry.fullFormattedText)
+                val targetFile = File(dir, "lumen_$currentFileIndex.log")
+                FileWriter(targetFile, true).use { writer ->
+                    writer.appendLine(entry.fullFormattedText)
+                }
+            } catch (e: Exception) {
+                Log.w("LumenLogger", "appendToFileRotating error: ${redact(e.message ?: "unknown")}")
             }
-        } catch (e: Exception) {
-            Log.w("LumenLogger", "appendToFileRotating error: ${e.message}")
         }
     }
 
@@ -655,15 +733,19 @@ object LumenLogger {
                     e("Crash", opId = "CRASH", tr = throwable) {
                         "FATAL UNCAUGHT EXCEPTION on thread '${thread.name}' (id=${thread.id}): ${throwable.message}"
                     }
-                    logDir?.let { dir ->
-                        val crashFile = File(dir, "lumen_crash.log")
-                        FileWriter(crashFile, true).use { writer ->
-                            writer.appendLine("==========================================")
-                            writer.appendLine("LUMEN CRASH: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
-                            writer.appendLine("Thread: ${thread.name} (id=${thread.id})")
-                            writer.appendLine("Message: ${redact(throwable.message ?: "null")}")
-                            writer.appendLine(redact(buildStackTraceString(throwable)))
-                            writer.appendLine("==========================================")
+                    if (isFileLoggingEnabled) {
+                        synchronized(fileLogLock) {
+                            logDir?.let { dir ->
+                                val crashFile = File(dir, "lumen_crash.log")
+                                FileWriter(crashFile, true).use { writer ->
+                                    writer.appendLine("==========================================")
+                                    writer.appendLine("LUMEN CRASH: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+                                    writer.appendLine("Thread: ${redact(thread.name)} (id=${thread.id})")
+                                    writer.appendLine("Message: ${redact(throwable.message ?: "null")}")
+                                    writer.appendLine(redact(buildStackTraceString(throwable)))
+                                    writer.appendLine("==========================================")
+                                }
+                            }
                         }
                     }
                 } catch (_: Exception) {}
@@ -706,11 +788,13 @@ object LumenLogger {
             try {
                 val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
                 val exportFile = File(exportDir, "lumen_export_logs.txt")
-                FileWriter(exportFile, false).use { writer ->
-                    dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
-                        writer.appendLine("--- FILE: ${logFile.name} ---")
-                        writer.append(redact(logFile.readText()))
-                        writer.appendLine()
+                synchronized(fileLogLock) {
+                    FileWriter(exportFile, false).use { writer ->
+                        dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
+                            writer.appendLine("--- FILE: ${logFile.name} ---")
+                            writer.append(redact(logFile.readText()))
+                            writer.appendLine()
+                        }
                     }
                 }
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", exportFile)
@@ -733,7 +817,18 @@ object LumenLogger {
             memoryLogBuffer.clear()
             _logs.value = emptyList()
         }
-        logDir?.listFiles()?.forEach { it.delete() }
+        synchronized(fileLogLock) {
+            logDir?.listFiles()?.forEach { it.delete() }
+            val cacheRoot = try {
+                context?.cacheDir ?: appContext?.cacheDir ?: logDir?.parentFile
+            } catch (_: Exception) {
+                logDir?.parentFile
+            }
+            if (cacheRoot != null) {
+                val exportDir = File(cacheRoot, "exports")
+                exportDir.listFiles()?.forEach { it.delete() }
+            }
+        }
         i("LumenLogger") { "Cleared all logs" }
     }
 

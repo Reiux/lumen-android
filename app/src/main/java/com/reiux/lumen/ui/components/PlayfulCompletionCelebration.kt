@@ -206,7 +206,7 @@ fun PlayfulCompletionCelebration(
                 ) {
                     Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sync Folders")
+                    Text(androidx.compose.ui.res.stringResource(com.reiux.lumen.R.string.btn_start_backup))
                 }
                 ExpressiveTonalButton(
                     onClick = onPickPhotos,

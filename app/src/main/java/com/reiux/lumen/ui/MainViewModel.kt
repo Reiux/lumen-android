@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.reiux.lumen.LumenApplication
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.AccountBlock
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.AuthFailureKind
@@ -15,15 +16,21 @@ import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.data.model.GoogleAccount
 import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
+import com.reiux.lumen.data.repository.AlbumSyncState
+import com.reiux.lumen.data.repository.SettingsRepository
 import com.reiux.lumen.ui.components.NavDestination
+import com.reiux.lumen.util.LocalMediaFolder
 import com.reiux.lumen.util.LumenLogger
 import com.reiux.lumen.util.MediaFileReader
 import android.provider.MediaStore
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.UUID
 
 sealed class ScanState {
@@ -139,11 +147,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadAlbums() {
         viewModelScope.launch {
-            val account = selectedAccount.value ?: return@launch
+            val emails = accounts.value.map { it.email }.toSet().ifEmpty {
+                setOfNotNull(selectedAccount.value?.email)
+            }
+            if (emails.isEmpty()) return@launch
             _isFetchingAlbums.value = true
             try {
-                val fetched = settingsRepo.getRecentAlbums(account.email)
+                val fetched = withContext(Dispatchers.IO) {
+                    settingsRepo.getAllRecentAlbums(emails)
+                }
                 _remoteAlbums.value = fetched
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Exception) {
                 com.reiux.lumen.util.LumenLogger.w("UI") { "Failed to fetch recent albums: ${e.message}" }
             } finally {
@@ -158,20 +173,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.removeRecentAlbum(targetEmail, album.mediaKey)
     }
 
-    fun addAlbum(keyOrUrl: String, nickname: String?, targetAccountEmail: String? = null): com.reiux.lumen.data.network.GoogleAlbum {
+    @JvmOverloads
+    fun addAlbum(
+        keyOrUrl: String,
+        nickname: String?,
+        targetAccountEmail: String? = null,
+        previousAccountEmail: String? = null
+    ): com.reiux.lumen.data.network.GoogleAlbum {
         val accountEmail = targetAccountEmail ?: selectedAccount.value?.email ?: ""
         val resolvedKey = com.reiux.lumen.data.network.GooglePhotosClient().resolveAlbumInput(keyOrUrl)
         val titleToSave = nickname?.ifBlank { null } ?: resolvedKey.ifBlank { keyOrUrl.trim() }
 
-        settingsRepo.saveAlbumMediaKey(accountEmail, titleToSave, resolvedKey)
+        settingsRepo.saveAlbumMediaKey(accountEmail, titleToSave, resolvedKey, previousAccountEmail)
         return com.reiux.lumen.data.network.GoogleAlbum(mediaKey = resolvedKey, title = titleToSave, accountEmail = accountEmail)
     }
 
     private val _updateDownloadProgress = MutableStateFlow(-1)
     val updateDownloadProgress: StateFlow<Int> = _updateDownloadProgress.asStateFlow()
 
+    private val _updateDownloadError = MutableStateFlow<String?>(null)
+    val updateDownloadError: StateFlow<String?> = _updateDownloadError.asStateFlow()
+
+    private var updateDownloadJob: Job? = null
+
     private val _showUpdateSheet = MutableStateFlow(false)
     val showUpdateSheet: StateFlow<Boolean> = _showUpdateSheet.asStateFlow()
+
+    private val _mockSwipeNudgeNonce = MutableStateFlow(0)
+    val mockSwipeNudgeNonce: StateFlow<Int> = _mockSwipeNudgeNonce.asStateFlow()
+
+    private val _scrollToAccountForNudge = MutableStateFlow(false)
+    val scrollToAccountForNudge: StateFlow<Boolean> = _scrollToAccountForNudge.asStateFlow()
 
     // Original Frontend Mock Simulation Dataset & State
     private val _mockAccounts = MutableStateFlow(
@@ -324,11 +356,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             combine(selectedAccount, accounts) { sel, list -> Pair(sel, list) }.collect { (_, list) ->
                 val emails = list.map { it.email }.toSet()
                 _remoteAlbums.value = settingsRepo.getAllRecentAlbums(emails)
-                if (list.isNotEmpty()) {
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            accountRepo.accounts.collect { list ->
+                if (!_isMockMode.value && !_isShowcaseMode.value && list.isNotEmpty()) {
                     val primaryEmail = list.first().email
                     val currentFolders = settingsRepo.getAllFolders()
                     var needsMigration = false
@@ -345,7 +381,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             settingsRepo.recentAlbumsFlow.collect { _ ->
                 val emails = accounts.value.map { it.email }.toSet()
                 _remoteAlbums.value = settingsRepo.getAllRecentAlbums(emails)
@@ -356,14 +392,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @OptIn(ExperimentalCoroutinesApi::class)
     val settings: StateFlow<BackupSettings> = combine(_isShowcaseMode, _isMockMode, selectedAccount) { showcase, mock, account ->
         Triple(showcase, mock, account)
-    }.flatMapLatest { (showcase, mock, account) ->
+    }.flatMapLatest { (showcase, mock, _) ->
         when {
             showcase -> _mockSettings.map { it.copy(developerModeUnlocked = true) }
             mock -> _mockSettings.map { it.copy(developerModeUnlocked = true) }
-            else -> settingsRepo.settings.map { baseSettings ->
-                val allFolders = settingsRepo.getAllFolders()
-                baseSettings.copy(folders = allFolders)
-            }
+            else -> settingsRepo.settings
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepo.settings.value)
 
@@ -447,7 +480,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             val email = selAcc?.email
             if (!email.isNullOrBlank()) {
-                uploadRepo.getAccountBlock(email)
+                uploadRepo.peekAccountBlock(email)
             } else {
                 realBlock
             }
@@ -456,11 +489,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var scanJob: Job? = null
 
+    private val _deviceFolders = MutableStateFlow<List<LocalMediaFolder>>(emptyList())
+    val deviceFolders: StateFlow<List<LocalMediaFolder>> = _deviceFolders.asStateFlow()
+
+    private val _isDiscoveringFolders = MutableStateFlow(false)
+    val isDiscoveringFolders: StateFlow<Boolean> = _isDiscoveringFolders.asStateFlow()
+
+    private val _mockAlbumSyncState = MutableStateFlow<AlbumSyncState>(AlbumSyncState.Idle)
+    private var mockAlbumSyncJob: Job? = null
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val albumSyncState: StateFlow<AlbumSyncState> = combine(_isShowcaseMode, _isMockMode) { s, m -> s || m }
+        .flatMapLatest { useMock ->
+            if (useMock) _mockAlbumSyncState else uploadRepo.albumSyncState
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, AlbumSyncState.Idle)
+
     override fun onCleared() {
         super.onCleared()
         connectivityObserver.unregister()
         mockSimJob?.cancel()
+        mockAlbumSyncJob?.cancel()
         scanJob?.cancel()
+        updateDownloadJob?.cancel()
     }
 
     fun selectDestination(dest: NavDestination) {
@@ -469,10 +519,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkAndShowUpdate(context: Context, forceShow: Boolean = false, onUpToDate: (() -> Unit)? = null) {
+        val appCtx = getApplication<LumenApplication>()
         viewModelScope.launch {
             val repo = com.reiux.lumen.data.repository.UpdateRepository()
             val currentVersion = try {
-                context.packageManager.getPackageInfo(context.packageName, 0)?.versionName ?: "1.0.0"
+                appCtx.packageManager.getPackageInfo(appCtx.packageName, 0)?.versionName ?: "1.0.0"
             } catch (_: Exception) { "1.0.0" }
             
             val info = repo.checkForUpdates(currentVersion)
@@ -480,6 +531,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (info.isUpdateAvailable || forceShow) {
                     _updateInfo.value = info
                     _updateDownloadProgress.value = -1
+                    _updateDownloadError.value = null
                     _showUpdateSheet.value = true
                 } else {
                     withContext(Dispatchers.Main) { onUpToDate?.invoke() }
@@ -491,25 +543,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissUpdateSheet() {
+        updateDownloadJob?.cancel()
+        updateDownloadJob = null
         _showUpdateSheet.value = false
         _updateDownloadProgress.value = -1
+        _updateDownloadError.value = null
     }
 
     fun startUpdateDownload(context: Context) {
         val info = _updateInfo.value ?: return
-        viewModelScope.launch {
+        if (updateDownloadJob?.isActive == true) return
+        val appCtx = getApplication<LumenApplication>()
+
+        updateDownloadJob = viewModelScope.launch {
+            _updateDownloadError.value = null
             _updateDownloadProgress.value = 0
-            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val destFile = File(updatesDir, "lumen_update_${info.versionName}.apk")
+
+            if (info.downloadUrl == "mock://update") {
+                try {
+                    for (step in listOf(15, 42, 73, 100)) {
+                        delay(180L)
+                        _updateDownloadProgress.value = step
+                    }
+                    _showUpdateSheet.value = false
+                    _updateDownloadProgress.value = -1
+                    android.widget.Toast.makeText(
+                        appCtx,
+                        "Simulated update download complete",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } catch (ce: CancellationException) {
+                    _updateDownloadProgress.value = -1
+                    throw ce
+                }
+                return@launch
+            }
+
+            val updatesDir = File(appCtx.cacheDir, "updates").apply { mkdirs() }
+            val safeVersion = info.versionName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val destFile = File(updatesDir, "lumen_update_${safeVersion}.apk")
             try {
                 com.reiux.lumen.data.repository.UpdateRepository().downloadUpdate(info.downloadUrl, destFile).collect { p ->
                     _updateDownloadProgress.value = p
                 }
                 _showUpdateSheet.value = false
-                com.reiux.lumen.ui.components.launchApkInstall(context, destFile)
+                _updateDownloadProgress.value = -1
+                com.reiux.lumen.ui.components.launchApkInstall(appCtx, destFile)
+            } catch (ce: CancellationException) {
+                _updateDownloadProgress.value = -1
+                throw ce
             } catch (e: Exception) {
                 LumenLogger.e("Updater", tr = e) { "Failed to download update" }
+                _updateDownloadError.value = e.message ?: "Failed to download update"
                 _updateDownloadProgress.value = -1
+                android.widget.Toast.makeText(
+                    appCtx,
+                    "Update download failed: ${e.message ?: "Check network and try again"}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -548,7 +639,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         LumenLogger.i("MockMode", "Mock mode set to: $enabled")
         if (enabled) {
             _isShowcaseMode.value = false
-            _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = true)
+            // Reset the swipe nudge so enabling mock mode lets QA preview it right away.
+            _mockSettings.value = _mockSettings.value.copy(
+                developerModeUnlocked = true,
+                hasShownAccountSwipeNudge = false
+            )
         }
         _isMockMode.value = enabled
         if (enabled) {
@@ -872,21 +967,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             scannedFiles = lastProgress.scannedFiles,
                             account = account,
                             storageSaver = currentSettings.storageSaverQuality,
-                            useQuota = currentSettings.useQuota
+                            useQuota = currentSettings.useQuota,
+                            allowDeleteAfterBackup = true
                         )
                     }
                 }
 
                 val durationMs = System.currentTimeMillis() - scanStart
                 LumenLogger.i("BackupUI") { "Indexing complete: $totalFilesFound files found across accounts in ${durationMs}ms" }
-                _scanState.value = ScanState.Done(totalFilesFound)
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) {
-                    LumenLogger.i("BackupUI") { "Folder scan job cancelled by user" }
-                } else {
-                    LumenLogger.e("BackupUI", tr = e) { "Folder scan error: ${e.message}" }
+
+                if (!uploadRepo.isUploading.value && uploadRepo.queue.value.any { it.status == UploadStatus.QUEUED }) {
+                    val resumeAcc = selectedAccount.value ?: allAccounts.firstOrNull()
+                    if (resumeAcc != null) {
+                        uploadRepo.startQueue(
+                            account = resumeAcc,
+                            storageSaver = currentSettings.storageSaverQuality,
+                            useQuota = currentSettings.useQuota
+                        )
+                    }
                 }
-            } finally {
+
+                _scanState.value = ScanState.Done(totalFilesFound)
+                delay(800L)
+                _scanState.value = ScanState.Idle
+            } catch (ce: CancellationException) {
+                LumenLogger.i("BackupUI") { "Folder scan job cancelled" }
+                _scanState.value = ScanState.Idle
+                throw ce
+            } catch (e: Exception) {
+                LumenLogger.e("BackupUI", tr = e) { "Folder scan error: ${e.message}" }
                 _scanState.value = ScanState.Idle
             }
         }
@@ -906,9 +1015,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        if (!com.reiux.lumen.util.DeviceConditions.isInternetAvailable(context)) {
+        val appCtx = getApplication<LumenApplication>()
+        if (!com.reiux.lumen.util.DeviceConditions.isInternetAvailable(appCtx)) {
             LumenLogger.w("BackupUI", "Cannot upload selected URIs: No internet connection")
-            android.widget.Toast.makeText(context, "No internet connection. Connect to network to upload.", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(appCtx, "No internet connection. Connect to network to upload.", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -920,34 +1030,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val files = mutableListOf<File>()
                     val originalPaths = mutableListOf<String?>()
                     val nameCounts = mutableMapOf<String, Int>()
-                    for (uri in uris) {
-                        val originalName = MediaFileReader.getFileNameFromUri(context, uri)
-                        val realPath = MediaFileReader.resolveRealFilePathFromUri(context, uri)
-                        val directFile = realPath?.let { File(it) }?.takeIf { it.exists() && it.canRead() && it.length() > 0 }
-                        val occurrenceIndex = nameCounts.getOrDefault(originalName, 0)
-                        nameCounts[originalName] = occurrenceIndex + 1
+                    var enqueued = false
+                    try {
+                        for (uri in uris) {
+                            ensureActive()
+                            val originalName = MediaFileReader.getFileNameFromUri(appCtx, uri)
+                            val realPath = MediaFileReader.resolveRealFilePathFromUri(appCtx, uri)
+                            val directFile = realPath?.let { File(it) }?.takeIf { it.exists() && it.canRead() && it.length() > 0 }
+                            val occurrenceIndex = nameCounts.getOrDefault(originalName, 0)
+                            nameCounts[originalName] = occurrenceIndex + 1
 
-                        val file = directFile ?: MediaFileReader.stageUriFile(context, uri, originalName, occurrenceIndex)
-                        if (file != null) {
-                            files.add(file)
-                            originalPaths.add(realPath ?: file.absolutePath)
+                            val file = directFile ?: MediaFileReader.stageUriFile(appCtx, uri, originalName, occurrenceIndex)
+                            if (file != null) {
+                                files.add(file)
+                                originalPaths.add(realPath ?: file.absolutePath)
+                            }
+                        }
+                        if (files.isNotEmpty()) {
+                            val currentSettings = settings.value
+                            uploadRepo.enqueueFiles(
+                                files = files,
+                                account = account,
+                                storageSaver = currentSettings.storageSaverQuality,
+                                useQuota = currentSettings.useQuota,
+                                targetAlbumMode = targetAlbumMode,
+                                customAlbumName = customAlbumName,
+                                customAlbumNickname = customAlbumNickname,
+                                originalFilePaths = originalPaths,
+                                allowDeleteAfterBackup = false
+                            )
+                            enqueued = true
+                        }
+                    } finally {
+                        if (!enqueued && files.isNotEmpty()) {
+                            withContext(Dispatchers.IO + NonCancellable) {
+                                files.forEach { MediaFileReader.cleanupStagedFile(appCtx, it) }
+                            }
                         }
                     }
-                    if (files.isNotEmpty()) {
-                        uploadRepo.enqueueFiles(
-                            files = files,
-                            account = account,
-                            storageSaver = settings.value.storageSaverQuality,
-                            useQuota = settings.value.useQuota,
-                            targetAlbumMode = targetAlbumMode,
-                            customAlbumName = customAlbumName,
-                            customAlbumNickname = customAlbumNickname,
-                            originalFilePaths = originalPaths
-                        )
-                    }
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Exception) {
-                LumenLogger.e("BackupUI") { "Error staging URIs for upload: ${e.message}" }
+                LumenLogger.e("BackupUI", tr = e) { "Error staging URIs for upload: ${e.message}" }
             }
         }
     }
@@ -1025,6 +1150,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun pauseBackup() {
         LumenLogger.i("BackupUI", "pauseBackup called")
+        scanJob?.cancel()
+        scanJob = null
+        _scanState.value = ScanState.Idle
         if (_isMockMode.value) {
             _mockIsUploading.value = false
             mockSimJob?.cancel()
@@ -1036,6 +1164,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelBackup() {
         LumenLogger.w("BackupUI", "User clicked Cancel Backup")
+        scanJob?.cancel()
+        scanJob = null
+        _scanState.value = ScanState.Idle
         if (_isMockMode.value) {
             _mockIsUploading.value = false
             mockSimJob?.cancel()
@@ -1085,7 +1216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (failedIds.isEmpty()) return
 
         uploadRepo.retryFailedItems(failedIds)
-        val selectedAcc = selectedAccount.value
+        val selectedAcc = selectedAccount.value ?: accounts.value.firstOrNull()
         if (selectedAcc != null) {
             uploadRepo.startQueue(selectedAcc, settingsRepo.settings.value.storageSaverQuality, settingsRepo.settings.value.useQuota)
         }
@@ -1098,7 +1229,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(
                 folders = _mockSettings.value.folders.map {
-                    if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(enabled = enabled) else it
+                    if (SettingsRepository.matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) {
+                        it.copy(enabled = enabled)
+                    } else it
                 }
             )
             return
@@ -1106,21 +1239,228 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.toggleFolder(path, accountEmail, enabled)
     }
 
-    fun addFolder(folder: BackupFolder) {
+    @JvmOverloads
+    fun addFolder(folder: BackupFolder, previousAccountEmail: String? = null) {
         val targetEmail = folder.accountEmail ?: selectedAccount.value?.email
         val folderWithEmail = if (folder.accountEmail.isNullOrBlank() && !targetEmail.isNullOrBlank()) {
             folder.copy(accountEmail = targetEmail)
         } else folder
+        val lookupEmail = previousAccountEmail ?: folderWithEmail.accountEmail
+        val previousFolder = settings.value.folders.firstOrNull {
+            SettingsRepository.matchesFolderPath(it.path, folderWithEmail.path) &&
+                (matchesAccount(it.accountEmail, lookupEmail) || matchesAccount(it.accountEmail, folderWithEmail.accountEmail))
+        }
+        val albumChangedOrSet = folderWithEmail.targetAlbumMode != AlbumTargetMode.NONE && (
+            previousFolder == null ||
+                !matchesAccount(previousFolder.accountEmail, folderWithEmail.accountEmail) ||
+                previousFolder.targetAlbumMode != folderWithEmail.targetAlbumMode ||
+                previousFolder.customAlbumName != folderWithEmail.customAlbumName ||
+                previousFolder.displayName != folderWithEmail.displayName
+            )
         LumenLogger.i("FoldersUI", "Added folder '${folderWithEmail.path}' (${folderWithEmail.displayName}) for email=$targetEmail")
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(
                 folders = _mockSettings.value.folders.filterNot {
-                    it.path == folderWithEmail.path && matchesAccount(it.accountEmail, folderWithEmail.accountEmail)
+                    SettingsRepository.matchesFolderPath(it.path, folderWithEmail.path) && (
+                        matchesAccount(it.accountEmail, folderWithEmail.accountEmail) ||
+                            (previousAccountEmail != null && matchesAccount(it.accountEmail, previousAccountEmail))
+                        )
                 } + folderWithEmail
+            )
+            if (albumChangedOrSet && _mockSettings.value.autoSyncAlbums && folderWithEmail.enabled) {
+                syncFolderToAlbum(folderWithEmail)
+            }
+            return
+        }
+        settingsRepo.addFolder(folderWithEmail, previousAccountEmail)
+        if (albumChangedOrSet && settingsRepo.settings.value.autoSyncAlbums && folderWithEmail.enabled && isOnline.value) {
+            syncFolderToAlbum(folderWithEmail)
+        }
+    }
+
+    fun discoverDeviceFolders() {
+        if (_isDiscoveringFolders.value) return
+        if (_isMockMode.value || _isShowcaseMode.value) {
+            val nowSec = System.currentTimeMillis() / 1000L
+            _deviceFolders.value = listOf(
+                LocalMediaFolder("/sdcard/DCIM/Camera", "Camera", 1240, 1180, 60, null, nowSec - 120),
+                LocalMediaFolder("/sdcard/Pictures/Screenshots", "Screenshots", 342, 342, 0, null, nowSec - 900),
+                LocalMediaFolder("/sdcard/Pictures/Snapseed", "Snapseed", 58, 58, 0, null, nowSec - 3600),
+                LocalMediaFolder("/sdcard/Pictures/Instagram", "Instagram", 184, 170, 14, null, nowSec - 7200),
+                LocalMediaFolder("/sdcard/Movies/Telegram", "Telegram", 24, 0, 24, null, nowSec - 10800),
+                LocalMediaFolder("/sdcard/Pictures/Telegram", "Telegram", 62, 62, 0, null, nowSec - 12600),
+                LocalMediaFolder("/sdcard/Download", "Download", 47, 41, 6, null, nowSec - 14400)
             )
             return
         }
-        settingsRepo.addFolder(folderWithEmail)
+        viewModelScope.launch {
+            _isDiscoveringFolders.value = true
+            try {
+                _deviceFolders.value = MediaFileReader.discoverLocalMediaFolders(getApplication())
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                LumenLogger.w("FoldersUI") { "Device folder discovery failed: ${e.message}" }
+            } finally {
+                _isDiscoveringFolders.value = false
+            }
+        }
+    }
+
+    private fun findConfiguredFolderForDiscovered(path: String, targetEmail: String?): BackupFolder? {
+        val folders = settings.value.folders
+        if (!targetEmail.isNullOrBlank()) {
+            folders.firstOrNull {
+                SettingsRepository.matchesFolderPath(it.path, path) &&
+                    matchesAccount(it.accountEmail, targetEmail)
+            }?.let { return it }
+        }
+        return folders.firstOrNull {
+            SettingsRepository.matchesFolderPath(it.path, path) &&
+                (targetEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank())
+        }
+    }
+
+    fun toggleDiscoveredFolder(
+        discovered: LocalMediaFolder,
+        enabled: Boolean,
+        accountEmail: String?
+    ) {
+        val targetEmail = accountEmail ?: selectedAccount.value?.email
+        val existing = findConfiguredFolderForDiscovered(discovered.path, targetEmail)
+        if (existing != null) {
+            if (existing.accountEmail.isNullOrBlank() && !targetEmail.isNullOrBlank()) {
+                addFolder(
+                    existing.copy(enabled = enabled, accountEmail = targetEmail),
+                    previousAccountEmail = ""
+                )
+            } else {
+                toggleFolder(existing.path, existing.accountEmail ?: targetEmail, enabled)
+            }
+        } else if (enabled) {
+            addFolder(
+                BackupFolder(
+                    path = discovered.path,
+                    displayName = discovered.displayName,
+                    enabled = true,
+                    includeSubfolders = false,
+                    accountEmail = targetEmail
+                )
+            )
+        }
+    }
+
+    fun assignAlbumToDiscoveredFolder(
+        discovered: LocalMediaFolder,
+        mode: AlbumTargetMode,
+        customAlbumName: String?,
+        customAlbumNickname: String?,
+        accountEmail: String?
+    ) {
+        val targetEmail = accountEmail ?: selectedAccount.value?.email
+        val existing = findConfiguredFolderForDiscovered(discovered.path, targetEmail)
+        val resolvedEmail = existing?.accountEmail?.takeIf { it.isNotBlank() } ?: targetEmail
+        val prevEmail = if (existing != null && existing.accountEmail.isNullOrBlank() && !resolvedEmail.isNullOrBlank()) {
+            ""
+        } else {
+            existing?.accountEmail
+        }
+        val updated = (existing ?: BackupFolder(
+            path = discovered.path,
+            displayName = discovered.displayName,
+            enabled = true,
+            includeSubfolders = false,
+            accountEmail = resolvedEmail
+        )).copy(
+            enabled = existing?.enabled ?: true,
+            targetAlbumMode = mode,
+            customAlbumName = customAlbumName,
+            customAlbumNickname = customAlbumNickname,
+            accountEmail = resolvedEmail
+        )
+        addFolder(updated, previousAccountEmail = prevEmail)
+    }
+
+    fun syncAllAlbums() {
+        if (!isOnline.value && !_isMockMode.value) {
+            android.widget.Toast.makeText(getApplication(), R.string.toast_album_sync_offline, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val targets = settings.value.folders.filter {
+            it.enabled && it.targetAlbumMode != AlbumTargetMode.NONE && !it.accountEmail.isNullOrBlank()
+        }
+        if (targets.isEmpty()) {
+            android.widget.Toast.makeText(getApplication(), R.string.toast_album_sync_none, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (_isMockMode.value || _isShowcaseMode.value) {
+            runMockAlbumSync(targets)
+            return
+        }
+        uploadRepo.syncFoldersToAlbums(targets)
+    }
+
+    fun syncFolderToAlbum(folder: BackupFolder) {
+        if (folder.targetAlbumMode == AlbumTargetMode.NONE) {
+            android.widget.Toast.makeText(getApplication(), R.string.toast_album_sync_none, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!isOnline.value && !_isMockMode.value) {
+            android.widget.Toast.makeText(getApplication(), R.string.toast_album_sync_offline, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val resolved = if (folder.accountEmail.isNullOrBlank()) {
+            folder.copy(accountEmail = selectedAccount.value?.email)
+        } else folder
+        if (resolved.accountEmail.isNullOrBlank()) return
+
+        if (_isMockMode.value || _isShowcaseMode.value) {
+            runMockAlbumSync(listOf(resolved))
+            return
+        }
+        uploadRepo.syncFoldersToAlbums(listOf(resolved))
+    }
+
+    fun cancelAlbumSync() {
+        mockAlbumSyncJob?.cancel()
+        mockAlbumSyncJob = null
+        _mockAlbumSyncState.value = AlbumSyncState.Idle
+        uploadRepo.cancelAlbumSync()
+    }
+
+    fun dismissAlbumSyncState() {
+        if (_mockAlbumSyncState.value !is AlbumSyncState.Syncing) {
+            _mockAlbumSyncState.value = AlbumSyncState.Idle
+        }
+        uploadRepo.resetAlbumSyncState()
+    }
+
+    private fun runMockAlbumSync(folders: List<BackupFolder>) {
+        mockAlbumSyncJob?.cancel()
+        mockAlbumSyncJob = viewModelScope.launch {
+            val totalFiles = folders.size * 24
+            var processed = 0
+            var added = 0
+            for (folder in folders) {
+                for (i in 1..24) {
+                    delay(45L)
+                    processed++
+                    if (i % 2 == 0) added++
+                    _mockAlbumSyncState.value = AlbumSyncState.Syncing(
+                        currentFolderName = folder.displayName,
+                        processedFiles = processed,
+                        totalFiles = totalFiles,
+                        addedCount = added
+                    )
+                }
+            }
+            _mockAlbumSyncState.value = AlbumSyncState.Done(
+                matchedCount = added,
+                addedCount = added,
+                notInCloudCount = totalFiles - added,
+                folderCount = folders.size
+            )
+        }
     }
 
     fun removeFolder(path: String) = removeFolder(path, null)
@@ -1129,7 +1469,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(
                 folders = _mockSettings.value.folders.filterNot {
-                    it.path == path && matchesAccount(it.accountEmail, accountEmail)
+                    SettingsRepository.matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)
                 }
             )
             return
@@ -1143,7 +1483,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(
                 folders = _mockSettings.value.folders.map {
-                    if (it.path == path && matchesAccount(it.accountEmail, accountEmail)) it.copy(includeSubfolders = includeSubfolders) else it
+                    if (SettingsRepository.matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) {
+                        it.copy(includeSubfolders = includeSubfolders)
+                    } else it
                 }
             )
             return
@@ -1282,6 +1624,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateAutoSyncAlbums(enabled: Boolean) {
+        LumenLogger.i("SettingsUI", "Auto-sync albums updated to: $enabled")
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(autoSyncAlbums = enabled)
+        } else {
+            settingsRepo.updateAutoSyncAlbums(enabled)
+        }
+    }
+
+    fun markAccountSwipeNudgeShown() {
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(hasShownAccountSwipeNudge = true)
+        } else {
+            settingsRepo.markAccountSwipeNudgeShown()
+        }
+    }
+
+    /**
+     * Resets the mock-mode swipe nudge flag and ensures at least two mock accounts exist
+     * so the Account card nudge animation can be replayed on demand during testing.
+     */
+    fun replayMockAccountSwipeNudge() {
+        if (!_isMockMode.value) return
+        if (_mockAccounts.value.size < 2) {
+            _mockAccounts.value = _mockAccounts.value + GoogleAccount(
+                email = "qa.tester@lumen.dev",
+                credentialString = "mock_cred_2",
+                displayName = "Lumen QA Tester"
+            )
+        }
+        _mockSettings.value = _mockSettings.value.copy(hasShownAccountSwipeNudge = false)
+        _mockSwipeNudgeNonce.value += 1
+        _scrollToAccountForNudge.value = true
+    }
+
+    fun consumeScrollToAccountForNudge() {
+        _scrollToAccountForNudge.value = false
+    }
+
     fun setHasCompletedOnboarding(completed: Boolean) {
         LumenLogger.i("Onboarding", "Onboarding state updated to: $completed")
         settingsRepo.updateHasCompletedOnboarding(completed)
@@ -1323,7 +1704,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         settingsRepo.updateSaveLogs(enabled)
-        com.reiux.lumen.util.LumenLogger.setFileLogging(enabled, context)
+        com.reiux.lumen.util.LumenLogger.setFileLogging(enabled, getApplication())
     }
 
     fun exportLogs(context: Context) {
@@ -1370,8 +1751,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        uploadRepo.clearAccountBlock(email)
-        accountRepo.removeAccount(email)
+        val cleanEmail = email.trim()
+        val removedAvatarPath = accountRepo.accounts.value
+            .firstOrNull { it.email.equals(cleanEmail, ignoreCase = true) }
+            ?.avatarPath
+
+        uploadRepo.removeAccountData(cleanEmail)
+        settingsRepo.removeAccountData(cleanEmail)
+        accountRepo.removeAccount(cleanEmail)
+
+        val appCtx = getApplication<LumenApplication>()
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            uploadRepo.purgeAccountHashCache(cleanEmail)
+            try {
+                val avatarsDir = File(appCtx.filesDir, "avatars")
+                val avatarsCanonicalPrefix = try {
+                    avatarsDir.canonicalPath.trimEnd('/') + "/"
+                } catch (_: Exception) {
+                    avatarsDir.absolutePath.trimEnd('/') + "/"
+                }
+                val candidates = linkedSetOf(
+                    File(avatarsDir, "${email.hashCode()}.jpg"),
+                    File(avatarsDir, "${email.lowercase().hashCode()}.jpg"),
+                    File(avatarsDir, "${cleanEmail.hashCode()}.jpg"),
+                    File(avatarsDir, "${cleanEmail.lowercase().hashCode()}.jpg")
+                )
+                if (!removedAvatarPath.isNullOrBlank()) {
+                    val savedAvatarFile = File(removedAvatarPath)
+                    val savedCanonical = try {
+                        savedAvatarFile.canonicalPath
+                    } catch (_: Exception) {
+                        savedAvatarFile.absolutePath
+                    }
+                    if (savedCanonical.startsWith(avatarsCanonicalPrefix)) {
+                        candidates.add(savedAvatarFile)
+                    }
+                }
+                for (avatarFile in candidates) {
+                    if (avatarFile.exists()) {
+                        avatarFile.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                LumenLogger.w("AccountsUI") { "Failed cleaning avatar files for removed account: ${e.message}" }
+            }
+        }
     }
 
     fun addAccountWithToken(token: String) {
@@ -1436,21 +1860,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAccountAvatar(email: String, uri: Uri, context: Context) {
         LumenLogger.i("AccountsUI", "Updating custom avatar for $email")
+        val appCtx = getApplication<LumenApplication>()
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                var tempFile: File? = null
                 try {
-                    val avatarDir = File(context.filesDir, "avatars").apply { mkdirs() }
+                    val avatarDir = File(appCtx.filesDir, "avatars").apply { mkdirs() }
                     val targetFile = File(avatarDir, "${email.hashCode()}.jpg")
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output)
+                    val staged = File(avatarDir, "${email.hashCode()}_${UUID.randomUUID()}.tmp")
+                    tempFile = staged
+                    val copied = appCtx.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(staged).use { output ->
+                            MediaFileReader.copyStreamWithLimit(input, output, MediaFileReader.MAX_AVATAR_BYTES)
                         }
+                        true
+                    } ?: false
+                    if (copied && staged.exists() && staged.length() > 0L) {
+                        if (targetFile.exists()) targetFile.delete()
+                        if (!staged.renameTo(targetFile)) {
+                            staged.copyTo(targetFile, overwrite = true)
+                            staged.delete()
+                        }
+                        if (targetFile.exists()) {
+                            accountRepo.updateAvatar(email, targetFile.absolutePath)
+                        }
+                    } else {
+                        staged.delete()
                     }
-                    if (targetFile.exists()) {
-                        accountRepo.updateAvatar(email, targetFile.absolutePath)
-                    }
+                } catch (ce: CancellationException) {
+                    tempFile?.delete()
+                    throw ce
+                } catch (e: IOException) {
+                    tempFile?.delete()
+                    LumenLogger.w("AccountsUI") { "Avatar stream failed or exceeded limit for $email: ${e.message}" }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    tempFile?.delete()
+                    LumenLogger.w("AccountsUI") { "Failed to update custom avatar for $email: ${e.message}" }
                 }
             }
         }

@@ -14,8 +14,10 @@ import com.reiux.lumen.proto.HashCheckOuterClass.HashCheck
 import com.reiux.lumen.proto.RemoteMatchesOuterClass.RemoteMatches
 import com.reiux.lumen.util.AuthFailureException
 import com.reiux.lumen.util.LumenLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,11 +25,12 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.PushbackInputStream
 import java.util.zip.GZIPInputStream
 
 data class GoogleAlbum(
@@ -51,10 +54,12 @@ data class GoogleAlbum(
 }
 
 class GooglePhotosClient(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+    httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .dispatcher(okhttp3.Dispatcher().apply {
             maxRequests = 64
             maxRequestsPerHost = 20
@@ -62,34 +67,77 @@ class GooglePhotosClient(
         .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
         .build()
 ) {
+    private val httpClient: OkHttpClient = if (!httpClient.followRedirects && !httpClient.followSslRedirects) {
+        httpClient
+    } else {
+        httpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
+    private fun readBoundedStream(stream: InputStream, maxBytes: Int = MAX_DECOMPRESSED_BYTES): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var totalRead = 0
+        while (true) {
+            val read = stream.read(buffer)
+            if (read == -1) break
+            totalRead += read
+            if (totalRead > maxBytes) {
+                throw IOException("Response exceeded maximum allowed size ($maxBytes bytes)")
+            }
+            out.write(buffer, 0, read)
+        }
+        return out.toByteArray()
+    }
+
+    private fun readBoundedResponseBytes(response: okhttp3.Response): ByteArray {
+        val body = response.body ?: return ByteArray(0)
+        val declaredLen = body.contentLength()
+        if (declaredLen > MAX_DECOMPRESSED_BYTES) {
+            throw IOException("Response exceeded maximum allowed size ($MAX_DECOMPRESSED_BYTES bytes)")
+        }
+        return PushbackInputStream(body.byteStream(), 2).use { pushback ->
+            val b0 = pushback.read()
+            if (b0 == -1) return@use ByteArray(0)
+            val b1 = pushback.read()
+            if (b1 != -1) pushback.unread(b1)
+            pushback.unread(b0)
+
+            val isGzip = (b0.toByte() == 0x1f.toByte()) && (b1 != -1 && b1.toByte() == 0x8b.toByte())
+            if (isGzip) {
+                try {
+                    GZIPInputStream(pushback).use { gzip ->
+                        readBoundedStream(gzip, MAX_DECOMPRESSED_BYTES)
+                    }
+                } catch (e: IOException) {
+                    LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
+                    throw e
+                } catch (e: Exception) {
+                    LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
+                    throw IOException("Corrupted GZIP response: ${e.message}", e)
+                }
+            } else {
+                readBoundedStream(pushback, MAX_DECOMPRESSED_BYTES)
+            }
+        }
+    }
+
     private fun uncompressIfNeeded(bytes: ByteArray): ByteArray {
+        if (bytes.size > MAX_DECOMPRESSED_BYTES) {
+            throw IOException("Response exceeded maximum allowed size ($MAX_DECOMPRESSED_BYTES bytes)")
+        }
         if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
             return try {
                 GZIPInputStream(ByteArrayInputStream(bytes)).use { gzip ->
-                    val out = java.io.ByteArrayOutputStream()
-                    val buffer = ByteArray(8192)
-                    var totalRead = 0
-                    val maxDecompressedBytes = 16 * 1024 * 1024 // 16 MB limit against zip bombs
-                    while (true) {
-                        val read = gzip.read(buffer)
-                        if (read == -1) break
-                        totalRead += read
-                        if (totalRead > maxDecompressedBytes) {
-                            throw IOException("GZIP response exceeded maximum allowed size ($maxDecompressedBytes bytes)")
-                        }
-                        out.write(buffer, 0, read)
-                    }
-                    out.toByteArray()
+                    readBoundedStream(gzip, MAX_DECOMPRESSED_BYTES)
                 }
             } catch (e: IOException) {
-                if (e.message?.contains("exceeded maximum allowed size") == true) {
-                    throw e
-                }
                 LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
-                bytes
+                throw e
             } catch (e: Exception) {
                 LumenLogger.w(TAG) { "GZIP decompression failed: ${e.message}" }
-                bytes
+                throw IOException("Corrupted GZIP response: ${e.message}", e)
             }
         }
         return bytes
@@ -106,7 +154,6 @@ class GooglePhotosClient(
         errBody: String? = null
     ) {
         val redactedUrl = LumenLogger.redact(url)
-        val levelStr = if (code in 200..299) "INFO" else "WARN"
         val msg = if (errBody != null) {
             "[$method $code ERROR] $redactedUrl reqSize=${reqSize}B respSize=${respSize}B duration=${durationMs}ms errBody='${LumenLogger.redact(errBody.take(200))}'"
         } else {
@@ -119,17 +166,75 @@ class GooglePhotosClient(
         }
     }
 
-    private fun handleResponseError(response: okhttp3.Response, respBytes: ByteArray, endpointName: String) {
+    private fun handleResponseError(response: okhttp3.Response, respBytes: ByteArray, endpointName: String): Nothing {
         val code = response.code
-        val errBody = respBytes.decodeToString().take(200)
+        val errBody = respBytes.decodeToString().take(300)
         when (code) {
-            401, 403 -> throw AuthFailureException(kind = AuthFailureKind.TOKEN_EXPIRED, rawDetail = "$endpointName HTTP $code: Authentication required")
-            429 -> {
-                val retryHeader = response.header("Retry-After")?.toLongOrNull() ?: 30L
-                throw AuthFailureException(kind = AuthFailureKind.RATE_LIMITED, retryAfterSec = retryHeader, rawDetail = "$endpointName HTTP 429: Rate limit exceeded")
+            401 -> throw AuthFailureException(
+                kind = AuthFailureKind.TOKEN_EXPIRED,
+                rawDetail = "$endpointName HTTP 401: Authentication required"
+            )
+            403 -> {
+                val retryHeader = parseRetryAfterSeconds(response.header("Retry-After"), 60L)
+                when {
+                    errBody.contains("RATE_LIMIT", ignoreCase = true) ||
+                        errBody.contains("rateLimitExceeded", ignoreCase = true) ||
+                        errBody.contains("userRateLimitExceeded", ignoreCase = true) -> {
+                        throw AuthFailureException(
+                            kind = AuthFailureKind.RATE_LIMITED,
+                            retryAfterSec = retryHeader,
+                            rawDetail = "$endpointName HTTP 403: Rate limit exceeded"
+                        )
+                    }
+                    errBody.contains("AccountDisabled", ignoreCase = true) ||
+                        errBody.contains("AccountRestricted", ignoreCase = true) ||
+                        errBody.contains("ACCOUNT_DISABLED", ignoreCase = true) ||
+                        errBody.contains("ACCOUNT_LOCKED", ignoreCase = true) -> {
+                        throw AuthFailureException(
+                            kind = AuthFailureKind.ACCOUNT_RESTRICTED,
+                            rawDetail = "$endpointName HTTP 403: Account restricted"
+                        )
+                    }
+                    errBody.contains("ACCESS_TOKEN_EXPIRED", ignoreCase = true) ||
+                        errBody.contains("Token expired", ignoreCase = true) -> {
+                        throw AuthFailureException(
+                            kind = AuthFailureKind.TOKEN_EXPIRED,
+                            rawDetail = "$endpointName HTTP 403: Token expired"
+                        )
+                    }
+                    endpointName != "ListAlbums" && (
+                        errBody.contains("UNAUTHENTICATED", ignoreCase = true) ||
+                            errBody.contains("Invalid Credentials", ignoreCase = true)
+                        ) -> {
+                        throw AuthFailureException(
+                            kind = AuthFailureKind.SIGN_IN_REQUIRED,
+                            rawDetail = "$endpointName HTTP 403: Sign-in required"
+                        )
+                    }
+                    else -> throw IOException("$endpointName failed HTTP 403: Forbidden")
+                }
             }
-            in 500..599 -> throw AuthFailureException(kind = AuthFailureKind.TRANSIENT, rawDetail = "$endpointName HTTP $code: Server error")
-            else -> throw IOException("$endpointName failed HTTP $code")
+            429 -> {
+                val retryHeader = parseRetryAfterSeconds(response.header("Retry-After"), 30L)
+                throw AuthFailureException(
+                    kind = AuthFailureKind.RATE_LIMITED,
+                    retryAfterSec = retryHeader,
+                    rawDetail = "$endpointName HTTP 429: Rate limit exceeded"
+                )
+            }
+            in 500..599 -> throw AuthFailureException(
+                kind = AuthFailureKind.TRANSIENT,
+                rawDetail = "$endpointName HTTP $code: Server error"
+            )
+            else -> {
+                val notFoundHint = if (code == 404 ||
+                    errBody.contains("NOT_FOUND") ||
+                    errBody.contains("Requested entity was not found")
+                ) {
+                    ": Requested entity was not found (NOT_FOUND)"
+                } else ""
+                throw IOException("$endpointName failed HTTP $code$notFoundHint")
+            }
         }
     }
 
@@ -161,29 +266,30 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        httpClient.newCall(request).execute().use { response ->
+            val respBytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork(
-            method = "POST",
-            url = INTERACTIVE_UPLOAD_ENDPOINT,
-            reqSize = protoBytes.size.toLong(),
-            code = response.code,
-            respSize = respBytes.size.toLong(),
-            durationMs = duration,
-            opId = opId,
-            errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
-        )
+            logNetwork(
+                method = "POST",
+                url = INTERACTIVE_UPLOAD_ENDPOINT,
+                reqSize = protoBytes.size.toLong(),
+                code = response.code,
+                respSize = respBytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            handleResponseError(response, respBytes, "GetUploadToken")
+            if (!response.isSuccessful) {
+                handleResponseError(response, respBytes, "GetUploadToken")
+            }
+
+            val uploadId = response.header("X-GUploader-UploadID")
+                ?: throw IOException("Upload ID missing in response headers")
+            LumenLogger.d(TAG, opId = opId) { "Acquired Scotty upload session" }
+            uploadId
         }
-
-        val uploadId = response.header("X-GUploader-UploadID")
-            ?: throw IOException("Upload ID missing in response headers")
-        LumenLogger.d(TAG, opId = opId) { "Acquired Scotty uploadId=$uploadId" }
-        uploadId
     }
 
     suspend fun findRemoteMediaByHash(
@@ -214,24 +320,25 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        val respBytes = httpClient.newCall(request).execute().use { response ->
+            val bytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork(
-            method = "POST",
-            url = REMOTE_HASH_CHECK_ENDPOINT,
-            reqSize = protoBytes.size.toLong(),
-            code = response.code,
-            respSize = respBytes.size.toLong(),
-            durationMs = duration,
-            opId = opId,
-            errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
-        )
+            logNetwork(
+                method = "POST",
+                url = REMOTE_HASH_CHECK_ENDPOINT,
+                reqSize = protoBytes.size.toLong(),
+                code = response.code,
+                respSize = bytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            LumenLogger.w(TAG, opId = opId) { "Remote dedup check HTTP ${response.code} error" }
-            return@withContext null
+            if (!response.isSuccessful) {
+                handleResponseError(response, bytes, "RemoteHashCheck")
+            }
+            bytes
         }
 
         if (respBytes.isEmpty()) {
@@ -243,7 +350,7 @@ class GooglePhotosClient(
             val matches = RemoteMatches.parseFrom(respBytes)
             val key = matches.field1?.field2?.field2?.mediaKey
             if (!key.isNullOrEmpty()) {
-                LumenLogger.d(TAG, opId = opId) { "Remote dedup match FOUND: mediaKey=$key" }
+                LumenLogger.d(TAG, opId = opId) { "Remote dedup match FOUND" }
                 key
             } else {
                 LumenLogger.d(TAG, opId = opId) { "Remote dedup check returned no mediaKey (not in Google Photos)" }
@@ -281,7 +388,10 @@ class GooglePhotosClient(
             }
         }
 
-        val url = "$INTERACTIVE_UPLOAD_ENDPOINT?upload_id=$uploadToken"
+        val url = INTERACTIVE_UPLOAD_ENDPOINT.toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("upload_id", uploadToken)
+            .build()
         val request = Request.Builder()
             .url(url)
             .put(countingBody)
@@ -290,23 +400,25 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        val respBytes = httpClient.newCall(request).execute().use { response ->
+            val bytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork(
-            method = "PUT",
-            url = url,
-            reqSize = totalBytes,
-            code = response.code,
-            respSize = respBytes.size.toLong(),
-            durationMs = duration,
-            opId = opId,
-            errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
-        )
+            logNetwork(
+                method = "PUT",
+                url = INTERACTIVE_UPLOAD_ENDPOINT,
+                reqSize = totalBytes,
+                code = response.code,
+                respSize = bytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            handleResponseError(response, respBytes, "UploadChunk")
+            if (!response.isSuccessful) {
+                handleResponseError(response, bytes, "UploadChunk")
+            }
+            bytes
         }
 
         if (respBytes.isEmpty()) throw IOException("Empty Scotty finalize response")
@@ -375,23 +487,25 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        val respBytes = httpClient.newCall(request).execute().use { response ->
+            val bytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork(
-            method = "POST",
-            url = COMMIT_UPLOAD_ENDPOINT,
-            reqSize = protoBytes.size.toLong(),
-            code = response.code,
-            respSize = respBytes.size.toLong(),
-            durationMs = duration,
-            opId = opId,
-            errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
-        )
+            logNetwork(
+                method = "POST",
+                url = COMMIT_UPLOAD_ENDPOINT,
+                reqSize = protoBytes.size.toLong(),
+                code = response.code,
+                respSize = bytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            handleResponseError(response, respBytes, "CommitUpload")
+            if (!response.isSuccessful) {
+                handleResponseError(response, bytes, "CommitUpload")
+            }
+            bytes
         }
 
         if (respBytes.isEmpty()) throw IOException("Empty commit upload response")
@@ -401,7 +515,7 @@ class GooglePhotosClient(
             for (item in cmResp.itemList) {
                 val mk = item.resultItem?.mediaKey
                 if (!mk.isNullOrEmpty()) {
-                    LumenLogger.d(TAG, opId = opId) { "commitUpload success (CreateMediaItems): mediaKey=$mk" }
+                    LumenLogger.d(TAG, opId = opId) { "commitUpload success (CreateMediaItems)" }
                     return@withContext mk
                 }
             }
@@ -411,7 +525,7 @@ class GooglePhotosClient(
             val cuResp = CommitUploadResponse.parseFrom(respBytes)
             val mk = cuResp.field1?.field3?.mediaKey
             if (!mk.isNullOrEmpty()) {
-                LumenLogger.d(TAG, opId = opId) { "commitUpload success (CommitUpload): mediaKey=$mk" }
+                LumenLogger.d(TAG, opId = opId) { "commitUpload success (CommitUpload)" }
                 return@withContext mk
             }
         } catch (_: Exception) {}
@@ -462,14 +576,25 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        val respBytes = httpClient.newCall(request).execute().use { response ->
+            val bytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork("POST", CREATE_ALBUM_ENDPOINT, protoBytes.size.toLong(), response.code, respBytes.size.toLong(), duration, opId)
+            logNetwork(
+                method = "POST",
+                url = CREATE_ALBUM_ENDPOINT,
+                reqSize = protoBytes.size.toLong(),
+                code = response.code,
+                respSize = bytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            handleResponseError(response, respBytes, "CreateAlbum")
+            if (!response.isSuccessful) {
+                handleResponseError(response, bytes, "CreateAlbum")
+            }
+            bytes
         }
 
         val resp = CreateAlbumResponse.parseFrom(respBytes)
@@ -477,7 +602,7 @@ class GooglePhotosClient(
         if (albumMediaKey.isNullOrEmpty()) {
             throw IOException("Failed to extract albumMediaKey from CreateAlbum response")
         }
-        LumenLogger.d(TAG, opId = opId) { "createAlbum success: name='$albumName' mediaKey=$albumMediaKey initialMediaKey=$initialMediaKey" }
+        LumenLogger.d(TAG, opId = opId) { "createAlbum success (hasInitialMedia=${!initialMediaKey.isNullOrBlank()})" }
         albumMediaKey
     }
 
@@ -515,16 +640,26 @@ class GooglePhotosClient(
             .build()
 
         val start = System.currentTimeMillis()
-        val response = httpClient.newCall(request).execute()
-        val duration = System.currentTimeMillis() - start
-        val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+        httpClient.newCall(request).execute().use { response ->
+            val respBytes = readBoundedResponseBytes(response)
+            val duration = System.currentTimeMillis() - start
 
-        logNetwork("POST", ADD_MEDIA_TO_ALBUM_ENDPOINT, protoBytes.size.toLong(), response.code, respBytes.size.toLong(), duration, opId)
+            logNetwork(
+                method = "POST",
+                url = ADD_MEDIA_TO_ALBUM_ENDPOINT,
+                reqSize = protoBytes.size.toLong(),
+                code = response.code,
+                respSize = respBytes.size.toLong(),
+                durationMs = duration,
+                opId = opId,
+                errBody = if (!response.isSuccessful) respBytes.decodeToString() else null
+            )
 
-        if (!response.isSuccessful) {
-            handleResponseError(response, respBytes, "AddMediaToAlbum")
+            if (!response.isSuccessful) {
+                handleResponseError(response, respBytes, "AddMediaToAlbum")
+            }
         }
-        LumenLogger.d(TAG, opId = opId) { "addMediaToAlbum success: albumMediaKey=$albumMediaKey count=${mediaKeys.size}" }
+        LumenLogger.d(TAG, opId = opId) { "addMediaToAlbum success: count=${mediaKeys.size}" }
         true
     }
 
@@ -533,7 +668,7 @@ class GooglePhotosClient(
         if (trimmed.isBlank()) return ""
 
         val keyRegex = Regex("AF1Qip[A-Za-z0-9_-]+")
-        
+
         // 1. Direct raw media key check
         if (trimmed.startsWith("AF1Qip") || keyRegex.matches(trimmed)) {
             val match = keyRegex.find(trimmed)
@@ -544,15 +679,13 @@ class GooglePhotosClient(
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains("photos.google.com") || trimmed.contains("goo.gl")) {
             val match = keyRegex.find(trimmed)
             if (match != null) {
-                LumenLogger.d(TAG) { "Extracted album key from URL: ${match.value}" }
+                LumenLogger.d(TAG) { "Extracted album key from URL" }
                 return match.value
             }
         }
 
         return trimmed
     }
-
-
 
     suspend fun listAlbums(bearerToken: String, opId: String? = null): List<GoogleAlbum> = withContext(Dispatchers.IO) {
         try {
@@ -564,13 +697,26 @@ class GooglePhotosClient(
                 .build()
 
             val start = System.currentTimeMillis()
-            val response = httpClient.newCall(request).execute()
-            val duration = System.currentTimeMillis() - start
-            val respBytes = uncompressIfNeeded(response.body?.bytes() ?: ByteArray(0))
+            val respBytes = httpClient.newCall(request).execute().use { response ->
+                val bytes = readBoundedResponseBytes(response)
+                val duration = System.currentTimeMillis() - start
 
-            logNetwork("GET", "https://photoslibrary.googleapis.com/v1/albums", 0L, response.code, respBytes.size.toLong(), duration, opId)
+                logNetwork(
+                    method = "GET",
+                    url = "https://photoslibrary.googleapis.com/v1/albums",
+                    reqSize = 0L,
+                    code = response.code,
+                    respSize = bytes.size.toLong(),
+                    durationMs = duration,
+                    opId = opId,
+                    errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+                )
 
-            if (!response.isSuccessful) return@withContext emptyList()
+                if (!response.isSuccessful) {
+                    handleResponseError(response, bytes, "ListAlbums")
+                }
+                bytes
+            }
 
             val jsonStr = respBytes.decodeToString()
             val jsonObj = org.json.JSONObject(jsonStr)
@@ -586,19 +732,31 @@ class GooglePhotosClient(
                 }
             }
             result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AuthFailureException) {
+            throw e
+        } catch (e: IOException) {
+            throw e
         } catch (e: Exception) {
-            LumenLogger.w(TAG, opId = opId) { "listAlbums failed: ${e.message}" }
+            LumenLogger.w(TAG, opId = opId) { "listAlbums parse failed: ${e.message}" }
             emptyList()
         }
     }
 
     companion object {
         private const val TAG = "GooglePhotosClient"
+        private const val MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024 // 16 MB limit against zip bombs / oversized payloads
         const val PHOTOS_USER_AGENT = "com.google.android.apps.photos/49029607 (Linux; U; Android 9; Pixel XL; en_US; Build/PQ2A.190205.001; Cronet/127.0.6510.5) (gzip)"
         const val INTERACTIVE_UPLOAD_ENDPOINT = "https://photos.googleapis.com/data/upload/uploadmedia/interactive"
         const val REMOTE_HASH_CHECK_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/5084965799730810217"
         const val COMMIT_UPLOAD_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/16538846908252377752"
         const val CREATE_ALBUM_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/8386163679468898444"
         const val ADD_MEDIA_TO_ALBUM_ENDPOINT = "https://photosdata-pa.googleapis.com/6439526531001121323/484917746253879292"
+
+        internal fun parseRetryAfterSeconds(headerValue: String?, defaultSeconds: Long): Long {
+            val parsed = headerValue?.trim()?.toLongOrNull() ?: defaultSeconds
+            return parsed.coerceIn(1L, 86400L)
+        }
     }
 }

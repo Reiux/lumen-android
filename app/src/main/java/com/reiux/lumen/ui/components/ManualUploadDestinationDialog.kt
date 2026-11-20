@@ -33,12 +33,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.reiux.lumen.R
@@ -55,14 +57,25 @@ fun ManualUploadDestinationDialog(
     accounts: List<com.reiux.lumen.data.model.GoogleAccount> = emptyList(),
     activeAccount: com.reiux.lumen.data.model.GoogleAccount? = null,
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum>,
+    isOnline: Boolean? = null,
+    fileNames: List<String> = emptyList(),
+    pendingReplacementCount: Int = 0,
+    pendingReplacementNames: List<String> = emptyList(),
+    onSwitchToReplacement: () -> Unit = {},
+    onDiscardReplacement: () -> Unit = {},
     onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> com.reiux.lumen.data.network.GoogleAlbum = { k, n, e -> com.reiux.lumen.data.network.GoogleAlbum(k, n, e) },
     onOpenAlbumManager: () -> Unit = {},
     onConfirm: (targetAlbumMode: AlbumTargetMode, customAlbumName: String?, customAlbumNickname: String?) -> Unit = { _, _, _ -> },
     onConfirmWithAccount: ((targetAccount: com.reiux.lumen.data.model.GoogleAccount?, targetAlbumMode: AlbumTargetMode, customAlbumName: String?, customAlbumNickname: String?) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
-    var chosenAccount by remember(activeAccount, accounts) { mutableStateOf(activeAccount ?: accounts.firstOrNull()) }
-    var albumChoice by remember { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
+    var chosenAccountEmail by rememberSaveable { mutableStateOf(activeAccount?.email ?: accounts.firstOrNull()?.email) }
+    val chosenAccount = remember(chosenAccountEmail, activeAccount, accounts) {
+        accounts.firstOrNull { !chosenAccountEmail.isNullOrBlank() && it.email.equals(chosenAccountEmail, ignoreCase = true) }
+            ?: activeAccount
+            ?: accounts.firstOrNull()
+    }
+    var albumChoice by rememberSaveable(stateSaver = AlbumChoiceSaver) { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
 
     val currentMonth = remember {
         SimpleDateFormat("MMM yyyy", Locale.US).format(Date())
@@ -97,9 +110,119 @@ fun ManualUploadDestinationDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (pendingReplacementCount > 0) {
+                    val replacementWord = if (pendingReplacementCount == 1) {
+                        stringResource(R.string.manual_upload_word_file)
+                    } else {
+                        stringResource(R.string.manual_upload_word_files)
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.manual_upload_new_share_banner_title,
+                                    pendingReplacementCount,
+                                    replacementWord
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = stringResource(R.string.manual_upload_new_share_banner_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            if (pendingReplacementNames.isNotEmpty()) {
+                                val preview = pendingReplacementNames.take(3)
+                                val extraCount = (pendingReplacementCount - preview.size).coerceAtLeast(0)
+                                val namesSummary = if (extraCount > 0) {
+                                    "${preview.joinToString(", ")} (${stringResource(R.string.manual_upload_more_files, extraCount)})"
+                                } else {
+                                    preview.joinToString(", ")
+                                }
+                                Text(
+                                    text = namesSummary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = onDiscardReplacement) {
+                                    Text(
+                                        text = stringResource(R.string.manual_upload_btn_ignore),
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                TextButton(onClick = onSwitchToReplacement) {
+                                    Text(
+                                        text = stringResource(R.string.manual_upload_btn_switch),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (fileNames.isNotEmpty()) {
+                    val previewNames = fileNames.take(3)
+                    val remainingCount = (itemCount - previewNames.size).coerceAtLeast(0)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.manual_upload_selected_files_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            previewNames.forEach { name ->
+                                Text(
+                                    text = "• $name",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (remainingCount > 0) {
+                                Text(
+                                    text = stringResource(R.string.manual_upload_more_files, remainingCount),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (accounts.size > 1) {
                     Text(
                         text = stringResource(R.string.manual_upload_to_account_label),
@@ -111,7 +234,7 @@ fun ManualUploadDestinationDialog(
                         accounts = accounts,
                         selectedAccount = chosenAccount,
                         onSelectAccount = {
-                            chosenAccount = it
+                            chosenAccountEmail = it.email
                             albumChoice = AlbumChoice.None
                         }
                     )
@@ -127,24 +250,22 @@ fun ManualUploadDestinationDialog(
                     choice = albumChoice,
                     onChoiceSelected = { albumChoice = it },
                     savedAlbums = remoteAlbums,
+                    accounts = accounts,
                     activeAccount = chosenAccount,
                     isManualUploadDialog = true,
                     currentMonthName = currentMonth,
                     onAddAlbum = onAddAlbum,
-                    onOpenAlbumManager = {
-                        onDismiss()
-                        onOpenAlbumManager()
-                    }
+                    onOpenAlbumManager = onOpenAlbumManager
                 )
             }
         },
         confirmButton = {
             val context = androidx.compose.ui.platform.LocalContext.current
-            val isOnline = remember { com.reiux.lumen.util.DeviceConditions.isInternetAvailable(context) }
+            val effectiveOnline = isOnline ?: com.reiux.lumen.util.DeviceConditions.isInternetAvailable(context)
 
             ExpressiveButton(
                 onClick = {
-                    if (!isOnline) {
+                    if (!effectiveOnline) {
                         android.widget.Toast.makeText(context, context.getString(R.string.manual_upload_no_internet_toast), android.widget.Toast.LENGTH_SHORT).show()
                         return@ExpressiveButton
                     }
@@ -158,7 +279,7 @@ fun ManualUploadDestinationDialog(
                         is AlbumChoice.None -> Triple(AlbumTargetMode.NONE, null, null)
                         is AlbumChoice.ByMonth -> Triple(AlbumTargetMode.AUTO_FOLDER_NAME, null, null)
                         is AlbumChoice.CustomAlbum -> {
-                            if (c.album.accountEmail.isNullOrBlank() || !c.album.accountEmail.equals(activeEmail, ignoreCase = true)) {
+                            if (!c.album.accountEmail.isNullOrBlank() && !c.album.accountEmail.equals(activeEmail, ignoreCase = true)) {
                                 albumChoice = AlbumChoice.None
                                 return@ExpressiveButton
                             }
@@ -172,9 +293,9 @@ fun ManualUploadDestinationDialog(
                         onConfirm(mode, customName, customNickname)
                     }
                 },
-                enabled = isOnline
+                enabled = effectiveOnline
             ) {
-                Text(if (isOnline) stringResource(R.string.manual_upload_btn_start) else stringResource(R.string.manual_upload_no_internet))
+                Text(if (effectiveOnline) stringResource(R.string.manual_upload_btn_start) else stringResource(R.string.manual_upload_no_internet))
             }
         },
         dismissButton = {

@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,9 +16,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
@@ -50,6 +53,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Card
@@ -64,14 +69,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -79,14 +89,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.ui.components.DynamicLumenIcon
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveDialogCallout
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.rememberHapticClick
 import com.reiux.lumen.ui.theme.ColorPreset
 import com.reiux.lumen.ui.theme.getAvailablePresets
 import com.reiux.lumen.util.DeviceConditions
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -104,6 +120,7 @@ fun SettingsScreen(
     isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
+    onReplayAccountSwipeNudge: () -> Unit = {},
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
@@ -113,98 +130,66 @@ fun SettingsScreen(
     onUpdateForcedSeason: (String) -> Unit = {},
     onUpdateDeleteAfterBackup: (Boolean) -> Unit = {},
     onUpdateEnableBlurEffects: (Boolean) -> Unit = {},
+    onUpdateAutoSyncAlbums: (Boolean) -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
-    var showOemGuideDialog by remember { mutableStateOf(false) }
-    var showAccountSafetyDialog by remember { mutableStateOf(false) }
-    var showUploadActiveBlockedDialog by remember { mutableStateOf<String?>(null) }
-    var showConfirmDeleteAfterBackupDialog by remember { mutableStateOf(false) }
-    var showAllFilesPermissionDialog by remember { mutableStateOf(false) }
-    var pendingDeleteAfterBackup by remember { mutableStateOf(false) }
-    var returningFromAllFilesPermission by remember { mutableStateOf(false) }
+    var showOemGuideDialog by rememberSaveable { mutableStateOf(false) }
+    var showAccountSafetyDialog by rememberSaveable { mutableStateOf(false) }
+    var showUploadActiveBlockedDialog by rememberSaveable { mutableStateOf<String?>(null) }
+    var showConfirmDeleteAfterBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showAllFilesPermissionDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteAfterBackup by rememberSaveable { mutableStateOf(false) }
+    var returningFromAllFilesPermission by rememberSaveable { mutableStateOf(false) }
     var isBatteryOptimizedExempt by remember {
         mutableStateOf(DeviceConditions.isIgnoringBatteryOptimizations(context))
     }
 
     if (showConfirmDeleteAfterBackupDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showConfirmDeleteAfterBackupDialog = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier
-                .widthIn(max = 560.dp)
-                .padding(horizontal = 24.dp),
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
+            icon = Icons.Rounded.DeleteForever,
+            title = stringResource(R.string.dialog_delete_after_backup_title),
+            tone = ExpressiveDialogTone.ERROR,
+            confirmText = stringResource(R.string.dialog_delete_after_backup_confirm),
+            onConfirm = {
+                showConfirmDeleteAfterBackupDialog = false
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+                    onUpdateDeleteAfterBackup(true)
+                } else {
+                    // Don't arm the destructive flag yet: the permission screen opens
+                    // next and the user may decline. The flag is only applied in the
+                    // ON_RESUME handler once the grant is verified.
+                    pendingDeleteAfterBackup = true
+                    showAllFilesPermissionDialog = true
+                }
             },
-            title = {
+            dismissText = stringResource(R.string.btn_cancel)
+        ) {
+            ExpressiveDialogCallout(tone = ExpressiveDialogTone.ERROR) {
                 Text(
-                    text = stringResource(R.string.dialog_delete_after_backup_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = stringResource(R.string.dialog_delete_after_backup_lead),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_lead),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_bullets),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
-                    )
-                    Text(
-                        text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(
-                    onClick = {
-                        showConfirmDeleteAfterBackupDialog = false
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
-                            onUpdateDeleteAfterBackup(true)
-                        } else {
-                            // Don't arm the destructive flag yet: the permission screen opens
-                            // next and the user may decline. The flag is only applied in the
-                            // ON_RESUME handler once the grant is verified.
-                            pendingDeleteAfterBackup = true
-                            showAllFilesPermissionDialog = true
-                        }
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text(stringResource(R.string.dialog_delete_after_backup_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDeleteAfterBackupDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel))
-                }
+                Text(
+                    text = stringResource(R.string.dialog_delete_after_backup_bullets),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    lineHeight = 18.sp
+                )
             }
-        )
+            Text(
+                text = stringResource(R.string.dialog_delete_after_backup_confirm_question),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 
     if (showAllFilesPermissionDialog) {
@@ -214,7 +199,10 @@ fun SettingsScreen(
                 // treat this as a cancel when we didn't just confirm.
                 showAllFilesPermissionDialog = false
                 if (!returningFromAllFilesPermission) {
-                    // User declined the permission flow — leave the destructive flag off.
+                    // User declined or settings failed to launch — leave the destructive flag off.
+                    if (pendingDeleteAfterBackup) {
+                        Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
+                    }
                     pendingDeleteAfterBackup = false
                 }
             },
@@ -234,41 +222,20 @@ fun SettingsScreen(
     }
 
     if (showUploadActiveBlockedDialog != null) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showUploadActiveBlockedDialog = null },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.backup_upload_in_progress_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                com.reiux.lumen.ui.components.ExpressiveButton(
-                    onClick = { showUploadActiveBlockedDialog = null }
-                ) {
-                    Text(stringResource(R.string.btn_got_it))
-                }
-            }
-        )
+            icon = Icons.Rounded.CloudSync,
+            title = stringResource(R.string.backup_upload_in_progress_title),
+            tone = ExpressiveDialogTone.TERTIARY,
+            confirmText = stringResource(R.string.btn_got_it),
+            onConfirm = { showUploadActiveBlockedDialog = null }
+        ) {
+            Text(
+                text = stringResource(R.string.settings_upload_in_progress_msg, showUploadActiveBlockedDialog ?: ""),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     val handleStorageSaverToggle: (Boolean) -> Unit = { newValue ->
@@ -454,6 +421,22 @@ fun SettingsScreen(
                                 checked = isMockMode,
                                 onCheckedChange = { onToggleMockMode() }
                             )
+                            if (isMockMode) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                                SettingActionRow(
+                                    title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
+                                    subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
+                                    actionLabel = stringResource(R.string.settings_action_replay),
+                                    onClick = onReplayAccountSwipeNudge
+                                )
+                            }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                         SettingActionRow(
                             title = stringResource(R.string.settings_run_diagnostics_title),
@@ -489,17 +472,17 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Row(
+                                FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
                                     seasons.forEach { s ->
                                         val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
                                         ExpressiveTonalButton(
                                             onClick = { onUpdateForcedSeason(s) },
-                                            modifier = Modifier.weight(1f),
-                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                         ) {
                                             Text(
                                                 text = when (s) {
@@ -509,7 +492,8 @@ fun SettingsScreen(
                                                     "NEW_YEAR" -> "New Year"
                                                     else -> s
                                                 },
-                                                fontSize = 10.sp,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
                                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                                 color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -546,7 +530,7 @@ fun SettingsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Network & Upload Speed",
+                    text = stringResource(R.string.settings_network_speed_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -570,50 +554,14 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_storage_saver_title),
-                            subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
-                            checked = settings.storageSaverQuality,
-                            onCheckedChange = handleStorageSaverToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_use_quota_title),
-                            subtitle = stringResource(R.string.pref_use_quota_desc),
-                            checked = settings.useQuota,
-                            onCheckedChange = handleUseQuotaToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_upload_notifs_title),
-                            subtitle = stringResource(R.string.pref_upload_notifs_desc),
-                            checked = settings.notificationsEnabled,
-                            onCheckedChange = onUpdateNotifications
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingActionRow(
-                            title = stringResource(R.string.account_safety_title),
-                            subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = stringResource(R.string.settings_action_view),
-                            onClick = { showAccountSafetyDialog = true }
-                        )
-                    }
-                }
+                StorageAndQualityCard(
+                    settings = settings,
+                    onStorageSaverToggle = handleStorageSaverToggle,
+                    onUseQuotaToggle = handleUseQuotaToggle,
+                    onUpdateNotifications = onUpdateNotifications,
+                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                    onOpenAccountSafety = { showAccountSafetyDialog = true }
+                )
 
                 Text(
                     text = stringResource(R.string.settings_storage_cleanup_title),
@@ -835,50 +783,14 @@ fun SettingsScreen(
             }
 
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_storage_saver_title),
-                            subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
-                            checked = settings.storageSaverQuality,
-                            onCheckedChange = handleStorageSaverToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_use_quota_title),
-                            subtitle = stringResource(R.string.pref_use_quota_desc),
-                            checked = settings.useQuota,
-                            onCheckedChange = handleUseQuotaToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_upload_notifs_title),
-                            subtitle = stringResource(R.string.pref_upload_notifs_desc),
-                            checked = settings.notificationsEnabled,
-                            onCheckedChange = onUpdateNotifications
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingActionRow(
-                            title = stringResource(R.string.account_safety_title),
-                            subtitle = stringResource(R.string.account_safety_subtitle),
-                            actionLabel = stringResource(R.string.settings_action_view),
-                            onClick = { showAccountSafetyDialog = true }
-                        )
-                    }
-                }
+                StorageAndQualityCard(
+                    settings = settings,
+                    onStorageSaverToggle = handleStorageSaverToggle,
+                    onUseQuotaToggle = handleUseQuotaToggle,
+                    onUpdateNotifications = onUpdateNotifications,
+                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                    onOpenAccountSafety = { showAccountSafetyDialog = true }
+                )
             }
 
             // Storage Cleanup (Red section)
@@ -960,6 +872,18 @@ fun SettingsScreen(
                                     checked = isMockMode,
                                     onCheckedChange = { onToggleMockMode() }
                                 )
+                                if (isMockMode) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    )
+                                    SettingActionRow(
+                                        title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
+                                        subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
+                                        actionLabel = stringResource(R.string.settings_action_replay),
+                                        onClick = onReplayAccountSwipeNudge
+                                    )
+                                }
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -999,17 +923,17 @@ fun SettingsScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
+                                    FlowRow(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
                                         seasons.forEach { s ->
                                             val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
                                             ExpressiveTonalButton(
                                                 onClick = { onUpdateForcedSeason(s) },
-                                                modifier = Modifier.weight(1f),
-                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                             ) {
                                                 Text(
                                                     text = when (s) {
@@ -1019,7 +943,8 @@ fun SettingsScreen(
                                                         "NEW_YEAR" -> "New Year"
                                                         else -> s
                                                     },
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
                                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                                     color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1146,20 +1071,83 @@ fun PalettePresetCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val hapticClick = rememberHapticClick(onClick = onClick)
-    val shape = RoundedCornerShape(16.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    val cornerRadius by animateDpAsState(
+        targetValue = when {
+            isPressed -> 10.dp
+            isSelected -> 22.dp
+            else -> 14.dp
+        },
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 750f),
+        label = "paletteCardCorner"
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        label = "paletteCardScale"
+    )
+    val swatchScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 700f),
+        label = "paletteSwatchScale"
+    )
+    val swatchSpacing by animateDpAsState(
+        targetValue = if (isSelected) (-4).dp else (-6).dp,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 700f),
+        label = "paletteSwatchSpacing"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteContainerColor"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteBorderColor"
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 1.5.dp else 1.dp,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteBorderWidth"
+    )
+    val labelColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        label = "paletteLabelColor"
+    )
+    val shape = RoundedCornerShape(cornerRadius)
 
     Surface(
         modifier = Modifier
+            .scale(pressScale)
             .clip(shape)
-            .clickable(onClick = hapticClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = hapticClick
+            )
             .border(
-                width = 1.5.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                width = borderWidth,
+                color = borderColor,
                 shape = shape
             ),
         shape = shape,
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = containerColor,
         tonalElevation = if (isSelected) 2.dp else 0.dp
     ) {
         Row(
@@ -1167,7 +1155,10 @@ fun PalettePresetCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Three overlapping mini swatches
-            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+            Row(
+                modifier = Modifier.scale(swatchScale),
+                horizontalArrangement = Arrangement.spacedBy(swatchSpacing)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(18.dp)
@@ -1197,7 +1188,7 @@ fun PalettePresetCard(
                 text = preset.name,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                color = labelColor
             )
         }
     }
@@ -1210,9 +1201,15 @@ fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+    val toggleWithHaptic: (Boolean) -> Unit = { next ->
+        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+        onCheckedChange(next)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { toggleWithHaptic(!checked) }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1233,7 +1230,7 @@ fun SettingSwitchRow(
         Spacer(modifier = Modifier.width(16.dp))
         ExpressiveSwitch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = toggleWithHaptic
         )
     }
 }
@@ -1243,6 +1240,7 @@ fun SettingActionRow(
     title: String,
     subtitle: String,
     actionLabel: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
@@ -1268,9 +1266,75 @@ fun SettingActionRow(
         Spacer(modifier = Modifier.width(16.dp))
         ExpressiveTonalButton(
             onClick = onClick,
+            enabled = enabled,
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(actionLabel)
+        }
+    }
+}
+
+@Composable
+private fun StorageAndQualityCard(
+    settings: BackupSettings,
+    onStorageSaverToggle: (Boolean) -> Unit,
+    onUseQuotaToggle: (Boolean) -> Unit,
+    onUpdateNotifications: (Boolean) -> Unit,
+    onUpdateAutoSyncAlbums: (Boolean) -> Unit,
+    onOpenAccountSafety: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_storage_saver_title),
+                subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
+                checked = settings.storageSaverQuality,
+                onCheckedChange = onStorageSaverToggle
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_use_quota_title),
+                subtitle = stringResource(R.string.pref_use_quota_desc),
+                checked = settings.useQuota,
+                onCheckedChange = onUseQuotaToggle
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_auto_sync_albums_title),
+                subtitle = stringResource(R.string.pref_auto_sync_albums_desc),
+                checked = settings.autoSyncAlbums,
+                onCheckedChange = onUpdateAutoSyncAlbums
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingSwitchRow(
+                title = stringResource(R.string.pref_upload_notifs_title),
+                subtitle = stringResource(R.string.pref_upload_notifs_desc),
+                checked = settings.notificationsEnabled,
+                onCheckedChange = onUpdateNotifications
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+            SettingActionRow(
+                title = stringResource(R.string.account_safety_title),
+                subtitle = stringResource(R.string.account_safety_subtitle),
+                actionLabel = stringResource(R.string.settings_action_view),
+                onClick = onOpenAccountSafety
+            )
         }
     }
 }
@@ -1332,6 +1396,9 @@ private fun NetworkAndSpeedCard(
             )
 
             // 4. Simultaneous Uploads
+            var sliderThreads by remember(settings.uploadThreads) {
+                mutableFloatStateOf(settings.uploadThreads.toFloat())
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1349,7 +1416,7 @@ private fun NetworkAndSpeedCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = stringResource(R.string.pref_upload_threads_count, settings.uploadThreads),
+                        text = stringResource(R.string.pref_upload_threads_count, sliderThreads.roundToInt()),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1362,8 +1429,9 @@ private fun NetworkAndSpeedCard(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Slider(
-                    value = settings.uploadThreads.toFloat(),
-                    onValueChange = { onUpdateUploadThreads(it.toInt()) },
+                    value = sliderThreads,
+                    onValueChange = { sliderThreads = it },
+                    onValueChangeFinished = { onUpdateUploadThreads(sliderThreads.roundToInt()) },
                     valueRange = 1f..20f,
                     steps = 18
                 )

@@ -19,9 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reiux.lumen.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -35,6 +37,7 @@ fun ColdStartSplashScreen(
     onAnimationFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentOnAnimationFinished = androidx.compose.runtime.rememberUpdatedState(onAnimationFinished)
     val rotation = remember { Animatable(0f) }
     val logoScale = remember { Animatable(0.7f) }
     val titleAlpha = remember { Animatable(0f) }
@@ -124,7 +127,7 @@ fun ColdStartSplashScreen(
         }
 
         delay(280)
-        onAnimationFinished()
+        currentOnAnimationFinished.value()
     }
 
     if (splashAlpha.value > 0.01f) {
@@ -166,7 +169,7 @@ fun ColdStartSplashScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Unlimited Cloud Backup",
+                        text = stringResource(R.string.app_tagline),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                     )

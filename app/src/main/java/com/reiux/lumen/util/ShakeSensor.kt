@@ -12,28 +12,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.sqrt
 
 class ShakeDetector(
-    private val context: Context,
+    context: Context,
     private val onShake: () -> Unit
 ) : SensorEventListener {
 
+    private val appContext = context.applicationContext ?: context
     private var lastShakeTime = 0L
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
-
-        val animatorScale = try {
-            Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1.0f
-            )
-        } catch (_: Exception) {
-            1.0f
-        }
-        if (animatorScale <= 0f) return
+        if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER || event.values.size < 3) return
 
         val x = event.values[0]
         val y = event.values[1]
@@ -49,6 +42,17 @@ class ShakeDetector(
         if (gForce > 2.7f) {
             val now = System.currentTimeMillis()
             if (now - lastShakeTime >= 5000L) {
+                val animatorScale = try {
+                    Settings.Global.getFloat(
+                        appContext.contentResolver,
+                        Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1.0f
+                    )
+                } catch (_: Exception) {
+                    1.0f
+                }
+                if (animatorScale <= 0f) return
+
                 lastShakeTime = now
                 LumenLogger.i("EasterEgg") { "Shake detected (gForce=%.2f)! Playing lamp flicker animation".format(gForce) }
                 onShake()
@@ -62,21 +66,48 @@ class ShakeDetector(
 @Composable
 fun rememberShakeDetector(onShake: () -> Unit): ShakeDetector {
     val context = LocalContext.current
+    val appContext = context.applicationContext ?: context
+    val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnShake by rememberUpdatedState(onShake)
-    val detector = remember(context) { ShakeDetector(context) { currentOnShake() } }
+    val detector = remember(appContext) { ShakeDetector(appContext) { currentOnShake() } }
 
-    DisposableEffect(context) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    DisposableEffect(appContext, lifecycleOwner) {
+        val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        var isRegistered = false
 
-        if (sensorManager != null && accelerometer != null) {
-            sensorManager.registerListener(detector, accelerometer, SensorManager.SENSOR_DELAY_UI)
-            LumenLogger.d("Sensors") { "Registered ShakeDetector accelerometer listener" }
+        fun registerIfNeeded() {
+            if (!isRegistered && sensorManager != null && accelerometer != null) {
+                sensorManager.registerListener(detector, accelerometer, SensorManager.SENSOR_DELAY_UI)
+                isRegistered = true
+                LumenLogger.d("Sensors") { "Registered ShakeDetector accelerometer listener" }
+            }
         }
 
+        fun unregisterIfNeeded() {
+            if (isRegistered) {
+                sensorManager?.unregisterListener(detector)
+                isRegistered = false
+                LumenLogger.d("Sensors") { "Unregistered ShakeDetector accelerometer listener" }
+            }
+        }
+
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            registerIfNeeded()
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> registerIfNeeded()
+                Lifecycle.Event.ON_PAUSE -> unregisterIfNeeded()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
-            sensorManager?.unregisterListener(detector)
-            LumenLogger.d("Sensors") { "Unregistered ShakeDetector accelerometer listener" }
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            unregisterIfNeeded()
         }
     }
 
