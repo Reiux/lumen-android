@@ -25,7 +25,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class UpdateRepository(
-    httpClient: OkHttpClient = OkHttpClient.Builder().build()
+    httpClient: OkHttpClient = defaultNoRedirectClient
 ) {
     private val noRedirectClient: OkHttpClient = if (!httpClient.followRedirects && !httpClient.followSslRedirects) {
         httpClient
@@ -38,7 +38,11 @@ class UpdateRepository(
 
     suspend fun checkForUpdates(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url(LATEST_RELEASE_API_URL).build()
+            val request = Request.Builder()
+                .url(LATEST_RELEASE_API_URL)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "Lumen-Android")
+                .build()
 
             val body = noRedirectClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -50,7 +54,7 @@ class UpdateRepository(
             val release = JSONObject(body)
 
             val rawTag = release.optString("tag_name", "").trim()
-            val latestVersion = rawTag.removePrefix("v").trim()
+            val latestVersion = rawTag.replaceFirst(Regex("^[vV]"), "").trim()
             if (latestVersion.isEmpty() || latestVersion.contains('/') || latestVersion.contains('\\') || latestVersion.contains("..")) {
                 LumenLogger.w("Updater") { "Ignoring malformed release tag_name" }
                 return@withContext null
@@ -93,9 +97,11 @@ class UpdateRepository(
                 isAllowedInitialDownloadUrl(it)
             } ?: ""
 
+            var resolvedSha256: String? = null
             if (selectedAsset != null && downloadUrl.isNotEmpty()) {
                 val assetName = selectedAsset.optString("name", "")
                 val sha256Hex = extractExpectedSha256(selectedAsset, assetName, releaseNotes)
+                resolvedSha256 = sha256Hex
                 if (sha256Hex != null) {
                     expectedSha256ByUrl[downloadUrl] = sha256Hex
                 } else {
@@ -111,7 +117,8 @@ class UpdateRepository(
                 versionName = latestVersion,
                 releaseNotes = releaseNotes,
                 downloadUrl = downloadUrl,
-                isUpdateAvailable = hasUpdate
+                isUpdateAvailable = hasUpdate,
+                expectedSha256 = resolvedSha256
             )
         } catch (e: CancellationException) {
             throw e
@@ -121,12 +128,25 @@ class UpdateRepository(
         }
     }
 
-    fun downloadUpdate(url: String, destFile: File): Flow<Int> = flow {
+    @JvmOverloads
+    fun downloadUpdate(
+        url: String,
+        destFile: File,
+        expectedSha256Override: String? = null
+    ): Flow<Int> = flow {
         if (!isAllowedInitialDownloadUrl(url)) {
             throw SecurityException("Untrusted or insecure download URL: $url")
         }
 
-        val expectedSha256 = expectedSha256ByUrl[url]
+        val expectedSha256 = if (!expectedSha256Override.isNullOrBlank()) {
+            val trimmed = expectedSha256Override.trim()
+            if (!isValidSha256Hex(trimmed)) {
+                throw SecurityException("Invalid expected SHA-256 digest")
+            }
+            trimmed.lowercase(Locale.US)
+        } else {
+            expectedSha256ByUrl[url]
+        }
         val parentDir = destFile.parentFile?.apply { mkdirs() }
         val tempFile = if (parentDir != null) {
             File(parentDir, "${destFile.name}.part")
@@ -232,31 +252,22 @@ class UpdateRepository(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun isNewerVersion(current: String, latest: String): Boolean {
-        try {
-            val currentClean = current.substringBefore("-").replace(Regex("[^0-9.]"), "")
-            val latestClean = latest.substringBefore("-").replace(Regex("[^0-9.]"), "")
-
-            val currentParts = currentClean.split(".").map { it.toIntOrNull() ?: 0 }
-            val latestParts = latestClean.split(".").map { it.toIntOrNull() ?: 0 }
-
-            for (i in 0 until maxOf(currentParts.size, latestParts.size)) {
-                val c = currentParts.getOrElse(i) { 0 }
-                val l = latestParts.getOrElse(i) { 0 }
-                if (l > c) return true
-                if (l < c) return false
-            }
-            return false
-        } catch (e: Exception) {
-            return latest != current
-        }
-    }
+    private fun isNewerVersion(current: String, latest: String): Boolean =
+        Companion.isNewerVersion(current, latest)
 
     companion object {
         /** How often the background worker polls GitHub for a new release. */
         const val BACKGROUND_CHECK_INTERVAL_HOURS = 4L
+        const val UPDATE_DISMISS_SNOOZE_MILLIS = 24L * 60 * 60 * 1000
         const val MAX_RELEASE_JSON_BYTES = 2 * 1024 * 1024
         const val MAX_APK_DOWNLOAD_BYTES = 256L * 1024L * 1024L
+
+        private val defaultNoRedirectClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+        }
 
         private const val LATEST_RELEASE_API_URL = "https://api.github.com/repos/Reiux/lumen-android/releases/latest"
         private const val ALLOWED_RELEASE_PATH_PREFIX = "/Reiux/lumen-android/releases/download/"
@@ -268,6 +279,16 @@ class UpdateRepository(
         )
         private val SHA256_HEX_REGEX = Regex("^[0-9a-fA-F]{64}$")
         private val expectedSha256ByUrl = ConcurrentHashMap<String, String>()
+
+        internal fun isValidSha256Hex(value: String): Boolean = SHA256_HEX_REGEX.matches(value.trim())
+
+        internal fun isValidVersionName(versionName: String): Boolean {
+            val trimmed = versionName.trim()
+            return trimmed.isNotEmpty() &&
+                !trimmed.contains('/') &&
+                !trimmed.contains('\\') &&
+                !trimmed.contains("..")
+        }
 
         internal fun isAllowedInitialDownloadUrl(rawUrl: String): Boolean {
             if (rawUrl.isBlank() || rawUrl.contains("..") || rawUrl.contains('\\')) return false
@@ -319,6 +340,40 @@ class UpdateRepository(
          */
         internal fun shouldNotifyForVersion(latestVersion: String, lastNotifiedVersion: String?): Boolean {
             return latestVersion.isNotBlank() && latestVersion != lastNotifiedVersion
+        }
+
+        internal fun shouldPromptInAppForUpdate(
+            latestVersion: String,
+            dismissedVersion: String?,
+            dismissedAtMillis: Long,
+            nowMillis: Long,
+            snoozeMillis: Long = UPDATE_DISMISS_SNOOZE_MILLIS
+        ): Boolean {
+            if (latestVersion.isBlank()) return false
+            if (dismissedVersion.isNullOrBlank() || dismissedVersion != latestVersion) return true
+            return dismissedAtMillis <= 0L ||
+                dismissedAtMillis > nowMillis ||
+                (nowMillis - dismissedAtMillis) >= snoozeMillis
+        }
+
+        internal fun isNewerVersion(current: String, latest: String): Boolean {
+            try {
+                val currentClean = current.substringBefore("-").replace(Regex("[^0-9.]"), "")
+                val latestClean = latest.substringBefore("-").replace(Regex("[^0-9.]"), "")
+
+                val currentParts = currentClean.split(".").map { it.toIntOrNull() ?: 0 }
+                val latestParts = latestClean.split(".").map { it.toIntOrNull() ?: 0 }
+
+                for (i in 0 until maxOf(currentParts.size, latestParts.size)) {
+                    val c = currentParts.getOrElse(i) { 0 }
+                    val l = latestParts.getOrElse(i) { 0 }
+                    if (l > c) return true
+                    if (l < c) return false
+                }
+                return false
+            } catch (e: Exception) {
+                return latest != current
+            }
         }
 
         internal fun shouldAutoCheck(

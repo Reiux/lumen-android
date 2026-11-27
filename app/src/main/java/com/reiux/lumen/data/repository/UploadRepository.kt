@@ -2,6 +2,7 @@ package com.reiux.lumen.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.AccountBlock
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.AuthFailureKind
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,7 @@ import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 sealed class AlbumSyncState {
@@ -189,6 +192,10 @@ class UploadRepository(
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
 
+    private val pausedFlag = AtomicBoolean(false)
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+
     private val _uploadSpeed = MutableStateFlow<String?>(null)
     val uploadSpeed: StateFlow<String?> = _uploadSpeed.asStateFlow()
 
@@ -289,6 +296,8 @@ class UploadRepository(
         }
 
         if (!hasOtherActiveItems) {
+            pausedFlag.set(false)
+            _isPaused.value = false
             detachAndCancelJobs()
             speedTracker.reset()
             _uploadSpeed.value = null
@@ -368,6 +377,10 @@ class UploadRepository(
             }
         }
 
+        if (shouldResetUploadState) {
+            pausedFlag.set(false)
+            _isPaused.value = false
+        }
         jobsToCancel?.let { (job, ticker) ->
             job?.cancel()
             ticker?.cancel()
@@ -593,14 +606,18 @@ class UploadRepository(
             }
             speedTracker.reset()
             _uploadSpeed.value = null
+            pausedFlag.set(false)
+            _isPaused.value = false
             _isUploading.value = true
 
             speedTickerJob?.cancel()
             val ticker = scope.launch {
                 while (isActive) {
                     delay(500)
-                    if (_isUploading.value) {
+                    if (_isUploading.value && !_isPaused.value) {
                         _uploadSpeed.value = speedTracker.tick()
+                    } else if (_isPaused.value) {
+                        _uploadSpeed.value = null
                     }
                 }
             }
@@ -639,6 +656,8 @@ class UploadRepository(
                     if (relaunchNeeded) {
                         startQueue(account, storageSaver, useQuota)
                     } else if (isCurrent) {
+                        pausedFlag.set(false)
+                        _isPaused.value = false
                         _isUploading.value = false
                         speedTracker.reset()
                         _uploadSpeed.value = null
@@ -671,30 +690,17 @@ class UploadRepository(
     }
 
     fun pauseQueue() {
-        LumenLogger.i("UploadEngine") { "Pausing upload queue (preserving queued items and staged files)" }
-        detachAndCancelJobs()
+        val isActiveJob = synchronized(jobLock) { uploadJob?.isActive == true }
+        if (!_isUploading.value && !isActiveJob) {
+            pausedFlag.set(false)
+            _isPaused.value = false
+            return
+        }
+        LumenLogger.i("UploadEngine") { "Pausing upload queue in-place (preserving active chunks and progress)" }
+        pausedFlag.set(true)
+        _isPaused.value = true
         speedTracker.reset()
         _uploadSpeed.value = null
-        _isUploading.value = false
-        _currentUploadingItem.value = null
-        _conditionNotice.value = null
-
-        synchronized(_queue) {
-            lastProgressEmitAt.clear()
-            _queue.value = _queue.value.map { item ->
-                when (item.status) {
-                    UploadStatus.HASHING,
-                    UploadStatus.CHECKING,
-                    UploadStatus.UPLOADING,
-                    UploadStatus.COMMITTING -> item.copy(
-                        status = UploadStatus.QUEUED,
-                        bytesUploaded = 0L,
-                        error = null
-                    )
-                    else -> item
-                }
-            }
-        }
     }
 
     fun clearCompleted() {
@@ -730,9 +736,29 @@ class UploadRepository(
         LumenLogger.i("UploadEngine") { "Re-queued ${itemIds.size} failed/stopped items for retry" }
     }
 
+    fun resumeQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+        val wasPaused = pausedFlag.getAndSet(false)
+        _isPaused.value = false
+        val isActiveJob = synchronized(jobLock) { uploadJob?.isActive == true }
+        if (isActiveJob) {
+            if (wasPaused) {
+                speedTracker.reset()
+                LumenLogger.i("UploadEngine") { "Resumed paused upload queue in-place" }
+            }
+            return
+        }
+        val hasQueued = synchronized(_queue) {
+            _queue.value.any { it.status == UploadStatus.QUEUED }
+        }
+        if (!hasQueued) return
+        startQueue(account, storageSaver, useQuota)
+    }
+
     fun cancelQueue() {
         val pendingCount = _queue.value.count { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
         LumenLogger.w("UploadEngine") { "Cancelling upload queue ($pendingCount pending items)" }
+        pausedFlag.set(false)
+        _isPaused.value = false
         detachAndCancelJobs()
         speedTracker.reset()
         _uploadSpeed.value = null
@@ -753,6 +779,13 @@ class UploadRepository(
         }
     }
 
+    private suspend fun waitIfPaused() {
+        while (pausedFlag.get()) {
+            currentCoroutineContext().ensureActive()
+            delay(150)
+        }
+    }
+
     private suspend fun processQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean) {
         val concurrency = settingsRepository.settings.value.uploadThreads.coerceIn(1, 20)
         LumenLogger.i("UploadEngine") { "processQueue started with $concurrency concurrent worker threads" }
@@ -761,6 +794,8 @@ class UploadRepository(
             val workers = List(concurrency) { workerIndex ->
                 launch {
                     while (isActive) {
+                        waitIfPaused()
+
                         // Atomically claim the next QUEUED item and immediately mark it HASHING
                         var queueRemaining = 0
                         val nextItem = synchronized(_queue) {
@@ -793,7 +828,7 @@ class UploadRepository(
                             val chargingOk = !isChargingRequired || DeviceConditions.isDeviceCharging(context)
 
                             if (!wifiOk) {
-                                _conditionNotice.value = "Waiting for Wi-Fi"
+                                _conditionNotice.value = context.getString(R.string.condition_waiting_wifi)
                                 if (!conditionLogged) {
                                     LumenLogger.w("UploadEngine", opId = opId) {
                                         "Worker #$workerIndex waiting: Wi-Fi required but device is on cellular or offline"
@@ -804,7 +839,7 @@ class UploadRepository(
                                 continue
                             }
                             if (!chargingOk) {
-                                _conditionNotice.value = "Waiting for charger"
+                                _conditionNotice.value = context.getString(R.string.condition_waiting_charger)
                                 if (!conditionLogged) {
                                     LumenLogger.w("UploadEngine", opId = opId) {
                                         "Worker #$workerIndex waiting: Charging required but device is running on battery"
@@ -934,6 +969,8 @@ class UploadRepository(
                 "Hashing complete algorithm=SHA-1 bytes=${file.length()} durationMs=$hashDuration sha1=${sha1Result.base64}"
             }
 
+            waitIfPaused()
+
             // Step 2: Local cache check (fast, zero network)
             val cachedMediaKey = hashCache.get(accountEmail, sha1Result.base64, file.length())
             if (!cachedMediaKey.isNullOrEmpty()) {
@@ -942,12 +979,15 @@ class UploadRepository(
                     "Local cache HIT mediaKey=$cachedMediaKey reason=already_backed_up totalDurationMs=$totalMs. Skipping upload."
                 }
 
+                waitIfPaused()
                 handleAlbumAssignmentWithTokenRefresh(tokenProvider, accountEmail, albumMatchPath, item, cachedMediaKey, opId)
 
                 updateItemCompleted(item.id, cachedMediaKey, isSkipped = true)
                 return
             }
             LumenLogger.d("UploadEngine", opId = opId) { "Local cache MISS" }
+
+            waitIfPaused()
 
             // Step 3: Remote Google Photos dedup check
             updateItemStatus(item.id, UploadStatus.CHECKING)
@@ -962,6 +1002,7 @@ class UploadRepository(
 
             val remoteCheckStart = System.currentTimeMillis()
             val existingMediaKey = remoteDedupMutex.withLock {
+                waitIfPaused()
                 val elapsed = System.currentTimeMillis() - lastRemoteDedupTime
                 if (elapsed < 60) {
                     delay(60 - elapsed)
@@ -996,6 +1037,7 @@ class UploadRepository(
                     "Remote dedup HIT in Google Photos cloud mediaKey=$existingMediaKey checkDurationMs=$remoteCheckDuration totalDurationMs=$totalMs. Skipping upload."
                 }
 
+                waitIfPaused()
                 handleAlbumAssignmentWithTokenRefresh(tokenProvider, accountEmail, albumMatchPath, item, existingMediaKey, opId)
 
                 hashCache.put(
@@ -1084,6 +1126,8 @@ class UploadRepository(
                         }
                     }
 
+                    waitIfPaused()
+
                     // Stage 4a: Acquire upload token
                     updateItemStatus(item.id, UploadStatus.UPLOADING)
                     LumenLogger.d("UploadEngine", opId = opId) {
@@ -1102,7 +1146,13 @@ class UploadRepository(
                     var lastLoggedPercent = 0
                     val streamStartTime = System.currentTimeMillis()
 
-                    val commitToken = photosClient.uploadFile(uploadToken, file, activeToken, opId) { bytesSent, total ->
+                    val commitToken = photosClient.uploadFile(
+                        uploadToken = uploadToken,
+                        file = file,
+                        bearerToken = activeToken,
+                        opId = opId,
+                        isPaused = { pausedFlag.get() }
+                    ) { bytesSent, total ->
                         val delta = bytesSent - lastSentBytes
                         if (delta > 0) {
                             speedTracker.addBytes(delta)
@@ -1125,6 +1175,8 @@ class UploadRepository(
                             }
                         }
                     }
+
+                    waitIfPaused()
 
                     // Stage 5: Commit upload
                     updateItemStatus(item.id, UploadStatus.COMMITTING)
@@ -1981,8 +2033,11 @@ class UploadRepository(
         // Clean up temporary staging cache copy if this item was staged
         MediaFileReader.cleanupStagedFile(context, file)
 
+        if (!item.allowDeleteAfterBackup) return
+
         val deleteAfterBackupSetting = settingsRepository.settings.value.deleteAfterBackup
-        if (!deleteAfterBackupSetting || !item.allowDeleteAfterBackup) return
+        val configuredFolders = settingsRepository.getAllFolders()
+        if (!deleteAfterBackupSetting && configuredFolders.none { it.enabled && it.deleteAfterBackup }) return
 
         val targetPath = item.originalFilePath ?: item.filePath
         val stagingDir = File(context.cacheDir, "staging")
@@ -1995,7 +2050,7 @@ class UploadRepository(
         if (!isEligibleForPostBackupDeletion(
                 item = item,
                 targetPath = targetPath,
-                configuredFolders = settingsRepository.getAllFolders(),
+                configuredFolders = configuredFolders,
                 deleteAfterBackupSetting = deleteAfterBackupSetting,
                 stagingDirCanonicalPrefix = stagingDirCanonicalPrefix
             )
@@ -2054,7 +2109,7 @@ class UploadRepository(
             deleteAfterBackupSetting: Boolean,
             stagingDirCanonicalPrefix: String
         ): Boolean {
-            if (!deleteAfterBackupSetting || !item.allowDeleteAfterBackup) return false
+            if (!item.allowDeleteAfterBackup) return false
             if (targetPath.isBlank()) return false
 
             val targetFile = File(targetPath)
@@ -2077,6 +2132,7 @@ class UploadRepository(
 
             return configuredFolders.any { folder ->
                 if (!folder.enabled) return@any false
+                if (!deleteAfterBackupSetting && !folder.deleteAfterBackup) return@any false
                 val accountMatches = folder.accountEmail.isNullOrBlank() ||
                     item.accountEmail.isNullOrBlank() ||
                     folder.accountEmail.equals(item.accountEmail, ignoreCase = true)

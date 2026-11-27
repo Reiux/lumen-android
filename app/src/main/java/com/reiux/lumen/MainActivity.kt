@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -12,11 +13,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
@@ -39,30 +40,43 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.reiux.lumen.ui.MainViewModel
-import com.reiux.lumen.ui.components.ColdStartSplashScreen
+import com.reiux.lumen.ui.ShareUploadBatch
 import com.reiux.lumen.ui.components.DevDiagnosticsDialog
+import com.reiux.lumen.ui.components.ExpressiveExtendedFloatingActionButton
 import com.reiux.lumen.ui.components.ExpressiveNavBar
 import com.reiux.lumen.ui.components.ExpressiveNavRail
 import com.reiux.lumen.ui.components.LocalBlurEffectsEnabled
+import com.reiux.lumen.ui.components.MockControlsBottomSheet
 import com.reiux.lumen.ui.components.NavDestination
 import com.reiux.lumen.ui.components.PredictiveBackScreenContainer
 import com.reiux.lumen.ui.screens.AboutScreen
@@ -76,17 +90,9 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.reiux.lumen.ui.screens.SettingsScreen
 import com.reiux.lumen.ui.theme.LumenTheme
 
-data class ShareUploadBatch(
-    val batchId: String = java.util.UUID.randomUUID().toString(),
-    val uris: List<android.net.Uri>
-)
-
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
-    private val incomingShareBatch = mutableStateOf<ShareUploadBatch?>(null)
-    private val queuedShareReplacement = mutableStateOf<ShareUploadBatch?>(null)
-    private val pendingShowUpdate = mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -97,9 +103,33 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
         handleShareIntent(intent)
         if (isValidInternalUpdateIntent(intent)) {
-            pendingShowUpdate.value = true
+            viewModel.setPendingShowUpdate(true)
+        }
+        val extraAction = intent.getStringExtra("action")
+        val token = intent.getStringExtra("internal_token")
+        val hasValidToken = (application as? LumenApplication)
+            ?.settingsRepository
+            ?.isValidInternalLaunchToken(token) == true
+
+        val resolvedShortcut = when {
+            (extraAction == "shortcut_sync" || extraAction == "shortcut_pick") && hasValidToken -> extraAction
+            intent.action == "com.reiux.lumen.action.SHORTCUT_SYNC" -> "shortcut_sync"
+            intent.action == "com.reiux.lumen.action.SHORTCUT_PICK" -> "shortcut_pick"
+            else -> null
+        }
+        if (resolvedShortcut != null) {
+            viewModel.setPendingShortcutAction(resolvedShortcut)
+        } else if (extraAction == "shortcut_sync" || extraAction == "shortcut_pick") {
+            com.reiux.lumen.util.LumenLogger.w("Shortcuts") {
+                "Ignored unauthenticated shortcut launch intent: $extraAction"
+            }
         }
     }
 
@@ -167,17 +197,17 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
             val batch = ShareUploadBatch(uris = safeUris)
-            val active = incomingShareBatch.value
+            val active = viewModel.incomingShareBatch.value
             if (active == null) {
                 com.reiux.lumen.util.LumenLogger.i("ShareTarget") {
                     "Received ${safeUris.size} shared media URIs via share sheet (batch=${batch.batchId})"
                 }
-                incomingShareBatch.value = batch
+                viewModel.setIncomingShareBatch(batch)
             } else if (batch.uris != active.uris) {
                 com.reiux.lumen.util.LumenLogger.w("ShareTarget") {
                     "Queued replacement share batch (${safeUris.size} URIs, batch=${batch.batchId}) while active batch=${active.batchId} is awaiting confirmation"
                 }
-                queuedShareReplacement.value = batch
+                viewModel.setQueuedShareReplacement(batch)
             }
         } else if (extracted.isNotEmpty()) {
             com.reiux.lumen.util.LumenLogger.w("ShareTarget") { "Rejected ${extracted.size} untrusted share URI(s)" }
@@ -187,10 +217,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        handleShareIntent(intent)
-        if (isValidInternalUpdateIntent(intent)) {
-            pendingShowUpdate.value = true
-        }
+        handleIntent(intent)
         val isRestored = savedInstanceState != null
         com.reiux.lumen.util.LumenLogger.i("AppLifecycle") {
             "MainActivity onCreate (SDK ${Build.VERSION.SDK_INT}, processRestore=$isRestored)"
@@ -242,24 +269,93 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val showUpdateRequest by pendingShowUpdate
+            val showUpdateRequest by viewModel.pendingShowUpdate.collectAsState()
+            val incomingShareBatch by viewModel.incomingShareBatch.collectAsState()
+            val queuedShareReplacement by viewModel.queuedShareReplacement.collectAsState()
+            val shortcutAction by viewModel.pendingShortcutAction.collectAsState()
+
             LaunchedEffect(showUpdateRequest) {
                 if (showUpdateRequest) {
-                    pendingShowUpdate.value = false
+                    viewModel.setPendingShowUpdate(false)
                     intent?.removeExtra("action")
                     intent?.removeExtra("internal_token")
-                    viewModel.checkAndShowUpdate(this@MainActivity)
+                    viewModel.openUpdateFromNotification(this@MainActivity)
                 }
             }
 
             LaunchedEffect(Unit) {
                 viewModel.loadAlbums()
-                if (!pendingShowUpdate.value && settings.autoCheckUpdates) {
-                    val lastCheck = viewModel.settingsRepo.getLastUpdateCheckMillis()
-                    val now = System.currentTimeMillis()
-                    if (com.reiux.lumen.data.repository.UpdateRepository.shouldAutoCheck(lastCheck, now)) {
-                        viewModel.settingsRepo.setLastUpdateCheckMillis(now)
-                        viewModel.checkAndShowUpdate(this@MainActivity)
+            }
+
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_START) {
+                        val currentSettings = viewModel.settings.value
+                        if (!viewModel.pendingShowUpdate.value &&
+                            currentSettings.autoCheckUpdates &&
+                            currentSettings.hasCompletedOnboarding &&
+                            viewModel.incomingShareBatch.value == null
+                        ) {
+                            viewModel.checkForForegroundUpdateOnResume(this@MainActivity)
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
+            var wasOnboardingCompleted by remember { mutableStateOf(settings.hasCompletedOnboarding) }
+            LaunchedEffect(settings.hasCompletedOnboarding) {
+                val transitionedToComplete = !wasOnboardingCompleted && settings.hasCompletedOnboarding
+                wasOnboardingCompleted = settings.hasCompletedOnboarding
+                if (transitionedToComplete &&
+                    !viewModel.pendingShowUpdate.value &&
+                    settings.autoCheckUpdates &&
+                    viewModel.incomingShareBatch.value == null
+                ) {
+                    viewModel.checkForForegroundUpdateOnResume(this@MainActivity)
+                }
+                if (settings.hasCompletedOnboarding &&
+                    viewModel.incomingShareBatch.value == null &&
+                    !viewModel.pendingShowUpdate.value &&
+                    viewModel.pendingShortcutAction.value == null
+                ) {
+                    viewModel.checkPostUpdateWhatsNewSheet()
+                }
+            }
+
+            LaunchedEffect(settings.hasCompletedOnboarding) {
+                if (settings.hasCompletedOnboarding &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    !viewModel.hasRequestedMediaLocationUpgrade
+                ) {
+                    val hasAllFilesAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        android.os.Environment.isExternalStorageManager()
+                    if (!hasAllFilesAccess) {
+                        val hasMediaRead = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+                        } else {
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        }
+                        val hasMediaLocation = ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.ACCESS_MEDIA_LOCATION
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (hasMediaRead && !hasMediaLocation) {
+                            viewModel.hasRequestedMediaLocationUpgrade = true
+                            com.reiux.lumen.util.LumenLogger.i("Permissions") {
+                                "Requesting ACCESS_MEDIA_LOCATION to preserve original EXIF/GPS metadata and deduplication"
+                            }
+                            requestPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_MEDIA_LOCATION))
+                        }
                     }
                 }
             }
@@ -268,20 +364,54 @@ class MainActivity : ComponentActivity() {
                 colorPreset = settings.colorPreset,
                 activeSeason = activeSeason
             ) {
+                val motionScheme = MaterialTheme.motionScheme
+                val reducedMotion = remember {
+                    Settings.Global.getFloat(
+                        contentResolver,
+                        Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1f
+                    ) == 0f
+                }
+
                 CompositionLocalProvider(
                     LocalBlurEffectsEnabled provides settings.enableBlurEffects
                 ) {
-                    var showDevDiagnostics by rememberSaveable { mutableStateOf(false) }
+                var showDevDiagnostics by rememberSaveable { mutableStateOf(false) }
                 var showAboutScreen by rememberSaveable { mutableStateOf(false) }
+                var showWhatsNewScreen by rememberSaveable { mutableStateOf(false) }
                 var showAlbumsScreen by rememberSaveable { mutableStateOf(false) }
                 var showDeviceFoldersScreen by rememberSaveable { mutableStateOf(false) }
+                var pendingPickMediaNonce by rememberSaveable { mutableIntStateOf(0) }
                 var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+
+                LaunchedEffect(shortcutAction, settings.hasCompletedOnboarding) {
+                    val action = shortcutAction ?: return@LaunchedEffect
+                    if (!settings.hasCompletedOnboarding) return@LaunchedEffect
+                    viewModel.setPendingShortcutAction(null)
+                    intent?.removeExtra("action")
+                    intent?.removeExtra("internal_token")
+                    if (intent?.action == "com.reiux.lumen.action.SHORTCUT_SYNC" ||
+                        intent?.action == "com.reiux.lumen.action.SHORTCUT_PICK"
+                    ) {
+                        intent?.action = null
+                    }
+                    showAboutScreen = false
+                    showWhatsNewScreen = false
+                    showAlbumsScreen = false
+                    showDeviceFoldersScreen = false
+                    viewModel.selectDestination(NavDestination.BACKUP)
+                    when (action) {
+                        "shortcut_sync" -> viewModel.startBackup()
+                        "shortcut_pick" -> pendingPickMediaNonce++
+                    }
+                }
 
                 val selectedDestination by viewModel.selectedDestination.collectAsState()
                 val selectedAccount by viewModel.selectedAccount.collectAsState()
                 val accounts by viewModel.accounts.collectAsState()
                 val remoteAlbums by viewModel.remoteAlbums.collectAsState()
                 val isUploading by viewModel.isUploading.collectAsState()
+                val isPaused by viewModel.isPaused.collectAsState()
                 val currentItem by viewModel.currentUploadingItem.collectAsState()
                 val queue by viewModel.queue.collectAsState()
                 val completedCount by viewModel.completedCount.collectAsState()
@@ -301,6 +431,16 @@ class MainActivity : ComponentActivity() {
                 val albumSyncState by viewModel.albumSyncState.collectAsState()
                 val mockSwipeNudgeNonce by viewModel.mockSwipeNudgeNonce.collectAsState()
                 val scrollToAccountForNudge by viewModel.scrollToAccountForNudge.collectAsState()
+                val readWhatsNewIds by viewModel.readWhatsNewIds.collectAsState()
+                val hasUnreadWhatsNew = remember(readWhatsNewIds) {
+                    com.reiux.lumen.data.model.WhatsNewCatalog.hasUnread(readWhatsNewIds)
+                }
+                val showPostUpdateWhatsNewSheet by viewModel.showPostUpdateWhatsNewSheet.collectAsState()
+                val mockForcedPunTitle by viewModel.mockForcedPunTitle.collectAsState()
+                val mockEmptyStateSubtitle by viewModel.mockEmptyStateSubtitle.collectAsState()
+                val mockLightsOffNonce by viewModel.mockLightsOffNonce.collectAsState()
+                val mockShakeFlickerNonce by viewModel.mockShakeFlickerNonce.collectAsState()
+                var showMockControlsSheet by rememberSaveable { mutableStateOf(false) }
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -317,6 +457,18 @@ class MainActivity : ComponentActivity() {
                 val isDarkNow = isSystemInDarkTheme()
                 var lastDarkState by remember { mutableStateOf(viewModel.getLastSeenDarkState()) }
                 var playLightsOffAnim by remember { mutableStateOf(false) }
+
+                LaunchedEffect(mockLightsOffNonce) {
+                    if (mockLightsOffNonce > 0) {
+                        playLightsOffAnim = true
+                    }
+                }
+
+                LaunchedEffect(isMockMode) {
+                    if (!isMockMode) {
+                        showMockControlsSheet = false
+                    }
+                }
 
                 LaunchedEffect(isDarkNow) {
                     val prevDark = lastDarkState
@@ -346,6 +498,7 @@ class MainActivity : ComponentActivity() {
                             accounts = accounts,
                             remoteAlbums = remoteAlbums,
                             isUploading = isUploading,
+                            isPaused = isPaused,
                             isOnline = isOnline,
                             simulateOffline = simulateOffline,
                             simulateMissingAlbum = simulateMissingAlbum,
@@ -369,13 +522,27 @@ class MainActivity : ComponentActivity() {
                             onExitMockMode = { viewModel.setMockMode(false) },
                             onStartBackup = { viewModel.startBackup() },
                             onUploadFiles = { uris -> viewModel.uploadSelectedUris(uris, this@MainActivity) },
-                            onUploadFilesWithAlbumTarget = { uris, mode, customName, customNickname -> viewModel.uploadSelectedUris(uris, this@MainActivity, mode, customName, customNickname) },
+                            onUploadFilesWithAlbumTarget = { uris, targetAccount, mode, customName, customNickname ->
+                                viewModel.uploadSelectedUris(
+                                    uris = uris,
+                                    context = this@MainActivity,
+                                    targetAlbumMode = mode,
+                                    customAlbumName = customName,
+                                    customAlbumNickname = customNickname,
+                                    targetAccount = targetAccount
+                                )
+                            },
                             onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                             onOpenAlbumManager = { showAlbumsScreen = true },
+                            onPauseBackup = { viewModel.pauseBackup() },
+                            onResumeBackup = { viewModel.resumeBackup() },
                             onCancelBackup = { viewModel.cancelBackup() },
                             onCancelScan = { viewModel.cancelScan() },
                             onClearCompleted = { viewModel.clearCompleted() },
                             onRetryFailed = { viewModel.retryFailedUploads() },
+                            onRetryItem = { viewModel.retrySingleItem(it) },
+                            triggerPickMediaNonce = pendingPickMediaNonce,
+                            onConsumedPickMedia = { pendingPickMediaNonce = 0 },
                             onSelectAccount = { viewModel.selectAccount(it.email) },
                             shouldShowAccountSwipeNudge = !settings.hasShownAccountSwipeNudge,
                             accountSwipeNudgeNonce = mockSwipeNudgeNonce,
@@ -400,6 +567,9 @@ class MainActivity : ComponentActivity() {
                             onSimulateUpdateAvailable = { viewModel.simulateUpdateAvailable() },
                             onSimulateBlock = { kind -> viewModel.simulateMockBlock(kind) },
                             onClearBlock = { viewModel.clearMockBlock() },
+                            externalForcedPunTitle = mockForcedPunTitle,
+                            externalEmptyStateSubtitle = mockEmptyStateSubtitle,
+                            externalShakeFlickerNonce = mockShakeFlickerNonce,
                             isAlbumsScreenOpen = showAlbumsScreen,
                             modifier = screenModifier
                         )
@@ -458,10 +628,6 @@ class MainActivity : ComponentActivity() {
                             isShowcaseMode = isShowcaseMode,
                             onToggleMockMode = { viewModel.toggleMockMode() },
                             onToggleShowcaseMode = { viewModel.toggleShowcaseMode() },
-                            onReplayAccountSwipeNudge = {
-                                viewModel.replayMockAccountSwipeNudge()
-                                viewModel.selectDestination(NavDestination.BACKUP)
-                            },
                             onUpdateAutoBackup = { viewModel.updateAutoBackup(it) },
                             onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
                             onUpdateChargingOnly = { viewModel.updateChargingOnly(it) },
@@ -475,13 +641,13 @@ class MainActivity : ComponentActivity() {
                             onUpdateAutoSyncAlbums = { viewModel.updateAutoSyncAlbums(it) },
                             onUpdateAutoCheckUpdates = { viewModel.setAutoCheckUpdates(it) },
                             onToggleDeveloperMode = { viewModel.updateDeveloperMode(it) },
-                            onUpdateForcedSeason = { viewModel.updateForcedSeason(it) },
                             onReplayOnboarding = { viewModel.setHasCompletedOnboarding(false) },
                             onOpenDevDiagnostics = {
                                 com.reiux.lumen.util.LumenLogger.i("UI", "Opening Dev Diagnostics")
                                 showDevDiagnostics = true
                             },
                             onOpenAlbumManager = { showAlbumsScreen = true },
+                            hasUnreadWhatsNew = hasUnreadWhatsNew,
                             onNavigateToAbout = {
                                 com.reiux.lumen.util.LumenLogger.i("Navigation", "Navigating to About screen")
                                 showAboutScreen = true
@@ -494,18 +660,78 @@ class MainActivity : ComponentActivity() {
                 val showUpdateSheet by viewModel.showUpdateSheet.collectAsState()
                 val updateInfo by viewModel.updateInfo.collectAsState()
                 val updateDownloadProgress by viewModel.updateDownloadProgress.collectAsState()
+                val updateDownloadError by viewModel.updateDownloadError.collectAsState()
 
                 if (showUpdateSheet && updateInfo != null) {
                     com.reiux.lumen.ui.components.UpdateBottomSheet(
                         updateInfo = updateInfo!!,
                         isDownloading = updateDownloadProgress >= 0,
                         downloadProgress = updateDownloadProgress,
+                        downloadError = updateDownloadError,
                         onDismiss = { viewModel.dismissUpdateSheet() },
                         onUpdateClick = { viewModel.startUpdateDownload(this@MainActivity) }
                     )
                 }
 
+                if (showPostUpdateWhatsNewSheet && !showUpdateSheet && incomingShareBatch == null) {
+                    val latestRelease = com.reiux.lumen.data.model.WhatsNewCatalog.releases.firstOrNull()
+                    if (latestRelease != null) {
+                        com.reiux.lumen.ui.screens.PostUpdateWhatsNewSheet(
+                            release = latestRelease,
+                            onSeeAll = {
+                                viewModel.dismissPostUpdateWhatsNewSheet()
+                                showAboutScreen = true
+                                showWhatsNewScreen = true
+                            },
+                            onDismiss = { viewModel.dismissPostUpdateWhatsNewSheet() }
+                        )
+                    }
+                }
+
                 Box(modifier = Modifier.fillMaxSize()) {
+                    val tabTransitionSpec: AnimatedContentTransitionScope<NavDestination>.() -> ContentTransform = {
+                        if (reducedMotion) {
+                            fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) togetherWith
+                                fadeOut(animationSpec = motionScheme.defaultEffectsSpec())
+                        } else {
+                            val isForward = NavDestination.entries.indexOf(targetState) >
+                                NavDestination.entries.indexOf(initialState)
+                            (fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { fullWidth ->
+                                    val offset = (fullWidth * 0.08f).toInt()
+                                    if (isForward) offset else -offset
+                                } +
+                                scaleIn(
+                                    initialScale = 0.96f,
+                                    animationSpec = motionScheme.defaultSpatialSpec()
+                                ))
+                                .togetherWith(
+                                    fadeOut(animationSpec = motionScheme.defaultEffectsSpec()) +
+                                        slideOutHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { fullWidth ->
+                                            val offset = (fullWidth * 0.08f).toInt()
+                                            if (isForward) -offset else offset
+                                        }
+                                )
+                        }
+                    }
+
+                    val overlayEnter = if (reducedMotion) {
+                        fadeIn(animationSpec = motionScheme.defaultEffectsSpec())
+                    } else {
+                        slideInHorizontally(
+                            initialOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = motionScheme.defaultSpatialSpec()
+                        ) + fadeIn(animationSpec = motionScheme.defaultEffectsSpec())
+                    }
+                    val overlayExit = if (reducedMotion) {
+                        fadeOut(animationSpec = motionScheme.defaultEffectsSpec())
+                    } else {
+                        slideOutHorizontally(
+                            targetOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = motionScheme.defaultSpatialSpec()
+                        ) + fadeOut(animationSpec = motionScheme.defaultEffectsSpec())
+                    }
+
                     val underlyingBlurDp = if (settings.enableBlurEffects) (predictiveBackProgress * 20).dp else 0.dp
                     Box(
                         modifier = Modifier
@@ -518,7 +744,18 @@ class MainActivity : ComponentActivity() {
                     ) {
                         AnimatedContent(
                             targetState = settings.hasCompletedOnboarding,
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            transitionSpec = {
+                                val enter = if (reducedMotion) {
+                                    fadeIn(animationSpec = motionScheme.slowEffectsSpec())
+                                } else {
+                                    fadeIn(animationSpec = motionScheme.slowEffectsSpec()) +
+                                        scaleIn(
+                                            initialScale = 0.96f,
+                                            animationSpec = motionScheme.slowSpatialSpec()
+                                        )
+                                }
+                                enter togetherWith fadeOut(animationSpec = motionScheme.slowEffectsSpec())
+                            },
                             label = "onboardingMainTransition"
                         ) { hasCompleted ->
                             if (!hasCompleted) {
@@ -544,14 +781,7 @@ class MainActivity : ComponentActivity() {
                                     ) { innerPadding ->
                                         AnimatedContent(
                                             targetState = selectedDestination,
-                                            transitionSpec = {
-                                                (fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)) +
-                                                        scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)))
-                                                    .togetherWith(
-                                                        fadeOut(animationSpec = spring(stiffness = 1600f)) +
-                                                                scaleOut(targetScale = 0.97f, animationSpec = spring(stiffness = 1600f))
-                                                    )
-                                            },
+                                            transitionSpec = tabTransitionSpec,
                                             label = "screenTransition",
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -584,14 +814,7 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             AnimatedContent(
                                                 targetState = selectedDestination,
-                                                transitionSpec = {
-                                                    (fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)) +
-                                                            scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)))
-                                                        .togetherWith(
-                                                            fadeOut(animationSpec = spring(stiffness = 1600f)) +
-                                                                    scaleOut(targetScale = 0.97f, animationSpec = spring(stiffness = 1600f))
-                                                        )
-                                                },
+                                                transitionSpec = tabTransitionSpec,
                                                 label = "screenTransition",
                                                 modifier = Modifier.fillMaxSize()
                                             ) { destination ->
@@ -628,17 +851,11 @@ class MainActivity : ComponentActivity() {
 
                     AnimatedVisibility(
                         visible = showAboutScreen,
-                        enter = slideInHorizontally(
-                            initialOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeIn(animationSpec = tween(200)),
-                        exit = slideOutHorizontally(
-                            targetOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeOut(animationSpec = tween(180))
+                        enter = overlayEnter,
+                        exit = overlayExit
                     ) {
                         PredictiveBackScreenContainer(
-                            enabled = showAboutScreen,
+                            enabled = showAboutScreen && !showWhatsNewScreen,
                             onProgressUpdate = { predictiveBackProgress = it },
                             onDismiss = {
                                 predictiveBackProgress = 0f
@@ -657,13 +874,42 @@ class MainActivity : ComponentActivity() {
                                 onUnlockPrismTheme = { viewModel.unlockPrismTheme() },
                                 onUnlockMatrixTheme = { viewModel.unlockMatrixTheme() },
                                 forcedSeason = settings.forcedSeason,
+                                hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                onOpenWhatsNew = { showWhatsNewScreen = true },
                                 onCheckForUpdates = {
-                                    viewModel.checkAndShowUpdate(this@MainActivity, forceShow = false) {
-                                        android.widget.Toast.makeText(this@MainActivity, getString(R.string.update_up_to_date), android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    val appCtx = applicationContext
+                                    viewModel.checkAndShowUpdate(
+                                        context = appCtx,
+                                        forceShow = false,
+                                        onUpToDate = {
+                                            android.widget.Toast.makeText(
+                                                appCtx,
+                                                appCtx.getString(R.string.update_up_to_date),
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        onError = {
+                                            android.widget.Toast.makeText(
+                                                appCtx,
+                                                appCtx.getString(R.string.update_check_failed),
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    )
                                 },
                                 onForceUpdateDialog = {
-                                    viewModel.checkAndShowUpdate(this@MainActivity, forceShow = true) {}
+                                    val appCtx = applicationContext
+                                    viewModel.checkAndShowUpdate(
+                                        context = appCtx,
+                                        forceShow = true,
+                                        onError = {
+                                            android.widget.Toast.makeText(
+                                                appCtx,
+                                                appCtx.getString(R.string.update_check_failed),
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    )
                                 },
                                 onNavigateBack = {
                                     predictiveBackProgress = 0f
@@ -675,15 +921,36 @@ class MainActivity : ComponentActivity() {
                     }
 
                     AnimatedVisibility(
+                        visible = showWhatsNewScreen,
+                        enter = overlayEnter,
+                        exit = overlayExit
+                    ) {
+                        PredictiveBackScreenContainer(
+                            enabled = showWhatsNewScreen,
+                            onProgressUpdate = { predictiveBackProgress = it },
+                            onDismiss = {
+                                predictiveBackProgress = 0f
+                                com.reiux.lumen.util.LumenLogger.i("Navigation") { "Predictive back: Exiting What's New screen" }
+                                showWhatsNewScreen = false
+                            }
+                        ) {
+                            com.reiux.lumen.ui.screens.WhatsNewScreen(
+                                readItemIds = readWhatsNewIds,
+                                onMarkItemRead = { viewModel.markWhatsNewItemRead(it) },
+                                onMarkAllRead = { viewModel.markAllWhatsNewRead() },
+                                onNavigateBack = {
+                                    predictiveBackProgress = 0f
+                                    com.reiux.lumen.util.LumenLogger.i("Navigation") { "Back button: Exiting What's New screen" }
+                                    showWhatsNewScreen = false
+                                }
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(
                         visible = showDeviceFoldersScreen,
-                        enter = slideInHorizontally(
-                            initialOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeIn(animationSpec = spring(dampingRatio = 1f, stiffness = 800f)),
-                        exit = slideOutHorizontally(
-                            targetOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeOut(animationSpec = spring(dampingRatio = 1f, stiffness = 800f))
+                        enter = overlayEnter,
+                        exit = overlayExit
                     ) {
                         PredictiveBackScreenContainer(
                             enabled = showDeviceFoldersScreen && !showAlbumsScreen,
@@ -723,14 +990,8 @@ class MainActivity : ComponentActivity() {
 
                     AnimatedVisibility(
                         visible = showAlbumsScreen,
-                        enter = slideInHorizontally(
-                            initialOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeIn(animationSpec = tween(200)),
-                        exit = slideOutHorizontally(
-                            targetOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
-                        ) + fadeOut(animationSpec = tween(180))
+                        enter = overlayEnter,
+                        exit = overlayExit
                     ) {
                         PredictiveBackScreenContainer(
                             enabled = showAlbumsScreen,
@@ -764,10 +1025,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    val activeBatch by incomingShareBatch
-                    val pendingReplacement by queuedShareReplacement
+                    val activeBatch = incomingShareBatch
+                    val pendingReplacement = queuedShareReplacement
                     if (activeBatch != null && !showAlbumsScreen) {
-                        val batch = activeBatch!!
+                        val batch = activeBatch
                         androidx.compose.runtime.key(batch.batchId) {
                             var resolvedFileNames by remember(batch.batchId) { mutableStateOf<List<String>>(emptyList()) }
                             LaunchedEffect(batch.batchId) {
@@ -797,14 +1058,14 @@ class MainActivity : ComponentActivity() {
                                 pendingReplacementCount = pendingReplacement?.uris?.size ?: 0,
                                 pendingReplacementNames = replacementFileNames,
                                 onSwitchToReplacement = {
-                                    val nextBatch = queuedShareReplacement.value
+                                    val nextBatch = viewModel.queuedShareReplacement.value
                                     if (nextBatch != null) {
-                                        incomingShareBatch.value = nextBatch
-                                        queuedShareReplacement.value = null
+                                        viewModel.setIncomingShareBatch(nextBatch)
+                                        viewModel.setQueuedShareReplacement(null)
                                     }
                                 },
                                 onDiscardReplacement = {
-                                    queuedShareReplacement.value = null
+                                    viewModel.setQueuedShareReplacement(null)
                                 },
                                 accounts = accounts,
                                 activeAccount = selectedAccount,
@@ -813,7 +1074,7 @@ class MainActivity : ComponentActivity() {
                                 onAddAlbum = { key, nick, email -> viewModel.addAlbum(key, nick, email) },
                                 onOpenAlbumManager = { showAlbumsScreen = true },
                                 onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
-                                    if (incomingShareBatch.value?.batchId == batch.batchId) {
+                                    if (viewModel.incomingShareBatch.value?.batchId == batch.batchId) {
                                         viewModel.uploadSelectedUris(
                                             uris = batch.uris,
                                             context = this@MainActivity,
@@ -822,18 +1083,139 @@ class MainActivity : ComponentActivity() {
                                             customAlbumNickname = customNickname,
                                             targetAccount = targetAccount
                                         )
-                                        incomingShareBatch.value = null
-                                        queuedShareReplacement.value = null
+                                        viewModel.setIncomingShareBatch(null)
+                                        viewModel.setQueuedShareReplacement(null)
                                         intent?.action = null
                                     }
                                 },
                                 onDismiss = {
-                                    incomingShareBatch.value = null
-                                    queuedShareReplacement.value = null
+                                    viewModel.setIncomingShareBatch(null)
+                                    viewModel.setQueuedShareReplacement(null)
                                     intent?.action = null
                                 }
                             )
                         }
+                    }
+
+                    AnimatedVisibility(
+                        visible = isMockMode &&
+                            settings.hasCompletedOnboarding &&
+                            !showAboutScreen &&
+                            !showWhatsNewScreen &&
+                            !showDeviceFoldersScreen &&
+                            !showAlbumsScreen,
+                        enter = if (reducedMotion) {
+                            fadeIn(animationSpec = motionScheme.defaultEffectsSpec())
+                        } else {
+                            fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                                scaleIn(
+                                    initialScale = 0.85f,
+                                    animationSpec = motionScheme.defaultSpatialSpec()
+                                )
+                        },
+                        exit = if (reducedMotion) {
+                            fadeOut(animationSpec = motionScheme.defaultEffectsSpec())
+                        } else {
+                            fadeOut(animationSpec = motionScheme.defaultEffectsSpec()) +
+                                scaleOut(
+                                    targetScale = 0.85f,
+                                    animationSpec = motionScheme.defaultSpatialSpec()
+                                )
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(
+                                    WindowInsetsSides.End + WindowInsetsSides.Bottom
+                                )
+                            )
+                            .padding(end = 16.dp, bottom = if (!useNavRail) 96.dp else 20.dp)
+                    ) {
+                        ExpressiveExtendedFloatingActionButton(
+                            onClick = { showMockControlsSheet = true },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.BugReport,
+                                    contentDescription = "Mock Controls"
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = "Mock",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+
+                    if (showMockControlsSheet && isMockMode) {
+                        MockControlsBottomSheet(
+                            simulateOffline = simulateOffline,
+                            simulateMissingAlbum = simulateMissingAlbum,
+                            forcedSeason = settings.forcedSeason,
+                            onDismiss = { showMockControlsSheet = false },
+                            onExitMockMode = { viewModel.setMockMode(false) },
+                            onToggleMockCondition = { viewModel.toggleMockConditionNotice() },
+                            onAddMockFiles = { viewModel.addMockUploadItems() },
+                            onToggleSimulateOffline = { viewModel.toggleSimulateOffline() },
+                            onToggleSimulateMissingAlbum = { viewModel.toggleSimulateMissingAlbum() },
+                            onSimulateLargeScan = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.simulateMockLargeScan()
+                            },
+                            onSimulateBlock = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.simulateMockBlock(it)
+                            },
+                            onClearBlock = { viewModel.clearMockBlock() },
+                            onSimulateUpdateAvailable = { viewModel.simulateUpdateAvailable() },
+                            onPreviewWhatsNewSheet = { viewModel.previewPostUpdateWhatsNewSheet() },
+                            onReplayAccountSwipeNudge = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.replayMockAccountSwipeNudge()
+                            },
+                            onTriggerCompletionPun = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.triggerMockCompletionPun()
+                            },
+                            onCycleEmptyStateVariant = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.cycleMockEmptySubtitle()
+                            },
+                            onSelectSeason = { viewModel.updateForcedSeason(it) },
+                            onTriggerSeasonalGreeting = {
+                                com.reiux.lumen.util.EasterEggsManager.checkSeasonalGreeting(
+                                    this@MainActivity,
+                                    activeSeason,
+                                    force = true
+                                )
+                            },
+                            onTriggerLightsOff = { viewModel.triggerMockLightsOff() },
+                            onTriggerBoldChoice = {
+                                com.reiux.lumen.util.EasterEggsManager.triggerLightsOffBoldChoice(
+                                    this@MainActivity,
+                                    force = true
+                                )
+                            },
+                            onTriggerShakeFlicker = {
+                                viewModel.selectDestination(NavDestination.BACKUP)
+                                viewModel.triggerMockShakeFlicker()
+                            },
+                            onTriggerLateNight = {
+                                com.reiux.lumen.util.EasterEggsManager.checkLateNightToast(
+                                    this@MainActivity,
+                                    force = true
+                                )
+                            },
+                            onTriggerMilestone = {
+                                com.reiux.lumen.util.EasterEggsManager.checkMilestoneToast(
+                                    this@MainActivity,
+                                    it
+                                )
+                            }
+                        )
                     }
 
                     com.reiux.lumen.ui.components.FallingSnowOverlay(enabled = activeSeason == com.reiux.lumen.util.Season.CHRISTMAS)
@@ -905,6 +1287,12 @@ class MainActivity : ComponentActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_MEDIA_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.ACCESS_MEDIA_LOCATION)
         }
 
         if (permissions.isNotEmpty()) {

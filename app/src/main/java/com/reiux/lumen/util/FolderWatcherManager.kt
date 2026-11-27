@@ -264,6 +264,7 @@ class FolderWatcherManager(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                 )
+                val highestMediaStoreId by lazy { queryHighestMediaStoreId(context.contentResolver) }
 
                 for ((accountEmail, accFolders) in foldersByAccount) {
                     if (accountEmail.isNullOrBlank()) continue
@@ -337,6 +338,9 @@ class FolderWatcherManager(
                             }
                         }
 
+                        if (lastWatermarkId == 0L && maxId == 0L && firstNotReadyId == null) {
+                            maxId = highestMediaStoreId
+                        }
                         val newWatermark = computeSafeWatermark(lastWatermarkId, maxId, firstNotReadyId)
                         if (newWatermark > lastWatermarkId) {
                             settingsRepository.saveFolderWatermarkId(accountEmail, folder.path, newWatermark)
@@ -487,6 +491,50 @@ class FolderWatcherManager(
         internal fun computeSafeWatermark(lastWatermark: Long, maxSeenId: Long, firstNotReadyId: Long?): Long {
             val capped = if (firstNotReadyId == null) maxSeenId else minOf(maxSeenId, firstNotReadyId - 1)
             return maxOf(lastWatermark, capped)
+        }
+
+        /**
+         * Returns the highest MediaStore `_ID` across Images and Video so an initial empty 24h
+         * scan can establish a baseline watermark instead of repeatedly re-scanning 24h windows.
+         */
+        internal fun queryHighestMediaStoreId(resolver: android.content.ContentResolver): Long {
+            var highestId = 0L
+            val queryUris = listOf(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            )
+            val projection = arrayOf(MediaStore.MediaColumns._ID)
+            for (uri in queryUris) {
+                try {
+                    val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val args = android.os.Bundle().apply {
+                            putString(
+                                android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
+                                "${MediaStore.MediaColumns._ID} DESC"
+                            )
+                            putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, 1)
+                        }
+                        resolver.query(uri, projection, args, null)
+                    } else {
+                        resolver.query(
+                            uri,
+                            projection,
+                            null,
+                            null,
+                            "${MediaStore.MediaColumns._ID} DESC"
+                        )
+                    }
+                    cursor?.use { c ->
+                        if (c.moveToFirst()) {
+                            val id = c.getLong(0)
+                            if (id > highestId) {
+                                highestId = id
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return highestId
         }
 
         private const val PRIMARY_STORAGE_ROOT = "/storage/emulated/0"

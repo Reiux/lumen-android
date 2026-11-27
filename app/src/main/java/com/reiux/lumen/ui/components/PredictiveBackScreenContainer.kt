@@ -16,9 +16,12 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialogDefaults
@@ -359,6 +362,7 @@ class PredictiveBackDialogState(
 /**
  * Drop-in replacement for Material 3 AlertDialog with original M3E spring entrance and Predictive Back support.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PredictiveAlertDialog(
     onDismissRequest: () -> Unit,
@@ -400,6 +404,8 @@ fun PredictiveAlertDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(vertical = 12.dp)
                 .pointerInput(properties.dismissOnClickOutside) {
                     if (properties.dismissOnClickOutside) {
                         detectTapGestures {
@@ -468,9 +474,10 @@ fun PredictiveAlertDialog(
                     Box(modifier = Modifier.align(Alignment.End)) {
                         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
                             ProvideTextStyle(value = MaterialTheme.typography.labelLarge) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     dismissButton?.invoke()
                                     confirmButton()
@@ -498,7 +505,11 @@ fun PredictiveBackDialogContainer(
     val currentOnDismiss by rememberUpdatedState(onDismiss)
     val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = 0.88f) }
 
-    Box(modifier = modifier.then(state.modifier)) {
+    Box(
+        modifier = modifier
+            .safeDrawingPadding()
+            .then(state.modifier)
+    ) {
         DialogBlurEffect()
         state.Handler(enabled = dismissOnBackPress)
         content()

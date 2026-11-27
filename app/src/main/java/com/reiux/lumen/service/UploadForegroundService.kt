@@ -7,8 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.reiux.lumen.LumenApplication
 import com.reiux.lumen.MainActivity
@@ -30,7 +33,9 @@ class UploadForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var observeJob: Job? = null
     private var lastNotificationTime = 0L
+    private var lastIsPaused: Boolean? = null
     private var notificationDismissed = false
+    private var lastStartId: Int = -1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,13 +49,46 @@ class UploadForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         isRunning = true
         notificationDismissed = false
-        LumenLogger.d("Service") { "UploadForegroundService onStartCommand flags=$flags startId=$startId" }
+        LumenLogger.d("Service") { "UploadForegroundService onStartCommand flags=$flags startId=$startId action=${intent?.action}" }
         ensureNotificationChannel(this)
         // Always call startForeground() to satisfy Android O+'s per-startForegroundService() token
         // contract, while preserving live progress instead of resetting to "Initializing...".
         promoteToForeground(buildCurrentOrInitialNotification())
+
+        val app = applicationContext as? LumenApplication
+        when (intent?.action) {
+            ACTION_PAUSE_BACKUP -> {
+                LumenLogger.i("Service") { "Handling notification action: ACTION_PAUSE_BACKUP" }
+                app?.uploadRepository?.pauseQueue()
+            }
+            ACTION_RESUME_BACKUP -> {
+                LumenLogger.i("Service") { "Handling notification action: ACTION_RESUME_BACKUP" }
+                if (app != null) {
+                    val account = app.accountRepository.selectedAccount.value
+                        ?: app.accountRepository.accounts.value.firstOrNull()
+                    if (account != null) {
+                        val settings = app.settingsRepository.settings.value
+                        app.uploadRepository.resumeQueue(
+                            account = account,
+                            storageSaver = settings.storageSaverQuality,
+                            useQuota = settings.useQuota
+                        )
+                    } else {
+                        LumenLogger.w("Service") { "ACTION_RESUME_BACKUP ignored: no active account" }
+                    }
+                }
+            }
+            ACTION_CANCEL_BACKUP -> {
+                LumenLogger.i("Service") { "Handling notification action: ACTION_CANCEL_BACKUP" }
+                app?.uploadRepository?.cancelQueue()
+                stopForegroundAndDismiss(reason = "action_cancel")
+                return START_NOT_STICKY
+            }
+        }
+
         startObserving()
         return START_NOT_STICKY
     }
@@ -66,7 +104,8 @@ class UploadForegroundService : Service() {
                 currentItem = uploadRepo.currentUploadingItem.value,
                 queue = uploadRepo.queue.value,
                 conditionNotice = uploadRepo.conditionNotice.value,
-                uploadSpeed = uploadRepo.uploadSpeed.value
+                uploadSpeed = uploadRepo.uploadSpeed.value,
+                isPaused = uploadRepo.isPaused.value
             )
         } else {
             createInitialNotification(this)
@@ -123,35 +162,50 @@ class UploadForegroundService : Service() {
         // startForegroundService() contract before stopForeground()/stopSelf() is called.
         observeJob = scope.launch {
             combine(
-                combine(uploadRepo.isUploading, uploadRepo.currentUploadingItem, uploadRepo.queue) { u, c, q -> Triple(u, c, q) },
-                combine(uploadRepo.conditionNotice, settingsRepo.settings, uploadRepo.uploadSpeed) { cn, s, sp -> Triple(cn, s, sp) }
-            ) { (isUploading, currentItem, queue), (conditionNotice, settings, uploadSpeed) ->
+                combine(
+                    uploadRepo.isUploading,
+                    uploadRepo.isPaused,
+                    uploadRepo.currentUploadingItem,
+                    uploadRepo.queue
+                ) { u, p, c, q -> QueueSnapshot(u, p, c, q) },
+                combine(
+                    uploadRepo.conditionNotice,
+                    settingsRepo.settings,
+                    uploadRepo.uploadSpeed
+                ) { cn, s, sp -> ConfigSnapshot(cn, s.notificationsEnabled, sp) }
+            ) { queueSnap, configSnap ->
                 NotificationState(
-                    isUploading = isUploading,
-                    currentItem = currentItem,
-                    queue = queue,
-                    conditionNotice = conditionNotice,
-                    notificationsEnabled = settings.notificationsEnabled,
-                    uploadSpeed = uploadSpeed
+                    isUploading = queueSnap.isUploading,
+                    isPaused = queueSnap.isPaused,
+                    currentItem = queueSnap.currentItem,
+                    queue = queueSnap.queue,
+                    conditionNotice = configSnap.conditionNotice,
+                    notificationsEnabled = configSnap.notificationsEnabled,
+                    uploadSpeed = configSnap.uploadSpeed
                 )
             }.collectLatest { state ->
                 if (!state.isUploading) {
+                    lastIsPaused = null
                     stopForegroundAndDismiss(reason = "uploads_completed")
                 } else if (!state.notificationsEnabled) {
+                    lastIsPaused = null
                     stopForegroundAndDismiss(reason = "notifications_disabled")
                 } else {
                     val now = System.currentTimeMillis()
-                    val isByteTransfer = state.currentItem?.status == UploadStatus.UPLOADING
+                    val isByteTransfer = !state.isPaused && state.currentItem?.status == UploadStatus.UPLOADING
+                    val pauseStateChanged = state.isPaused != lastIsPaused
                     // Throttle notification updates during rapid byte streaming to avoid OS throttling
-                    if (now - lastNotificationTime >= 250L || !isByteTransfer) {
+                    if (pauseStateChanged || now - lastNotificationTime >= 250L || !isByteTransfer) {
                         lastNotificationTime = now
+                        lastIsPaused = state.isPaused
                         val notification = createProgressNotification(
                             context = this@UploadForegroundService,
                             isUploading = state.isUploading,
                             currentItem = state.currentItem,
                             queue = state.queue,
                             conditionNotice = state.conditionNotice,
-                            uploadSpeed = state.uploadSpeed
+                            uploadSpeed = state.uploadSpeed,
+                            isPaused = state.isPaused
                         )
                         try {
                             val manager = getSystemService(NotificationManager::class.java)
@@ -190,12 +244,31 @@ class UploadForegroundService : Service() {
         isRunning = false
         LumenLogger.d("Service") { "UploadForegroundService stopping foreground and dismissing notification reason='$reason'" }
         observeJob?.cancel()
+        observeJob = null
         dismissNotificationInternal(reason)
-        stopSelf()
+        if (lastStartId != -1) {
+            stopSelfResult(lastStartId)
+        } else {
+            stopSelf()
+        }
     }
+
+    private data class QueueSnapshot(
+        val isUploading: Boolean,
+        val isPaused: Boolean,
+        val currentItem: UploadItem?,
+        val queue: List<UploadItem>
+    )
+
+    private data class ConfigSnapshot(
+        val conditionNotice: String?,
+        val notificationsEnabled: Boolean,
+        val uploadSpeed: String?
+    )
 
     private data class NotificationState(
         val isUploading: Boolean,
+        val isPaused: Boolean,
         val currentItem: UploadItem?,
         val queue: List<UploadItem>,
         val conditionNotice: String?,
@@ -206,6 +279,14 @@ class UploadForegroundService : Service() {
     companion object {
         const val CHANNEL_ID = "lumen_backup_channel"
         const val NOTIFICATION_ID = 1001
+        const val ACTION_PAUSE_BACKUP = "com.reiux.lumen.action.PAUSE_BACKUP"
+        const val ACTION_RESUME_BACKUP = "com.reiux.lumen.action.RESUME_BACKUP"
+        const val ACTION_CANCEL_BACKUP = "com.reiux.lumen.action.CANCEL_BACKUP"
+        private const val REQUEST_CODE_OPEN = 0
+        private const val REQUEST_CODE_PAUSE = 101
+        private const val REQUEST_CODE_CANCEL = 102
+        private const val REQUEST_CODE_RESUME = 103
+
         @Volatile
         var isRunning: Boolean = false
             private set
@@ -226,19 +307,47 @@ class UploadForegroundService : Service() {
             }
         }
 
-        fun createInitialNotification(context: Context): Notification {
+        private fun createOpenAppPendingIntent(context: Context): PendingIntent {
             val intent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-            val pendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+            return PendingIntent.getActivity(
+                context,
+                REQUEST_CODE_OPEN,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        private fun createServiceActionPendingIntent(
+            context: Context,
+            action: String,
+            requestCode: Int
+        ): PendingIntent {
+            val intent = Intent(context, UploadForegroundService::class.java).apply {
+                this.action = action
+            }
+            return PendingIntent.getService(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        fun createInitialNotification(context: Context): Notification {
+            val pendingIntent = createOpenAppPendingIntent(context)
 
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(com.reiux.lumen.R.string.notif_backup_title))
                 .setContentText(context.getString(com.reiux.lumen.R.string.notif_init))
-                .setSmallIcon(android.R.drawable.stat_sys_upload)
+                .setSmallIcon(com.reiux.lumen.R.drawable.ic_launcher_monochrome)
                 .setContentIntent(pendingIntent)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .setSilent(true)
                 .build()
         }
@@ -249,7 +358,8 @@ class UploadForegroundService : Service() {
             currentItem: UploadItem?,
             queue: List<UploadItem>,
             conditionNotice: String?,
-            uploadSpeed: String? = null
+            uploadSpeed: String? = null,
+            isPaused: Boolean = false
         ): Notification {
             val totalInQueue = queue.size
             val processedInQueue = queue.count {
@@ -278,7 +388,22 @@ class UploadForegroundService : Service() {
             val progressCurrent: Int
             var progressIndeterminate = false
 
-            if (conditionNotice != null) {
+            if (isPaused) {
+                title = context.getString(com.reiux.lumen.R.string.backup_paused_title)
+                val remaining = (totalInQueue - processedInQueue).coerceAtLeast(0)
+                text = if (conditionNotice != null) {
+                    context.getString(com.reiux.lumen.R.string.notif_paused, conditionNotice)
+                } else {
+                    context.getString(com.reiux.lumen.R.string.backup_paused_subtitle, remaining)
+                }
+                subText = if (totalInQueue > 0) "$fileIndex/$totalInQueue" else null
+                progressCurrent = if (totalInQueue <= 1 && currentItem?.status == UploadStatus.UPLOADING) {
+                    filePercent
+                } else {
+                    batchPercentByCount
+                }
+                progressIndeterminate = false
+            } else if (conditionNotice != null) {
                 title = context.getString(com.reiux.lumen.R.string.notif_backup_title)
                 text = context.getString(com.reiux.lumen.R.string.notif_paused, conditionNotice)
                 subText = if (totalInQueue > 0) "$fileIndex/$totalInQueue" else null
@@ -327,20 +452,55 @@ class UploadForegroundService : Service() {
                 }
             }
 
-            val openIntent = PendingIntent.getActivity(
-                context,
-                0,
-                Intent(context, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
+            val openIntent = createOpenAppPendingIntent(context)
+            val publicText = if (isPaused) {
+                context.getString(com.reiux.lumen.R.string.backup_paused_title)
+            } else if (conditionNotice != null) {
+                context.getString(com.reiux.lumen.R.string.notif_paused, conditionNotice)
+            } else {
+                context.getString(com.reiux.lumen.R.string.notif_preparing)
+            }
+
+            val livePillText = if (isPaused || conditionNotice != null) {
+                context.getString(com.reiux.lumen.R.string.notif_paused_chip)
+            } else if (isUploading && batchPercentByCount >= 0) {
+                "$batchPercentByCount%"
+            } else {
+                context.getString(com.reiux.lumen.R.string.notif_backup_chip)
+            }
+
+            val primaryActionIntent = if (isPaused) {
+                createServiceActionPendingIntent(context, ACTION_RESUME_BACKUP, REQUEST_CODE_RESUME)
+            } else if (isUploading || conditionNotice != null) {
+                createServiceActionPendingIntent(context, ACTION_PAUSE_BACKUP, REQUEST_CODE_PAUSE)
+            } else null
+            val cancelPendingIntent = if (isPaused || isUploading || conditionNotice != null) {
+                createServiceActionPendingIntent(context, ACTION_CANCEL_BACKUP, REQUEST_CODE_CANCEL)
+            } else null
+
+            if (Build.VERSION.SDK_INT >= 36) {
+                return createApi36ProgressNotification(
+                    context = context,
+                    title = title,
+                    text = text,
+                    subText = subText,
+                    publicText = publicText,
+                    chipText = livePillText,
+                    isUploading = isUploading,
+                    progressMax = progressMax,
+                    progressCurrent = progressCurrent,
+                    progressIndeterminate = progressIndeterminate,
+                    openIntent = openIntent,
+                    primaryActionIntent = primaryActionIntent,
+                    cancelPendingIntent = cancelPendingIntent,
+                    isPaused = isPaused
+                )
+            }
 
             // Redacted lock-screen notification without private filenames
             val publicNotification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(com.reiux.lumen.R.string.notif_backup_title))
-                .setContentText(
-                    if (conditionNotice != null) context.getString(com.reiux.lumen.R.string.notif_paused, conditionNotice)
-                    else context.getString(com.reiux.lumen.R.string.notif_preparing)
-                )
+                .setContentText(publicText)
                 .setSmallIcon(com.reiux.lumen.R.drawable.ic_launcher_monochrome)
                 .setCategory(NotificationCompat.CATEGORY_PROGRESS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -358,41 +518,119 @@ class UploadForegroundService : Service() {
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .setContentIntent(openIntent)
 
-            val livePillText = if (conditionNotice != null) {
-                context.getString(com.reiux.lumen.R.string.notif_paused_chip)
-            } else {
-                if (isUploading && batchPercentByCount >= 0) "$batchPercentByCount%" else "Backup"
+            if (!subText.isNullOrEmpty()) {
+                builder.setSubText(subText)
             }
 
-            applyLiveUpdatePromotionsStatic(builder, livePillText)
+            if (isUploading) {
+                builder.setProgress(progressMax, progressCurrent, if (isPaused) false else progressIndeterminate)
+            }
+
+            if (primaryActionIntent != null) {
+                val actionIcon = if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+                val actionLabel = context.getString(
+                    if (isPaused) com.reiux.lumen.R.string.btn_resume_backup else com.reiux.lumen.R.string.notif_action_pause
+                )
+                builder.addAction(
+                    actionIcon,
+                    actionLabel,
+                    primaryActionIntent
+                )
+            }
+            if (cancelPendingIntent != null) {
+                builder.addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    context.getString(com.reiux.lumen.R.string.notif_action_cancel),
+                    cancelPendingIntent
+                )
+            }
+
+            return builder.build()
+        }
+
+        @RequiresApi(36)
+        private fun createApi36ProgressNotification(
+            context: Context,
+            title: String,
+            text: String,
+            subText: String?,
+            publicText: String,
+            chipText: String,
+            isUploading: Boolean,
+            progressMax: Int,
+            progressCurrent: Int,
+            progressIndeterminate: Boolean,
+            openIntent: PendingIntent,
+            primaryActionIntent: PendingIntent?,
+            cancelPendingIntent: PendingIntent?,
+            isPaused: Boolean = false
+        ): Notification {
+            val publicNotification = Notification.Builder(context, CHANNEL_ID)
+                .setContentTitle(context.getString(com.reiux.lumen.R.string.notif_backup_title))
+                .setContentText(publicText)
+                .setSmallIcon(com.reiux.lumen.R.drawable.ic_launcher_monochrome)
+                .setCategory(Notification.CATEGORY_PROGRESS)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .build()
+
+            val builder = Notification.Builder(context, CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(com.reiux.lumen.R.drawable.ic_launcher_monochrome)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_PROGRESS)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setPublicVersion(publicNotification)
+                .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+                .setContentIntent(openIntent)
+                .setShortCriticalText(chipText)
+                .addExtras(Bundle().apply {
+                    putBoolean("android.requestPromotedOngoing", true)
+                })
+
+            if (Build.VERSION.SDK_INT >= 37) {
+                builder.setRequestPromotedOngoing(true)
+            } else {
+                try {
+                    builder.javaClass
+                        .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+                        .invoke(builder, true)
+                } catch (_: Exception) {}
+            }
 
             if (!subText.isNullOrEmpty()) {
                 builder.setSubText(subText)
             }
 
             if (isUploading) {
-                builder.setProgress(progressMax, progressCurrent, progressIndeterminate)
+                builder.setProgress(progressMax, progressCurrent, if (isPaused) false else progressIndeterminate)
+            }
+
+            if (primaryActionIntent != null) {
+                val actionIcon = if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+                val actionLabel = context.getString(
+                    if (isPaused) com.reiux.lumen.R.string.btn_resume_backup else com.reiux.lumen.R.string.notif_action_pause
+                )
+                builder.addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(context, actionIcon),
+                        actionLabel,
+                        primaryActionIntent
+                    ).build()
+                )
+            }
+            if (cancelPendingIntent != null) {
+                builder.addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
+                        context.getString(com.reiux.lumen.R.string.notif_action_cancel),
+                        cancelPendingIntent
+                    ).build()
+                )
             }
 
             return builder.build()
-        }
-
-        private fun applyLiveUpdatePromotionsStatic(builder: NotificationCompat.Builder, chipText: String) {
-            val extras = android.os.Bundle().apply {
-                putBoolean("android.requestPromotedOngoing", true)
-                putString("android.shortCriticalText", chipText)
-            }
-            builder.addExtras(extras)
-
-            try {
-                val methodPromote = builder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                methodPromote.invoke(builder, true)
-            } catch (_: Exception) {}
-
-            try {
-                val methodChip = builder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
-                methodChip.invoke(builder, chipText)
-            } catch (_: Exception) {}
         }
 
         private fun formatBytesStatic(bytes: Long): String {

@@ -1,21 +1,20 @@
 package com.reiux.lumen.ui.screens
 
 import android.content.Context
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -41,8 +41,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import com.reiux.lumen.R
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,16 +54,11 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -79,10 +72,11 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -90,12 +84,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.reiux.lumen.data.model.BackupSettings
 import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveAlertDialog
-import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveDialogCallout
 import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
+import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.animatedGroupedCardShape
+import com.reiux.lumen.ui.components.groupPositionOf
+import com.reiux.lumen.ui.components.groupedCardShape
 import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.rememberHapticClick
 import com.reiux.lumen.ui.theme.ColorPreset
@@ -120,17 +117,16 @@ fun SettingsScreen(
     isShowcaseMode: Boolean = false,
     onToggleMockMode: () -> Unit = {},
     onToggleShowcaseMode: () -> Unit = {},
-    onReplayAccountSwipeNudge: () -> Unit = {},
     onUpdateAutoBackup: (Boolean) -> Unit = {},
     onUpdateAutoCheckUpdates: (Boolean) -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDevDiagnostics: () -> Unit = {},
     onOpenAlbumManager: () -> Unit = {},
     onToggleDeveloperMode: (Boolean) -> Unit = {},
-    onUpdateForcedSeason: (String) -> Unit = {},
     onUpdateDeleteAfterBackup: (Boolean) -> Unit = {},
     onUpdateEnableBlurEffects: (Boolean) -> Unit = {},
     onUpdateAutoSyncAlbums: (Boolean) -> Unit = {},
+    hasUnreadWhatsNew: Boolean = false,
     onNavigateToAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -179,8 +175,7 @@ fun SettingsScreen(
                 Text(
                     text = stringResource(R.string.dialog_delete_after_backup_bullets),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
-                    lineHeight = 18.sp
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                 )
             }
             Text(
@@ -282,9 +277,6 @@ fun SettingsScreen(
         }
     }
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
-
     val activeSeason = remember(settings.forcedSeason) {
         com.reiux.lumen.util.EasterEggsManager.resolveActiveSeason(settings.forcedSeason)
     }
@@ -307,531 +299,229 @@ fun SettingsScreen(
         )
     }
 
-    if (isWideLayout) {
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Pane: Theme Accent Palette & Developer Tools
-            val leftScrollState = rememberScrollState()
-            Column(
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWideLayout = maxWidth >= 640.dp
+
+        if (isWideLayout) {
+            Row(
                 modifier = Modifier
-                    .weight(0.48f)
-                    .fillMaxHeight()
-                    .verticalScroll(leftScrollState),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.settings_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Text(
-                    text = stringResource(R.string.settings_theme_palette),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                // Left Pane: Theme Accent Palette & Developer Tools
+                val leftScrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .weight(0.48f)
+                        .fillMaxHeight()
+                        .verticalScroll(leftScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
-                            text = stringResource(R.string.settings_accent_palette),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            text = stringResource(R.string.settings_title),
+                            style = MaterialTheme.typography.headlineMediumEmphasized,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = stringResource(R.string.settings_accent_palette_desc),
-                            style = MaterialTheme.typography.bodySmall,
+                            text = stringResource(R.string.settings_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            presetsToDisplay.forEach { preset ->
-                                val isSelected = settings.colorPreset.equals(preset.name, ignoreCase = true)
-                                PalettePresetCard(
-                                    preset = preset,
-                                    isSelected = isSelected,
-                                    onClick = { onUpdateColorPreset(preset.name) }
-                                )
-                            }
-                        }
                     }
-                }
 
-                if (settings.developerModeUnlocked) {
                     Text(
-                        text = stringResource(R.string.settings_dev_tools),
+                        text = stringResource(R.string.settings_theme_palette),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        if (com.reiux.lumen.BuildConfig.DEBUG) {
-                            SettingSwitchRow(
-                                title = stringResource(R.string.settings_blur_dialogs_title),
-                                subtitle = stringResource(R.string.settings_blur_dialogs_desc),
-                                checked = settings.enableBlurEffects,
-                                onCheckedChange = onUpdateEnableBlurEffects
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingSwitchRow(
-                                title = stringResource(R.string.settings_showcase_mode_title),
-                                subtitle = stringResource(R.string.settings_showcase_mode_desc),
-                                checked = isShowcaseMode,
-                                onCheckedChange = { onToggleShowcaseMode() }
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingSwitchRow(
-                                title = stringResource(R.string.settings_mock_sim_title),
-                                subtitle = stringResource(R.string.settings_mock_sim_desc),
-                                checked = isMockMode,
-                                onCheckedChange = { onToggleMockMode() }
-                            )
-                            if (isMockMode) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
-                                SettingActionRow(
-                                    title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
-                                    subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
-                                    actionLabel = stringResource(R.string.settings_action_replay),
-                                    onClick = onReplayAccountSwipeNudge
-                                )
-                            }
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                        }
-                        SettingActionRow(
-                            title = stringResource(R.string.settings_run_diagnostics_title),
-                            subtitle = stringResource(R.string.settings_run_diagnostics_desc),
-                            actionLabel = stringResource(R.string.settings_action_run),
-                            onClick = onOpenDevDiagnostics
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        SettingActionRow(
-                            title = stringResource(R.string.settings_replay_walkthrough_title),
-                            subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
-                            actionLabel = stringResource(R.string.settings_action_replay),
-                            onClick = onReplayOnboarding
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        if (com.reiux.lumen.BuildConfig.DEBUG) {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                Text(
-                                    text = stringResource(R.string.settings_force_season_title),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = stringResource(R.string.settings_force_season_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
-                                    seasons.forEach { s ->
-                                        val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
-                                        ExpressiveTonalButton(
-                                            onClick = { onUpdateForcedSeason(s) },
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = when (s) {
-                                                    "NONE" -> "None"
-                                                    "HALLOWEEN" -> "Halloween"
-                                                    "CHRISTMAS" -> "Christmas"
-                                                    "NEW_YEAR" -> "New Year"
-                                                    else -> s
-                                                },
-                                                fontSize = 11.sp,
-                                                maxLines = 1,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                        }
-                            SettingActionRow(
-                                title = stringResource(R.string.settings_disable_dev_mode_title),
-                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
-                                actionLabel = stringResource(R.string.settings_action_lock),
-                                onClick = { onToggleDeveloperMode(false) }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Right Pane: Network & Concurrency, Storage & Quality, About
-            val rightScrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .weight(0.52f)
-                    .fillMaxHeight()
-                    .verticalScroll(rightScrollState),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.settings_network_speed_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                NetworkAndSpeedCard(
-                    settings = settings,
-                    isBatteryOptimizedExempt = isBatteryOptimizedExempt,
-                    context = context,
-                    onUpdateAutoBackup = onUpdateAutoBackup,
-                    onUpdateWifiOnly = onUpdateWifiOnly,
-                    onUpdateChargingOnly = onUpdateChargingOnly,
-                    onUpdateUploadThreads = onUpdateUploadThreads,
-                    onShowOemGuide = { showOemGuideDialog = true }
-                )
-
-                Text(
-                    text = stringResource(R.string.settings_storage_quality_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                StorageAndQualityCard(
-                    settings = settings,
-                    onStorageSaverToggle = handleStorageSaverToggle,
-                    onUseQuotaToggle = handleUseQuotaToggle,
-                    onUpdateNotifications = onUpdateNotifications,
-                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
-                    onOpenAccountSafety = { showAccountSafetyDialog = true }
-                )
-
-                Text(
-                    text = stringResource(R.string.settings_storage_cleanup_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_delete_after_backup_title),
-                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
-                            checked = settings.deleteAfterBackup,
-                            onCheckedChange = { next ->
-                                if (next) {
-                                    showConfirmDeleteAfterBackupDialog = true
-                                } else {
-                                    onUpdateDeleteAfterBackup(false)
-                                }
-                            }
-                        )
-                    }
-                }
-
-                Text(
-                    text = stringResource(R.string.settings_updates_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_auto_check_updates_title),
-                            subtitle = stringResource(R.string.pref_auto_check_updates_subtitle),
-                            checked = settings.autoCheckUpdates,
-                            onCheckedChange = onUpdateAutoCheckUpdates
-                        )
-                    }
-                }
-
-                Text(
-                    text = stringResource(R.string.settings_about_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                val appVersionName = remember(context) {
-                    try {
-                        context.packageManager.getPackageInfo(context.packageName, 0)?.versionName ?: "1.0.0"
-                    } catch (_: Exception) {
-                        "1.0.0"
-                    }
-                }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .clickable { onNavigateToAbout() },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = groupedCardShape(GroupPosition.Single),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            DynamicLumenIcon(size = 38.dp)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = stringResource(R.string.settings_about_lumen),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "v$appVersionName",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = stringResource(R.string.settings_accent_palette),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_accent_palette_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.settings_about_lumen),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
-    } else {
-        // Single Column Layout
-        LazyColumn(
-            state = listState,
-            modifier = modifier
-                .fillMaxSize()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 720.dp)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.settings_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                            Spacer(modifier = Modifier.height(14.dp))
 
-            // Appearance & Palette Style Presets
-            item {
-                Text(
-                    text = stringResource(R.string.settings_theme_palette),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.settings_accent_palette),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_accent_palette_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            presetsToDisplay.forEach { preset ->
-                                val isSelected = settings.colorPreset.equals(preset.name, ignoreCase = true)
-                                PalettePresetCard(
-                                    preset = preset,
-                                    isSelected = isSelected,
-                                    onClick = { onUpdateColorPreset(preset.name) }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Network & Threads
-            item {
-                Text(
-                    text = stringResource(R.string.settings_network_speed_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                NetworkAndSpeedCard(
-                    settings = settings,
-                    isBatteryOptimizedExempt = isBatteryOptimizedExempt,
-                    context = context,
-                    onUpdateAutoBackup = onUpdateAutoBackup,
-                    onUpdateWifiOnly = onUpdateWifiOnly,
-                    onUpdateChargingOnly = onUpdateChargingOnly,
-                    onUpdateUploadThreads = onUpdateUploadThreads,
-                    onShowOemGuide = { showOemGuideDialog = true }
-                )
-            }
-
-            // Upload Quality & Quota
-            item {
-                Text(
-                    text = stringResource(R.string.settings_storage_quality_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                StorageAndQualityCard(
-                    settings = settings,
-                    onStorageSaverToggle = handleStorageSaverToggle,
-                    onUseQuotaToggle = handleUseQuotaToggle,
-                    onUpdateNotifications = onUpdateNotifications,
-                    onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
-                    onOpenAccountSafety = { showAccountSafetyDialog = true }
-                )
-            }
-
-            // Storage Cleanup (Red section)
-            item {
-                Text(
-                    text = stringResource(R.string.settings_storage_cleanup_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_delete_after_backup_title),
-                            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
-                            checked = settings.deleteAfterBackup,
-                            onCheckedChange = { next ->
-                                if (next) {
-                                    showConfirmDeleteAfterBackupDialog = true
-                                } else {
-                                    onUpdateDeleteAfterBackup(false)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                presetsToDisplay.forEach { preset ->
+                                    val isSelected = settings.colorPreset.equals(preset.name, ignoreCase = true)
+                                    PalettePresetCard(
+                                        preset = preset,
+                                        isSelected = isSelected,
+                                        onClick = { onUpdateColorPreset(preset.name) }
+                                    )
                                 }
                             }
+                        }
+                    }
+
+                    if (settings.developerModeUnlocked) {
+                        Text(
+                            text = stringResource(R.string.settings_dev_tools),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        DevToolsGroup(
+                            settings = settings,
+                            isShowcaseMode = isShowcaseMode,
+                            isMockMode = isMockMode,
+                            onUpdateEnableBlurEffects = onUpdateEnableBlurEffects,
+                            onToggleShowcaseMode = onToggleShowcaseMode,
+                            onToggleMockMode = onToggleMockMode,
+                            onOpenDevDiagnostics = onOpenDevDiagnostics,
+                            onReplayOnboarding = onReplayOnboarding,
+                            onToggleDeveloperMode = onToggleDeveloperMode
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // Right Pane: Network & Concurrency, Storage & Quality, About
+                val rightScrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .weight(0.52f)
+                        .fillMaxHeight()
+                        .verticalScroll(rightScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.settings_network_speed_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    NetworkAndSpeedCard(
+                        settings = settings,
+                        isBatteryOptimizedExempt = isBatteryOptimizedExempt,
+                        context = context,
+                        onUpdateAutoBackup = onUpdateAutoBackup,
+                        onUpdateWifiOnly = onUpdateWifiOnly,
+                        onUpdateChargingOnly = onUpdateChargingOnly,
+                        onUpdateUploadThreads = onUpdateUploadThreads,
+                        onShowOemGuide = { showOemGuideDialog = true }
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_storage_quality_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    StorageAndQualityCard(
+                        settings = settings,
+                        onStorageSaverToggle = handleStorageSaverToggle,
+                        onUseQuotaToggle = handleUseQuotaToggle,
+                        onUpdateNotifications = onUpdateNotifications,
+                        onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                        onOpenAccountSafety = { showAccountSafetyDialog = true }
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_storage_cleanup_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+
+                    StorageCleanupGroup(
+                        deleteAfterBackup = settings.deleteAfterBackup,
+                        onCheckedChange = { next ->
+                            if (next) {
+                                showConfirmDeleteAfterBackupDialog = true
+                            } else {
+                                onUpdateDeleteAfterBackup(false)
+                            }
+                        }
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_updates_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    UpdatesGroup(
+                        autoCheckUpdates = settings.autoCheckUpdates,
+                        onCheckedChange = onUpdateAutoCheckUpdates
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_about_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    AboutEntryCard(
+                        appVersionName = com.reiux.lumen.BuildConfig.VERSION_NAME,
+                        hasUnreadWhatsNew = hasUnreadWhatsNew,
+                        onClick = onNavigateToAbout
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+        } else {
+            // Single Column Layout
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.settings_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-            // Developer & Testing Tools (only shown when developer mode is unlocked)
-            if (settings.developerModeUnlocked) {
+                // Appearance & Palette Style Presets
                 item {
                     Text(
-                        text = stringResource(R.string.settings_dev_tools),
+                        text = stringResource(R.string.settings_theme_palette),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -841,221 +531,169 @@ fun SettingsScreen(
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        shape = groupedCardShape(GroupPosition.Single),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            if (com.reiux.lumen.BuildConfig.DEBUG) {
-                                SettingSwitchRow(
-                                    title = stringResource(R.string.settings_blur_dialogs_title),
-                                    subtitle = stringResource(R.string.settings_blur_dialogs_desc),
-                                    checked = settings.enableBlurEffects,
-                                    onCheckedChange = onUpdateEnableBlurEffects
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
-                                SettingSwitchRow(
-                                    title = stringResource(R.string.settings_showcase_mode_title),
-                                    subtitle = stringResource(R.string.settings_showcase_mode_desc),
-                                    checked = isShowcaseMode,
-                                    onCheckedChange = { onToggleShowcaseMode() }
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
-                                SettingSwitchRow(
-                                    title = stringResource(R.string.settings_mock_sim_title),
-                                    subtitle = stringResource(R.string.settings_mock_sim_desc),
-                                    checked = isMockMode,
-                                    onCheckedChange = { onToggleMockMode() }
-                                )
-                                if (isMockMode) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                    )
-                                    SettingActionRow(
-                                        title = stringResource(R.string.settings_mock_replay_swipe_nudge_title),
-                                        subtitle = stringResource(R.string.settings_mock_replay_swipe_nudge_desc),
-                                        actionLabel = stringResource(R.string.settings_action_replay),
-                                        onClick = onReplayAccountSwipeNudge
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = stringResource(R.string.settings_accent_palette),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_accent_palette_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                presetsToDisplay.forEach { preset ->
+                                    val isSelected = settings.colorPreset.equals(preset.name, ignoreCase = true)
+                                    PalettePresetCard(
+                                        preset = preset,
+                                        isSelected = isSelected,
+                                        onClick = { onUpdateColorPreset(preset.name) }
                                     )
                                 }
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
                             }
-                            SettingActionRow(
-                                title = stringResource(R.string.settings_run_diagnostics_title),
-                                subtitle = stringResource(R.string.settings_run_diagnostics_desc),
-                                actionLabel = stringResource(R.string.settings_action_run),
-                                onClick = onOpenDevDiagnostics
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            SettingActionRow(
-                                title = stringResource(R.string.settings_replay_walkthrough_title),
-                                subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
-                                actionLabel = stringResource(R.string.settings_action_replay),
-                                onClick = onReplayOnboarding
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                            if (com.reiux.lumen.BuildConfig.DEBUG) {
-                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                    Text(
-                                        text = stringResource(R.string.settings_force_season_title),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.settings_force_season_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    FlowRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        val seasons = listOf("NONE", "HALLOWEEN", "CHRISTMAS", "NEW_YEAR")
-                                        seasons.forEach { s ->
-                                            val isSel = settings.forcedSeason.equals(s, ignoreCase = true)
-                                            ExpressiveTonalButton(
-                                                onClick = { onUpdateForcedSeason(s) },
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                            ) {
-                                                Text(
-                                                    text = when (s) {
-                                                        "NONE" -> "None"
-                                                        "HALLOWEEN" -> "Halloween"
-                                                        "CHRISTMAS" -> "Christmas"
-                                                        "NEW_YEAR" -> "New Year"
-                                                        else -> s
-                                                    },
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                            SettingActionRow(
-                                title = stringResource(R.string.settings_disable_dev_mode_title),
-                                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
-                                actionLabel = stringResource(R.string.settings_action_lock),
-                                onClick = { onToggleDeveloperMode(false) }
-                            )
                         }
                     }
                 }
-            }
 
-            // Updates
-            item {
-                Text(
-                    text = stringResource(R.string.settings_updates_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        SettingSwitchRow(
-                            title = stringResource(R.string.pref_auto_check_updates_title),
-                            subtitle = stringResource(R.string.pref_auto_check_updates_subtitle),
-                            checked = settings.autoCheckUpdates,
-                            onCheckedChange = onUpdateAutoCheckUpdates
-                        )
-                    }
-                }
-            }
-
-            // About
-            item {
-                Text(
-                    text = stringResource(R.string.settings_about_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                val appVersionName = remember(context) {
-                    try {
-                        context.packageManager.getPackageInfo(context.packageName, 0)?.versionName ?: "1.0.0"
-                    } catch (_: Exception) {
-                        "1.0.0"
-                    }
+                // Network & Threads
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_network_speed_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .clickable { onNavigateToAbout() },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            DynamicLumenIcon(size = 38.dp)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = stringResource(R.string.settings_about_lumen),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "v$appVersionName",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                item {
+                    NetworkAndSpeedCard(
+                        settings = settings,
+                        isBatteryOptimizedExempt = isBatteryOptimizedExempt,
+                        context = context,
+                        onUpdateAutoBackup = onUpdateAutoBackup,
+                        onUpdateWifiOnly = onUpdateWifiOnly,
+                        onUpdateChargingOnly = onUpdateChargingOnly,
+                        onUpdateUploadThreads = onUpdateUploadThreads,
+                        onShowOemGuide = { showOemGuideDialog = true }
+                    )
+                }
+
+                // Upload Quality & Quota
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_storage_quality_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                item {
+                    StorageAndQualityCard(
+                        settings = settings,
+                        onStorageSaverToggle = handleStorageSaverToggle,
+                        onUseQuotaToggle = handleUseQuotaToggle,
+                        onUpdateNotifications = onUpdateNotifications,
+                        onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                        onOpenAccountSafety = { showAccountSafetyDialog = true }
+                    )
+                }
+
+                // Storage Cleanup (Red section)
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_storage_cleanup_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                item {
+                    StorageCleanupGroup(
+                        deleteAfterBackup = settings.deleteAfterBackup,
+                        onCheckedChange = { next ->
+                            if (next) {
+                                showConfirmDeleteAfterBackupDialog = true
+                            } else {
+                                onUpdateDeleteAfterBackup(false)
                             }
                         }
+                    )
+                }
 
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.settings_about_lumen),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
+                // Developer & Testing Tools (only shown when developer mode is unlocked)
+                if (settings.developerModeUnlocked) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.settings_dev_tools),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    item {
+                        DevToolsGroup(
+                            settings = settings,
+                            isShowcaseMode = isShowcaseMode,
+                            isMockMode = isMockMode,
+                            onUpdateEnableBlurEffects = onUpdateEnableBlurEffects,
+                            onToggleShowcaseMode = onToggleShowcaseMode,
+                            onToggleMockMode = onToggleMockMode,
+                            onOpenDevDiagnostics = onOpenDevDiagnostics,
+                            onReplayOnboarding = onReplayOnboarding,
+                            onToggleDeveloperMode = onToggleDeveloperMode
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+
+                // Updates
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_updates_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                item {
+                    UpdatesGroup(
+                        autoCheckUpdates = settings.autoCheckUpdates,
+                        onCheckedChange = onUpdateAutoCheckUpdates
+                    )
+                }
+
+                // About
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_about_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                item {
+                    AboutEntryCard(
+                        appVersionName = com.reiux.lumen.BuildConfig.VERSION_NAME,
+                        hasUnreadWhatsNew = hasUnreadWhatsNew,
+                        onClick = onNavigateToAbout
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
     }
@@ -1086,48 +724,52 @@ fun PalettePresetCard(
         onClick()
     }
 
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.Dp>()
+    val floatSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    val colorEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Color>()
+
     val cornerRadius by animateDpAsState(
         targetValue = when {
             isPressed -> 10.dp
             isSelected -> 22.dp
             else -> 14.dp
         },
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 750f),
+        animationSpec = spatialSpec,
         label = "paletteCardCorner"
     )
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 0.94f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 800f),
+        animationSpec = floatSpatialSpec,
         label = "paletteCardScale"
     )
     val swatchScale by animateFloatAsState(
         targetValue = if (isSelected) 1.08f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 700f),
+        animationSpec = floatSpatialSpec,
         label = "paletteSwatchScale"
     )
     val swatchSpacing by animateDpAsState(
         targetValue = if (isSelected) (-4).dp else (-6).dp,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 700f),
+        animationSpec = spatialSpec,
         label = "paletteSwatchSpacing"
     )
     val containerColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        animationSpec = colorEffectsSpec,
         label = "paletteContainerColor"
     )
     val borderColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        animationSpec = colorEffectsSpec,
         label = "paletteBorderColor"
     )
     val borderWidth by animateDpAsState(
         targetValue = if (isSelected) 1.5.dp else 1.dp,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        animationSpec = spatialSpec,
         label = "paletteBorderWidth"
     )
     val labelColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 600f),
+        animationSpec = colorEffectsSpec,
         label = "paletteLabelColor"
     )
     val shape = RoundedCornerShape(cornerRadius)
@@ -1188,8 +830,38 @@ fun PalettePresetCard(
                 text = preset.name,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = labelColor
+                color = labelColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+
+            AnimatedVisibility(
+                visible = isSelected,
+                enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    scaleIn(initialScale = 0.6f, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()) +
+                    expandHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    scaleOut(targetScale = 0.6f, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()) +
+                    shrinkHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1199,39 +871,63 @@ fun SettingSwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    position: GroupPosition = GroupPosition.Single,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    border: BorderStroke? = null
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+    val shape = animatedGroupedCardShape(position = position, pressed = isPressed)
+
     val haptic = LocalHapticFeedback.current
     val toggleWithHaptic: (Boolean) -> Unit = { next ->
         try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
         onCheckedChange(next)
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { toggleWithHaptic(!checked) }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+
+    Surface(
+        onClick = { toggleWithHaptic(!checked) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        color = containerColor,
+        border = border,
+        interactionSource = interactionSource
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            ExpressiveSwitch(
+                checked = checked,
+                onCheckedChange = toggleWithHaptic
             )
         }
-        Spacer(modifier = Modifier.width(16.dp))
-        ExpressiveSwitch(
-            checked = checked,
-            onCheckedChange = toggleWithHaptic
-        )
     }
 }
 
@@ -1241,35 +937,272 @@ fun SettingActionRow(
     subtitle: String,
     actionLabel: String,
     enabled: Boolean = true,
+    position: GroupPosition = GroupPosition.Single,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+    val shape = animatedGroupedCardShape(position = position, pressed = isPressed)
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    Surface(
+        onClick = hapticClick,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        interactionSource = interactionSource
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            ExpressiveTonalButton(
+                onClick = hapticClick,
+                enabled = enabled,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageCleanupGroup(
+    deleteAfterBackup: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_delete_after_backup_title),
+            subtitle = stringResource(R.string.pref_delete_after_backup_desc),
+            checked = deleteAfterBackup,
+            onCheckedChange = onCheckedChange,
+            position = GroupPosition.Single,
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+        )
+        Text(
+            text = stringResource(R.string.settings_delete_after_backup_global_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun UpdatesGroup(
+    autoCheckUpdates: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_auto_check_updates_title),
+            subtitle = stringResource(R.string.pref_auto_check_updates_subtitle),
+            checked = autoCheckUpdates,
+            onCheckedChange = onCheckedChange,
+            position = GroupPosition.Single
+        )
+    }
+}
+
+@Composable
+private fun DevToolsGroup(
+    settings: BackupSettings,
+    isShowcaseMode: Boolean,
+    isMockMode: Boolean,
+    onUpdateEnableBlurEffects: (Boolean) -> Unit,
+    onToggleShowcaseMode: () -> Unit,
+    onToggleMockMode: () -> Unit,
+    onOpenDevDiagnostics: () -> Unit,
+    onReplayOnboarding: () -> Unit,
+    onToggleDeveloperMode: (Boolean) -> Unit
+) {
+    val items = buildList<@Composable (GroupPosition) -> Unit> {
+        if (com.reiux.lumen.BuildConfig.DEBUG) {
+            add { pos ->
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_blur_dialogs_title),
+                    subtitle = stringResource(R.string.settings_blur_dialogs_desc),
+                    checked = settings.enableBlurEffects,
+                    onCheckedChange = onUpdateEnableBlurEffects,
+                    position = pos
+                )
+            }
+            add { pos ->
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_showcase_mode_title),
+                    subtitle = stringResource(R.string.settings_showcase_mode_desc),
+                    checked = isShowcaseMode,
+                    onCheckedChange = { onToggleShowcaseMode() },
+                    position = pos
+                )
+            }
+            add { pos ->
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_mock_sim_title),
+                    subtitle = stringResource(R.string.settings_mock_sim_desc),
+                    checked = isMockMode,
+                    onCheckedChange = { onToggleMockMode() },
+                    position = pos
+                )
+            }
+        }
+        add { pos ->
+            SettingActionRow(
+                title = stringResource(R.string.settings_run_diagnostics_title),
+                subtitle = stringResource(R.string.settings_run_diagnostics_desc),
+                actionLabel = stringResource(R.string.settings_action_run),
+                position = pos,
+                onClick = onOpenDevDiagnostics
             )
         }
-        Spacer(modifier = Modifier.width(16.dp))
-        ExpressiveTonalButton(
-            onClick = onClick,
-            enabled = enabled,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+        add { pos ->
+            SettingActionRow(
+                title = stringResource(R.string.settings_replay_walkthrough_title),
+                subtitle = stringResource(R.string.settings_replay_walkthrough_desc),
+                actionLabel = stringResource(R.string.settings_action_replay),
+                position = pos,
+                onClick = onReplayOnboarding
+            )
+        }
+        add { pos ->
+            SettingActionRow(
+                title = stringResource(R.string.settings_disable_dev_mode_title),
+                subtitle = stringResource(R.string.settings_disable_dev_mode_desc),
+                actionLabel = stringResource(R.string.settings_action_lock),
+                position = pos,
+                onClick = { onToggleDeveloperMode(false) }
+            )
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        items.forEachIndexed { index, renderItem ->
+            renderItem(groupPositionOf(index, items.size))
+        }
+    }
+}
+
+@Composable
+private fun AboutEntryCard(
+    appVersionName: String,
+    hasUnreadWhatsNew: Boolean = false,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+
+    val corner by animateDpAsState(
+        targetValue = if (isPressed) 14.dp else 24.dp,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "aboutEntryCardCorner"
+    )
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    Surface(
+        onClick = hapticClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(corner),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        interactionSource = interactionSource
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(actionLabel)
+            Row(
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DynamicLumenIcon(size = 38.dp)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.settings_about_lumen),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "v$appVersionName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (hasUnreadWhatsNew) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.settings_about_lumen),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
     }
 }
@@ -1283,59 +1216,45 @@ private fun StorageAndQualityCard(
     onUpdateAutoSyncAlbums: (Boolean) -> Unit,
     onOpenAccountSafety: () -> Unit
 ) {
-    Surface(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_storage_saver_title),
-                subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
-                checked = settings.storageSaverQuality,
-                onCheckedChange = onStorageSaverToggle
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_use_quota_title),
-                subtitle = stringResource(R.string.pref_use_quota_desc),
-                checked = settings.useQuota,
-                onCheckedChange = onUseQuotaToggle
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_auto_sync_albums_title),
-                subtitle = stringResource(R.string.pref_auto_sync_albums_desc),
-                checked = settings.autoSyncAlbums,
-                onCheckedChange = onUpdateAutoSyncAlbums
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_upload_notifs_title),
-                subtitle = stringResource(R.string.pref_upload_notifs_desc),
-                checked = settings.notificationsEnabled,
-                onCheckedChange = onUpdateNotifications
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-            SettingActionRow(
-                title = stringResource(R.string.account_safety_title),
-                subtitle = stringResource(R.string.account_safety_subtitle),
-                actionLabel = stringResource(R.string.settings_action_view),
-                onClick = onOpenAccountSafety
-            )
-        }
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_storage_saver_title),
+            subtitle = if (settings.storageSaverQuality) stringResource(R.string.pref_storage_saver_sub_compressed) else stringResource(R.string.pref_storage_saver_sub_original),
+            checked = settings.storageSaverQuality,
+            onCheckedChange = onStorageSaverToggle,
+            position = GroupPosition.Top
+        )
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_use_quota_title),
+            subtitle = stringResource(R.string.pref_use_quota_desc),
+            checked = settings.useQuota,
+            onCheckedChange = onUseQuotaToggle,
+            position = GroupPosition.Middle
+        )
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_auto_sync_albums_title),
+            subtitle = stringResource(R.string.pref_auto_sync_albums_desc),
+            checked = settings.autoSyncAlbums,
+            onCheckedChange = onUpdateAutoSyncAlbums,
+            position = GroupPosition.Middle
+        )
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_upload_notifs_title),
+            subtitle = stringResource(R.string.pref_upload_notifs_desc),
+            checked = settings.notificationsEnabled,
+            onCheckedChange = onUpdateNotifications,
+            position = GroupPosition.Middle
+        )
+        SettingActionRow(
+            title = stringResource(R.string.account_safety_title),
+            subtitle = stringResource(R.string.account_safety_subtitle),
+            actionLabel = stringResource(R.string.settings_action_view),
+            position = GroupPosition.Bottom,
+            onClick = onOpenAccountSafety
+        )
     }
 }
 
@@ -1350,55 +1269,49 @@ private fun NetworkAndSpeedCard(
     onUpdateUploadThreads: (Int) -> Unit,
     onShowOemGuide: () -> Unit
 ) {
-    Surface(
+    val sliderHaptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // 1. Back up new photos and videos
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_auto_backup_title),
-                subtitle = stringResource(R.string.pref_auto_backup_desc),
-                checked = settings.autoBackupEnabled,
-                onCheckedChange = onUpdateAutoBackup
-            )
+        // 1. Back up new photos and videos
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_auto_backup_title),
+            subtitle = stringResource(R.string.pref_auto_backup_desc),
+            checked = settings.autoBackupEnabled,
+            onCheckedChange = onUpdateAutoBackup,
+            position = GroupPosition.Top
+        )
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
+        // 2. Wi-Fi only
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_wifi_only_title),
+            subtitle = stringResource(R.string.pref_wifi_only_desc),
+            checked = settings.wifiOnly,
+            onCheckedChange = onUpdateWifiOnly,
+            position = GroupPosition.Middle
+        )
 
-            // 2. Wi-Fi only
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_wifi_only_title),
-                subtitle = stringResource(R.string.pref_wifi_only_desc),
-                checked = settings.wifiOnly,
-                onCheckedChange = onUpdateWifiOnly
-            )
+        // 3. While charging only
+        SettingSwitchRow(
+            title = stringResource(R.string.pref_charging_only_title),
+            subtitle = stringResource(R.string.pref_charging_only_desc),
+            checked = settings.chargingOnly,
+            onCheckedChange = onUpdateChargingOnly,
+            position = GroupPosition.Middle
+        )
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            // 3. While charging only
-            SettingSwitchRow(
-                title = stringResource(R.string.pref_charging_only_title),
-                subtitle = stringResource(R.string.pref_charging_only_desc),
-                checked = settings.chargingOnly,
-                onCheckedChange = onUpdateChargingOnly
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            // 4. Simultaneous Uploads
-            var sliderThreads by remember(settings.uploadThreads) {
-                mutableFloatStateOf(settings.uploadThreads.toFloat())
-            }
+        // 4. Simultaneous Uploads
+        var sliderThreads by remember(settings.uploadThreads) {
+            mutableFloatStateOf(settings.uploadThreads.toFloat())
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = groupedCardShape(GroupPosition.Middle),
+            color = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1413,12 +1326,12 @@ private fun NetworkAndSpeedCard(
                         text = stringResource(R.string.pref_upload_threads_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
                     )
                     Text(
                         text = stringResource(R.string.pref_upload_threads_count, sliderThreads.roundToInt()),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLargeEmphasized,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -1430,19 +1343,45 @@ private fun NetworkAndSpeedCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Slider(
                     value = sliderThreads,
-                    onValueChange = { sliderThreads = it },
+                    onValueChange = { next ->
+                        val prevStep = sliderThreads.roundToInt()
+                        val nextStep = next.roundToInt()
+                        sliderThreads = next
+                        if (nextStep != prevStep) {
+                            try { sliderHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                        }
+                    },
                     onValueChangeFinished = { onUpdateUploadThreads(sliderThreads.roundToInt()) },
                     valueRange = 1f..20f,
                     steps = 18
                 )
             }
+        }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            // 5. Allow Background Activity
+        // 5. Allow Background Activity
+        val bgInteractionSource = remember { MutableInteractionSource() }
+        val bgGesturePressed by rememberExpressivePressed(bgInteractionSource)
+        var bgClickPulse by remember { mutableStateOf(false) }
+        val bgShape = animatedGroupedCardShape(
+            position = GroupPosition.Middle,
+            pressed = !isBatteryOptimizedExempt && (bgGesturePressed || bgClickPulse)
+        )
+        val requestBackgroundHaptic = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+            coroutineScope.launch {
+                bgClickPulse = true
+                delay(180L)
+                bgClickPulse = false
+            }
+            DeviceConditions.requestIgnoreBatteryOptimizations(context)
+        }
+        Surface(
+            onClick = requestBackgroundHaptic,
+            enabled = !isBatteryOptimizedExempt,
+            modifier = Modifier.fillMaxWidth(),
+            shape = bgShape,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            interactionSource = bgInteractionSource
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1490,26 +1429,41 @@ private fun NetworkAndSpeedCard(
                     }
                 } else {
                     ExpressiveTonalButton(
-                        onClick = {
-                            DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                        },
+                        onClick = requestBackgroundHaptic,
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(stringResource(R.string.btn_allow))
                     }
                 }
             }
+        }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            // 6. Background Guide for Your Phone
+        // 6. Background Guide for Your Phone
+        val oemInteractionSource = remember { MutableInteractionSource() }
+        val oemGesturePressed by rememberExpressivePressed(oemInteractionSource)
+        var oemClickPulse by remember { mutableStateOf(false) }
+        val oemShape = animatedGroupedCardShape(
+            position = GroupPosition.Bottom,
+            pressed = oemGesturePressed || oemClickPulse
+        )
+        val openOemHaptic = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+            coroutineScope.launch {
+                oemClickPulse = true
+                delay(180L)
+                oemClickPulse = false
+            }
+            onShowOemGuide()
+        }
+        Surface(
+            onClick = openOemHaptic,
+            modifier = Modifier.fillMaxWidth(),
+            shape = oemShape,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            interactionSource = oemInteractionSource
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onShowOemGuide() }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1529,7 +1483,7 @@ private fun NetworkAndSpeedCard(
                     )
                 }
                 ExpressiveTonalButton(
-                    onClick = onShowOemGuide,
+                    onClick = openOemHaptic,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))

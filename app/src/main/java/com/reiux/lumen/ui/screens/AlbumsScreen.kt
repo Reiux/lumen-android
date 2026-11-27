@@ -1,10 +1,10 @@
 package com.reiux.lumen.ui.screens
 
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,18 +12,22 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,30 +38,28 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PhotoLibrary
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.toShape
 import com.reiux.lumen.ui.components.DialogBlurEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,12 +68,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.reiux.lumen.R
 import com.reiux.lumen.data.model.GoogleAccount
@@ -80,6 +82,10 @@ import com.reiux.lumen.ui.components.AccountPickerRow
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveExtendedFloatingActionButton
 import com.reiux.lumen.ui.components.ExpressiveFilterChip
+import com.reiux.lumen.ui.components.ExpressiveIconButton
+import com.reiux.lumen.ui.components.ExpressiveTextButton
+import com.reiux.lumen.ui.components.groupPositionOf
+import com.reiux.lumen.ui.components.groupedCardShape
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -92,11 +98,16 @@ fun AlbumsScreen(
     onAddAlbum: (keyOrUrl: String, nickname: String?, targetAccountEmail: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var albumToDelete by remember { mutableStateOf<GoogleAlbum?>(null) }
     var albumToRename by remember { mutableStateOf<GoogleAlbum?>(null) }
     var selectedFilterEmail by rememberSaveable { mutableStateOf<String?>("ALL") }
+    val listState = rememberLazyListState()
+    val fabExpanded by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 40
+        }
+    }
 
     LaunchedEffect(accounts, selectedFilterEmail) {
         if (selectedFilterEmail != null &&
@@ -117,8 +128,10 @@ fun AlbumsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                 title = {
                     Column {
                         Text(
@@ -134,7 +147,10 @@ fun AlbumsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ExpressiveIconButton(
+                        onClick = onBack,
+                        colors = IconButtonDefaults.iconButtonColors()
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.nav_back)
@@ -149,8 +165,18 @@ fun AlbumsScreen(
         floatingActionButton = {
             ExpressiveExtendedFloatingActionButton(
                 onClick = { showAddSheet = true },
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.albums_btn_add), fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.albums_btn_add)) },
+                text = {
+                    AnimatedVisibility(
+                        visible = fabExpanded,
+                        enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                            expandHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()),
+                        exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                            shrinkHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
+                    ) {
+                        Text(stringResource(R.string.albums_btn_add), fontWeight = FontWeight.SemiBold)
+                    }
+                },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -161,7 +187,12 @@ fun AlbumsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 760.dp)
+            ) {
                 // Account Filter Chips (if accounts.size > 1)
                 if (accounts.size > 1) {
                     FlowRow(
@@ -173,13 +204,25 @@ fun AlbumsScreen(
                         ExpressiveFilterChip(
                             selected = selectedFilterEmail == "ALL",
                             onClick = { selectedFilterEmail = "ALL" },
-                            label = { Text(stringResource(R.string.albums_filter_all), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.albums_filter_all),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         )
                         accounts.forEach { acc ->
                             ExpressiveFilterChip(
                                 selected = selectedFilterEmail == acc.email,
                                 onClick = { selectedFilterEmail = acc.email },
-                                label = { Text(acc.displayName ?: acc.email, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                                label = {
+                                    Text(
+                                        text = acc.displayName ?: acc.email,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             )
                         }
                     }
@@ -190,6 +233,7 @@ fun AlbumsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -205,7 +249,7 @@ fun AlbumsScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 Surface(
-                                    shape = CircleShape,
+                                    shape = MaterialShapes.Gem.toShape(),
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     modifier = Modifier.size(64.dp)
                                 ) {
@@ -221,15 +265,16 @@ fun AlbumsScreen(
 
                                 Text(
                                     text = stringResource(R.string.albums_empty_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    style = MaterialTheme.typography.titleMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center
                                 )
 
                                 Text(
                                     text = stringResource(R.string.albums_empty_desc),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
                                     modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
                                 )
                             }
@@ -237,19 +282,25 @@ fun AlbumsScreen(
                     }
                 } else {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        item { Spacer(modifier = Modifier.height(4.dp)) }
+                        item { Spacer(modifier = Modifier.height(9.dp)) }
 
-                        items(filteredAlbums, key = { "${it.accountEmail}:${it.mediaKey}:${it.title}" }) { album ->
+                        itemsIndexed(
+                            items = filteredAlbums,
+                            key = { _, album -> "${album.accountEmail}:${album.mediaKey}:${album.title}" }
+                        ) { index, album ->
                             var menuExpanded by remember { mutableStateOf(false) }
 
                             Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(),
+                                shape = groupedCardShape(groupPositionOf(index, filteredAlbums.size)),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
@@ -301,7 +352,7 @@ fun AlbumsScreen(
                                         ) {
                                             Text(
                                                 text = stringResource(R.string.albums_no_account),
-                                                fontSize = 10.sp,
+                                                style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -316,7 +367,10 @@ fun AlbumsScreen(
 
                                     // Single Overflow Menu Button
                                     Box {
-                                        IconButton(onClick = { menuExpanded = true }) {
+                                        ExpressiveIconButton(
+                                            onClick = { menuExpanded = true },
+                                            colors = IconButtonDefaults.iconButtonColors()
+                                        ) {
                                             Icon(
                                                 imageVector = Icons.Rounded.MoreVert,
                                                 contentDescription = stringResource(R.string.albums_options_desc),
@@ -539,21 +593,43 @@ fun AlbumsScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // Step 7: M3E Connected Button Group
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = selectedSegment == 0,
-                        onClick = { selectedSegment = 0 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                // M3E Connected Toggle Button Group
+                val segmentHaptic = LocalHapticFeedback.current
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                ) {
+                    TonalToggleButton(
+                        checked = selectedSegment == 0,
+                        onCheckedChange = {
+                            try { segmentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                            selectedSegment = 0
+                        },
+                        shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text(stringResource(R.string.albums_tab_paste_link), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = stringResource(R.string.albums_tab_paste_link),
+                            style = MaterialTheme.typography.labelLargeEmphasized,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    SegmentedButton(
-                        selected = selectedSegment == 1,
-                        onClick = { selectedSegment = 1 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    TonalToggleButton(
+                        checked = selectedSegment == 1,
+                        onCheckedChange = {
+                            try { segmentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                            selectedSegment = 1
+                        },
+                        shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text(stringResource(R.string.albums_tab_create_new), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = stringResource(R.string.albums_tab_create_new),
+                            style = MaterialTheme.typography.labelLargeEmphasized,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
@@ -623,7 +699,7 @@ fun AlbumsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.CenterEnd
                     ) {
-                        TextButton(
+                        ExpressiveTextButton(
                             onClick = { showHelpDialog = true }
                         ) {
                             Icon(
@@ -641,7 +717,7 @@ fun AlbumsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = { showAddSheet = false }) {
+                    ExpressiveTextButton(onClick = { showAddSheet = false }) {
                         Text(stringResource(R.string.btn_cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))

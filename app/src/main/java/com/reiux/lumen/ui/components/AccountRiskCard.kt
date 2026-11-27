@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -130,7 +129,7 @@ fun AccountRiskCard(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { showSafetyDialog = true }) {
+                    ExpressiveTextButton(onClick = { showSafetyDialog = true }) {
                         Text(
                             text = stringResource(R.string.account_risk_learn_more),
                             color = MaterialTheme.colorScheme.onTertiaryContainer,

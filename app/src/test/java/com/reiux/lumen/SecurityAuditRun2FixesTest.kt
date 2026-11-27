@@ -245,6 +245,56 @@ class SecurityAuditRun2FixesTest {
                 stagingDirCanonicalPrefix = stagingPrefix
             )
         )
+
+        // 7. Per-folder deleteAfterBackup allows deletion even when global setting=false,
+        //    but ONLY for that specific enabled folder and NEVER for manual uploads.
+        val perFolderList = listOf(
+            BackupFolder(
+                path = "/storage/emulated/0/DCIM/Camera",
+                displayName = "Camera",
+                enabled = true,
+                accountEmail = "a@example.com",
+                deleteAfterBackup = false
+            ),
+            BackupFolder(
+                path = "/storage/emulated/0/Pictures/Screenshots",
+                displayName = "Screenshots",
+                enabled = true,
+                accountEmail = "a@example.com",
+                deleteAfterBackup = true
+            )
+        )
+        assertFalse(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = baseItem,
+                targetPath = "/storage/emulated/0/DCIM/Camera/IMG_001.jpg",
+                configuredFolders = perFolderList,
+                deleteAfterBackupSetting = false,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+        assertTrue(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = baseItem.copy(filePath = "/storage/emulated/0/Pictures/Screenshots/shot.png", fileName = "shot.png"),
+                targetPath = "/storage/emulated/0/Pictures/Screenshots/shot.png",
+                configuredFolders = perFolderList,
+                deleteAfterBackupSetting = false,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+        assertFalse(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = baseItem.copy(
+                    filePath = "/storage/emulated/0/Pictures/Screenshots/shot.png",
+                    fileName = "shot.png",
+                    allowDeleteAfterBackup = false
+                ),
+                targetPath = "/storage/emulated/0/Pictures/Screenshots/shot.png",
+                configuredFolders = perFolderList,
+                deleteAfterBackupSetting = false,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
     }
 
     // -------------------------------------------------------------------------

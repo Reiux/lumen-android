@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -34,7 +37,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -282,7 +284,9 @@ fun DevDiagnosticsDialog(
                 ) {
                     // Left Column: Action Controls
                     Column(
-                        modifier = Modifier.weight(0.44f),
+                        modifier = Modifier
+                            .weight(0.44f)
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
@@ -346,7 +350,7 @@ fun DevDiagnosticsDialog(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(300.dp),
+                                .heightIn(min = 120.dp, max = 260.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(testResults, key = { it.id }) { test ->
@@ -360,12 +364,13 @@ fun DevDiagnosticsDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                         .padding(vertical = 4.dp)
                 ) {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(380.dp),
+                            .heightIn(min = 120.dp, max = 260.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(testResults, key = { it.id }) { test ->
@@ -425,7 +430,7 @@ fun DevDiagnosticsDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            ExpressiveTextButton(onClick = onDismiss) {
                 Text("Close")
             }
         },

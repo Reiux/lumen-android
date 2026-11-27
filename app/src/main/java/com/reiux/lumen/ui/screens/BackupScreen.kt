@@ -1,6 +1,5 @@
 package com.reiux.lumen.ui.screens
 
-import android.content.res.Configuration
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -23,7 +22,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -39,8 +37,6 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import com.reiux.lumen.R
@@ -57,6 +53,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -66,15 +63,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
 import android.widget.Toast
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -83,7 +78,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
@@ -96,16 +90,19 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.PersonOff
 import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -124,7 +121,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -142,10 +138,14 @@ import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
+import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.PlayfulParticleBurstOverlay
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.ExpressiveWavyLinearProgress
+import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.PlayfulCompletionCelebration
+import com.reiux.lumen.ui.components.groupPositionOf
+import com.reiux.lumen.ui.components.groupedCardShape
 import java.io.File
 
 @Composable
@@ -154,6 +154,7 @@ fun BackupScreen(
     accounts: List<GoogleAccount> = emptyList(),
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
     isUploading: Boolean,
+    isPaused: Boolean = false,
     isOnline: Boolean = true,
     simulateOffline: Boolean = false,
     simulateMissingAlbum: Boolean = false,
@@ -178,14 +179,18 @@ fun BackupScreen(
     onExitMockMode: () -> Unit = {},
     onStartBackup: () -> Unit,
     onUploadFiles: (List<Uri>) -> Unit,
-    onUploadFilesWithAlbumTarget: (List<Uri>, com.reiux.lumen.data.model.AlbumTargetMode, String?, String?) -> Unit = { _, _, _, _ -> },
+    onUploadFilesWithAlbumTarget: (List<Uri>, GoogleAccount?, com.reiux.lumen.data.model.AlbumTargetMode, String?, String?) -> Unit = { _, _, _, _, _ -> },
     onAddAlbum: (keyOrUrl: String, nickname: String, targetEmail: String?) -> com.reiux.lumen.data.network.GoogleAlbum = { k, n, e -> com.reiux.lumen.data.network.GoogleAlbum(k, n, e) },
     onOpenAlbumManager: () -> Unit = {},
     onPauseBackup: () -> Unit = {},
+    onResumeBackup: () -> Unit = {},
     onCancelBackup: () -> Unit = {},
     onCancelScan: () -> Unit = {},
     onClearCompleted: () -> Unit,
     onRetryFailed: () -> Unit = {},
+    onRetryItem: (String) -> Unit = {},
+    triggerPickMediaNonce: Int = 0,
+    onConsumedPickMedia: () -> Unit = {},
     onSelectAccount: (GoogleAccount) -> Unit = {},
     shouldShowAccountSwipeNudge: Boolean = false,
     accountSwipeNudgeNonce: Int = 0,
@@ -207,6 +212,9 @@ fun BackupScreen(
     onSimulateBlock: (AuthFailureKind) -> Unit = {},
     onClearBlock: () -> Unit = {},
     isAlbumsScreenOpen: Boolean = false,
+    externalForcedPunTitle: String? = null,
+    externalEmptyStateSubtitle: String? = null,
+    externalShakeFlickerNonce: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -253,7 +261,7 @@ fun BackupScreen(
                 onAddAccountToken(it)
                 showSignInDialog = false
             },
-            disclaimerText = "Sign in to ${accountBlock?.accountEmail} to restore access and resume uploads."
+            disclaimerText = stringResource(R.string.backup_sign_in_prompt, accountBlock?.accountEmail.orEmpty())
         )
     }
 
@@ -348,7 +356,11 @@ fun BackupScreen(
             onAddAlbum = onAddAlbum,
             onOpenAlbumManager = onOpenAlbumManager,
             onConfirm = { albumMode, customName, customNickname ->
-                onUploadFilesWithAlbumTarget(pendingPickedUris, albumMode, customName, customNickname)
+                onUploadFilesWithAlbumTarget(pendingPickedUris, selectedAccount, albumMode, customName, customNickname)
+                pendingPickedUriStrings = null
+            },
+            onConfirmWithAccount = { targetAccount, albumMode, customName, customNickname ->
+                onUploadFilesWithAlbumTarget(pendingPickedUris, targetAccount, albumMode, customName, customNickname)
                 pendingPickedUriStrings = null
             },
             onDismiss = { pendingPickedUriStrings = null }
@@ -363,6 +375,15 @@ fun BackupScreen(
         }
     }
 
+    LaunchedEffect(triggerPickMediaNonce) {
+        if (triggerPickMediaNonce > 0) {
+            onConsumedPickMedia()
+            photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+            )
+        }
+    }
+
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -372,13 +393,15 @@ fun BackupScreen(
     }
 
     var triggerShakeFlicker by remember { mutableStateOf(false) }
-    var mockEmptyStateVariantIndex by remember { mutableStateOf<Int?>(null) }
-    var mockForcedPunTitle by remember { mutableStateOf<String?>(null) }
-    var showMockCompletionCelebration by remember { mutableStateOf(false) }
-    var mockSelectedSeason by remember { mutableStateOf(Season.NONE) }
 
     rememberShakeDetector {
         triggerShakeFlicker = true
+    }
+
+    LaunchedEffect(externalShakeFlickerNonce) {
+        if (externalShakeFlickerNonce > 0) {
+            triggerShakeFlicker = true
+        }
     }
 
     val flickerAlpha = remember { Animatable(1f) }
@@ -392,20 +415,15 @@ fun BackupScreen(
         }
     }
 
-    val activeSeason = if (isMockMode && mockSelectedSeason != Season.NONE) {
-        mockSelectedSeason
-    } else {
-        EasterEggsManager.resolveActiveSeason(forcedSeason)
-    }
+    val effectiveForcedPunTitle = if (isMockMode) externalForcedPunTitle else null
+    val showMockCompletionCelebration = effectiveForcedPunTitle != null
+    val activeSeason = EasterEggsManager.resolveActiveSeason(forcedSeason)
 
     LaunchedEffect(activeSeason) {
         if (activeSeason != Season.NONE && !isMockMode) {
             EasterEggsManager.checkSeasonalGreeting(context, activeSeason)
         }
     }
-
-    val configuration = LocalConfiguration.current
-    val isTwoPane = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
     val missingAlbum = remoteAlbums.find { it.isMissing }
     val hasMissingAlbum = simulateMissingAlbum || queue.any { it.status == UploadStatus.STOPPED }
@@ -414,30 +432,33 @@ fun BackupScreen(
     val portraitListState = rememberLazyListState()
     val leftScrollState = rememberScrollState()
     var accountCardTopPx by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(scrollToAccountForNudge, isTwoPane) {
-        if (scrollToAccountForNudge) {
-            if (isTwoPane) {
-                leftScrollState.animateScrollTo(accountCardTopPx)
-            } else {
-                val targetIndex = if (developerModeUnlocked && isMockMode) 2 else 1
-                portraitListState.animateScrollToItem(targetIndex)
-            }
-            onConsumedScrollToAccountForNudge()
-        }
-    }
-
     var selectedQueueStatusFilter by rememberSaveable { mutableStateOf<String?>(null) }
 
-    if (isTwoPane) {
-        // Tablet / Landscape 2-Pane Adaptive Layout
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .graphicsLayer { alpha = flickerAlpha.value },
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isTwoPane = maxWidth >= 640.dp
+
+        LaunchedEffect(scrollToAccountForNudge, isTwoPane) {
+            if (scrollToAccountForNudge) {
+                if (isTwoPane) {
+                    leftScrollState.animateScrollTo(accountCardTopPx)
+                } else {
+                    portraitListState.animateScrollToItem(1)
+                }
+                onConsumedScrollToAccountForNudge()
+            }
+        }
+
+        if (isTwoPane) {
+            // Tablet / Landscape 2-Pane Adaptive Layout
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp)
+                    .graphicsLayer { alpha = flickerAlpha.value },
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Left Pane: Controls & Hero Status
             Column(
                 modifier = Modifier
@@ -456,39 +477,6 @@ fun BackupScreen(
                     onUnlockPrismTheme = onUnlockPrismTheme
                 )
 
-                if (developerModeUnlocked && isMockMode) {
-                    MockModeCard(
-                        onExitMockMode = onExitMockMode,
-                        onToggleMockCondition = onToggleMockCondition,
-                        onAddMockFiles = onAddMockFiles,
-                        onToggleSimulateOffline = onToggleSimulateOffline,
-                        onToggleSimulateMissingAlbum = onToggleSimulateMissingAlbum,
-                        mockSeason = activeSeason,
-                        onTriggerLightsOff = {
-                            onTriggerLightsOff()
-                        },
-                        onTriggerBoldChoice = { EasterEggsManager.triggerLightsOffBoldChoice(context, force = true) },
-                        onTriggerCompletionPun = {
-                            mockForcedPunTitle = EasterEggsManager.getCompletionTitle(context, force = true)
-                            showMockCompletionCelebration = true
-                        },
-                        onTriggerMilestone = { m -> EasterEggsManager.checkMilestoneToast(context, m) },
-                        onTriggerLateNight = { EasterEggsManager.checkLateNightToast(context, force = true) },
-                        onCycleEmptyStateVariant = {
-                            val curr = mockEmptyStateVariantIndex ?: 0
-                            mockEmptyStateVariantIndex = (curr + 1) % 5
-                        },
-                        onTriggerShakeFlicker = { triggerShakeFlicker = true },
-                        onSelectMockSeason = { s -> mockSelectedSeason = s },
-                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) },
-                        onSimulateLargeScan = onSimulateLargeScan,
-                        onSimulateUpdateAvailable = onSimulateUpdateAvailable,
-                        onSimulateBlock = onSimulateBlock,
-                        onClearBlock = onClearBlock,
-                        onReplayAccountSwipeNudge = onReplayAccountSwipeNudge
-                    )
-                }
-
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
                     accounts = accounts,
@@ -502,6 +490,7 @@ fun BackupScreen(
 
                 HeroBackupCard(
                     isUploading = isUploading,
+                    isPaused = isPaused,
                     uploadSpeed = uploadSpeed,
                     currentUploadingItem = currentUploadingItem,
                     queue = queue,
@@ -515,9 +504,11 @@ fun BackupScreen(
                     scanState = scanState,
                     accountBlock = accountBlock,
                     showMockCompletionCelebration = showMockCompletionCelebration,
-                    mockForcedPunTitle = mockForcedPunTitle,
+                    mockForcedPunTitle = effectiveForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
+                    onPauseBackup = onPauseBackup,
+                    onResumeBackup = onResumeBackup,
                     onCancelBackup = onCancelBackup,
                     onCancelScan = onCancelScan,
                     onSignInAgain = { showSignInDialog = true },
@@ -551,28 +542,33 @@ fun BackupScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.backup_recent_activity, queue.size),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.titleMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val hasFailed = queue.any { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
                         if (hasFailed) {
                             val failedCount = queue.count { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
-                            TextButton(
+                            ExpressiveTextButton(
                                 onClick = onRetryFailed,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                         }
 
                         if (queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED || it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }) {
-                            TextButton(
+                            ExpressiveTextButton(
                                 onClick = onClearCompleted,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
@@ -593,55 +589,71 @@ fun BackupScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
-                    Surface(
+                if (queue.isEmpty() || (isMockMode && externalEmptyStateSubtitle != null)) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 20.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        Column(
-                            modifier = Modifier.padding(28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 20.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CloudDone,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = stringResource(R.string.backup_queue_empty_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
-                                if (mockEmptyStateVariantIndex != null) {
-                                    EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
-                                } else {
+                            Column(
+                                modifier = Modifier.padding(28.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(64.dp),
+                                    shape = MaterialShapes.Clover8Leaf.toShape(),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CloudDone,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(30.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = stringResource(R.string.backup_queue_empty_title),
+                                    style = MaterialTheme.typography.titleMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val emptyStateSubtitle = remember(queue.size) {
                                     EasterEggsManager.getEmptyStateSubtitle(context)
                                 }
+                                val effectiveEmptySubtitle = if (isMockMode) {
+                                    externalEmptyStateSubtitle ?: emptyStateSubtitle
+                                } else {
+                                    emptyStateSubtitle
+                                }
+                                Text(
+                                    text = effectiveEmptySubtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            Text(
-                                text = emptySubtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
+                        Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp))
                     }
                 } else {
+                    val motionScheme = MaterialTheme.motionScheme
                     AnimatedContent(
                         targetState = selectedQueueStatusFilter,
                         transitionSpec = {
-                            (fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f)) +
-                             slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f)) { height -> height / 6 })
+                            (fadeIn(animationSpec = motionScheme.fastEffectsSpec()) +
+                             slideInVertically(animationSpec = motionScheme.fastSpatialSpec()) { height -> height / 6 })
                                 .togetherWith(
-                                    fadeOut(animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f)) +
-                                    slideOutVertically(animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f)) { height -> -height / 6 }
+                                    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                                    slideOutVertically(animationSpec = motionScheme.fastSpatialSpec()) { height -> -height / 6 }
                                 )
                         },
                         label = "queueFilterAnimation"
@@ -681,16 +693,25 @@ fun BackupScreen(
                                 }
                             }
                         } else {
+                            val displayQueue = remember(currentFilteredQueue) {
+                                currentFilteredQueue.takeLast(50).reversed()
+                            }
                             LazyColumn(
                                 state = twoPaneQueueListState,
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
-                                items(currentFilteredQueue.takeLast(50).reversed(), key = { it.id }) { item ->
-                                    UploadItemRow(item = item, accounts = accounts, showAccountBadge = accounts.size > 1)
+                                itemsIndexed(displayQueue, key = { _, item -> item.id }) { index, item ->
+                                    UploadItemRow(
+                                        item = item,
+                                        position = groupPositionOf(index, displayQueue.size),
+                                        accounts = accounts,
+                                        showAccountBadge = accounts.size > 1,
+                                        onRetry = { onRetryItem(item.id) }
+                                    )
                                 }
                                 item {
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp))
                                 }
                             }
                         }
@@ -699,10 +720,10 @@ fun BackupScreen(
             }
         }
     } else {
-        // Single-Column Layout (Phones in Portrait & Landscape)
+        // Single-Column Layout (Phones & Narrow Foldables)
         LazyColumn(
             state = portraitListState,
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 680.dp)
@@ -721,41 +742,6 @@ fun BackupScreen(
                 )
             }
 
-            if (developerModeUnlocked && isMockMode) {
-                item {
-                    MockModeCard(
-                        onExitMockMode = onExitMockMode,
-                        onToggleMockCondition = onToggleMockCondition,
-                        onAddMockFiles = onAddMockFiles,
-                        mockSeason = activeSeason,
-                        onTriggerLightsOff = {
-                            onTriggerLightsOff()
-                        },
-                        onTriggerBoldChoice = { EasterEggsManager.triggerLightsOffBoldChoice(context, force = true) },
-                        onTriggerCompletionPun = {
-                            mockForcedPunTitle = EasterEggsManager.getCompletionTitle(context, force = true)
-                            showMockCompletionCelebration = true
-                        },
-                        onTriggerMilestone = { m -> EasterEggsManager.checkMilestoneToast(context, m) },
-                        onTriggerLateNight = { EasterEggsManager.checkLateNightToast(context, force = true) },
-                        onCycleEmptyStateVariant = {
-                            val curr = mockEmptyStateVariantIndex ?: 0
-                            mockEmptyStateVariantIndex = (curr + 1) % 5
-                        },
-                        onTriggerShakeFlicker = { triggerShakeFlicker = true },
-                        onSelectMockSeason = { s -> mockSelectedSeason = s },
-                        onTriggerSeasonalGreeting = { EasterEggsManager.checkSeasonalGreeting(context, mockSelectedSeason, force = true) },
-                        onSimulateLargeScan = onSimulateLargeScan,
-                        onToggleSimulateOffline = onToggleSimulateOffline,
-                        onToggleSimulateMissingAlbum = onToggleSimulateMissingAlbum,
-                        onSimulateUpdateAvailable = onSimulateUpdateAvailable,
-                        onSimulateBlock = onSimulateBlock,
-                        onClearBlock = onClearBlock,
-                        onReplayAccountSwipeNudge = onReplayAccountSwipeNudge
-                    )
-                }
-            }
-
             item {
                 AccountStatusCard(
                     selectedAccount = selectedAccount,
@@ -771,6 +757,7 @@ fun BackupScreen(
             item {
                 HeroBackupCard(
                     isUploading = isUploading,
+                    isPaused = isPaused,
                     uploadSpeed = uploadSpeed,
                     currentUploadingItem = currentUploadingItem,
                     queue = queue,
@@ -784,9 +771,11 @@ fun BackupScreen(
                     scanState = scanState,
                     accountBlock = accountBlock,
                     showMockCompletionCelebration = showMockCompletionCelebration,
-                    mockForcedPunTitle = mockForcedPunTitle,
+                    mockForcedPunTitle = effectiveForcedPunTitle,
                     selectedAccount = selectedAccount,
                     onStartBackup = onStartBackup,
+                    onPauseBackup = onPauseBackup,
+                    onResumeBackup = onResumeBackup,
                     onCancelBackup = onCancelBackup,
                     onCancelScan = onCancelScan,
                     onSignInAgain = { showSignInDialog = true },
@@ -811,8 +800,7 @@ fun BackupScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.backup_recent_activity, queue.size),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMediumEmphasized,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
@@ -820,19 +808,20 @@ fun BackupScreen(
                         val hasFailed = queue.any { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
                         if (hasFailed) {
                             val failedCount = queue.count { it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }
-                            TextButton(
+                            ExpressiveTextButton(
                                 onClick = onRetryFailed,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.btn_retry_failed_count, failedCount), fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                         }
 
                         if (queue.any { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED || it.status == UploadStatus.FAILED || it.status == UploadStatus.STOPPED }) {
-                            TextButton(
+                            ExpressiveTextButton(
                                 onClick = onClearCompleted,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
@@ -853,7 +842,7 @@ fun BackupScreen(
                 }
             }
 
-            if (queue.isEmpty() || (isMockMode && mockEmptyStateVariantIndex != null)) {
+            if (queue.isEmpty() || (isMockMode && externalEmptyStateSubtitle != null)) {
                 item {
                     Surface(
                         modifier = Modifier
@@ -866,29 +855,37 @@ fun BackupScreen(
                             modifier = Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CloudDone,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                modifier = Modifier.size(64.dp),
+                                shape = MaterialShapes.Clover8Leaf.toShape(),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CloudDone,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
                                 text = stringResource(R.string.backup_queue_empty_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.titleMediumEmphasized,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            val emptySubtitle = remember(queue.size, mockEmptyStateVariantIndex) {
-                                if (mockEmptyStateVariantIndex != null) {
-                                    EasterEggsManager.getEmptyStateSubtitle(context, force = true, forcedIndex = mockEmptyStateVariantIndex)
-                                } else {
-                                    EasterEggsManager.getEmptyStateSubtitle(context)
-                                }
+                            val emptyStateSubtitle = remember(queue.size) {
+                                EasterEggsManager.getEmptyStateSubtitle(context)
+                            }
+                            val effectiveEmptySubtitle = if (isMockMode) {
+                                externalEmptyStateSubtitle ?: emptyStateSubtitle
+                            } else {
+                                emptyStateSubtitle
                             }
                             Text(
-                                text = emptySubtitle,
+                                text = effectiveEmptySubtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -897,14 +894,15 @@ fun BackupScreen(
                 }
             } else {
                 item {
+                    val motionScheme = MaterialTheme.motionScheme
                     AnimatedContent(
                         targetState = selectedQueueStatusFilter,
                         transitionSpec = {
-                            (fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f)) +
-                             slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f)) { height -> height / 6 })
+                            (fadeIn(animationSpec = motionScheme.fastEffectsSpec()) +
+                             slideInVertically(animationSpec = motionScheme.fastSpatialSpec()) { height -> height / 6 })
                                 .togetherWith(
-                                    fadeOut(animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f)) +
-                                    slideOutVertically(animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f)) { height -> -height / 6 }
+                                    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                                    slideOutVertically(animationSpec = motionScheme.fastSpatialSpec()) { height -> -height / 6 }
                                 )
                         },
                         label = "queueFilterAnimationPortrait"
@@ -944,13 +942,22 @@ fun BackupScreen(
                                 }
                             }
                         } else {
+                            val displayQueue = remember(currentFilteredQueue) {
+                                currentFilteredQueue.takeLast(25).reversed()
+                            }
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
-                                currentFilteredQueue.takeLast(25).reversed().forEach { item ->
+                                displayQueue.forEachIndexed { index, item ->
                                     androidx.compose.runtime.key(item.id) {
-                                        UploadItemRow(item = item, accounts = accounts, showAccountBadge = accounts.size > 1)
+                                        UploadItemRow(
+                                            item = item,
+                                            position = groupPositionOf(index, displayQueue.size),
+                                            accounts = accounts,
+                                            showAccountBadge = accounts.size > 1,
+                                            onRetry = { onRetryItem(item.id) }
+                                        )
                                     }
                                 }
                             }
@@ -960,8 +967,9 @@ fun BackupScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp))
             }
+        }
         }
     }
 }
@@ -1037,19 +1045,22 @@ private fun BackupTopHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.pointerInput(Unit) {
-                detectTapGestures(
-                    onLongPress = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onUnlockPrismTheme()
-                        showBurst = true
-                        Toast.makeText(context, context.getString(R.string.toast_unlocked_prism), Toast.LENGTH_SHORT).show()
-                    },
-                    onTap = {
-                        onBrandTap()
-                    }
-                )
-            }
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .padding(end = 8.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onUnlockPrismTheme()
+                            showBurst = true
+                            Toast.makeText(context, context.getString(R.string.toast_unlocked_prism), Toast.LENGTH_SHORT).show()
+                        },
+                        onTap = {
+                            onBrandTap()
+                        }
+                    )
+                }
         ) {
             DynamicLumenIcon(
                 size = 38.dp,
@@ -1059,10 +1070,10 @@ private fun BackupTopHeader(
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "Lumen",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleLargeEmphasized,
                 letterSpacing = (-0.5).sp,
                 color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
                 modifier = Modifier.graphicsLayer {
                     scaleX = wordmarkStretchX.value
                     transformOrigin = TransformOrigin(0f, 0.5f)
@@ -1108,354 +1119,10 @@ private fun BackupTopHeader(
                         text = statusLabel,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = statusColor
+                        color = statusColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MockModeCard(
-    onExitMockMode: () -> Unit,
-    onToggleMockCondition: () -> Unit,
-    onAddMockFiles: () -> Unit,
-    onToggleSimulateOffline: () -> Unit,
-    onToggleSimulateMissingAlbum: () -> Unit,
-    mockSeason: Season,
-    onTriggerLightsOff: () -> Unit,
-    onTriggerBoldChoice: () -> Unit,
-    onTriggerCompletionPun: () -> Unit,
-    onTriggerMilestone: (Int) -> Unit,
-    onTriggerLateNight: () -> Unit,
-    onCycleEmptyStateVariant: () -> Unit,
-    onTriggerShakeFlicker: () -> Unit,
-    onSelectMockSeason: (Season) -> Unit,
-    onTriggerSeasonalGreeting: () -> Unit,
-    onSimulateLargeScan: () -> Unit = {},
-    onSimulateUpdateAvailable: () -> Unit = {},
-    onSimulateBlock: (AuthFailureKind) -> Unit = {},
-    onClearBlock: () -> Unit = {},
-    onReplayAccountSwipeNudge: () -> Unit = {}
-) {
-    val haptic = LocalHapticFeedback.current
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        tonalElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Rounded.BugReport,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Mock Mode Active",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                TextButton(
-                    onClick = onExitMockMode,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text("Exit Mock", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Using sample accounts, uploads, and network states to test the UI.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ExpressiveTonalButton(
-                    onClick = onToggleMockCondition,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Text("Cycle Wait State", fontSize = 11.sp, maxLines = 1)
-                }
-                ExpressiveTonalButton(
-                    onClick = onAddMockFiles,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Text("+ Add 2 Files", fontSize = 11.sp, maxLines = 1)
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ExpressiveTonalButton(
-                    onClick = {
-                        com.reiux.lumen.util.LumenLogger.d("MockToggles") { "Toggle Offline button clicked in UI. Calling onToggleSimulateOffline..." }
-                        onToggleSimulateOffline()
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Text("Toggle Offline", fontSize = 11.sp, maxLines = 1)
-                }
-                ExpressiveTonalButton(
-                    onClick = {
-                        com.reiux.lumen.util.LumenLogger.d("MockToggles") { "Toggle Missing Album button clicked in UI. Calling onToggleSimulateMissingAlbum..." }
-                        onToggleSimulateMissingAlbum()
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Text("Toggle Missing Album", fontSize = 11.sp, maxLines = 1)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Easter Egg Tester",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerLightsOff()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Lights Off", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerBoldChoice()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Bold Choice", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerCompletionPun()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Pun Title", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerMilestone(100)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("M100", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerMilestone(1000)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("M1k", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerMilestone(10000)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("M10k", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerLateNight()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Late Night", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onCycleEmptyStateVariant()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Cycle Subtitle", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerShakeFlicker()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Shake Flicker", fontSize = 10.sp)
-                }
-
-                val seasons = listOf(Season.NONE, Season.HALLOWEEN, Season.CHRISTMAS, Season.NEW_YEAR)
-                seasons.forEach { s ->
-                    val isSel = mockSeason == s
-                    ExpressiveTonalButton(
-                        onClick = {
-                            try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                            onSelectMockSeason(s)
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = when (s) {
-                                Season.NONE -> "Season: Off"
-                                Season.HALLOWEEN -> "Halloween"
-                                Season.CHRISTMAS -> "Christmas"
-                                Season.NEW_YEAR -> "New Year"
-                            },
-                            fontSize = 10.sp,
-                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onTriggerSeasonalGreeting()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Show Greeting", fontSize = 10.sp)
-                }
-                
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onSimulateUpdateAvailable()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Show Update Dialog", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onReplayAccountSwipeNudge()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Replay Swipe Nudge", fontSize = 10.sp)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Circuit Breaker & Scan Limits",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onSimulateLargeScan()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Simulate Large Scan", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onSimulateBlock(AuthFailureKind.SIGN_IN_REQUIRED)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Simulate: Sign-In", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onSimulateBlock(AuthFailureKind.ACCOUNT_RESTRICTED)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Simulate: Restricted", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onSimulateBlock(AuthFailureKind.RATE_LIMITED)
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Simulate: Rate Limit (2m)", fontSize = 10.sp)
-                }
-
-                ExpressiveTonalButton(
-                    onClick = {
-                        try { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } catch (_: Exception) {}
-                        onClearBlock()
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Clear Block", fontSize = 10.sp)
                 }
             }
         }
@@ -1679,6 +1346,7 @@ private fun AccountStatusCard(
 @Composable
 private fun HeroBackupCard(
     isUploading: Boolean,
+    isPaused: Boolean = false,
     uploadSpeed: String?,
     currentUploadingItem: UploadItem?,
     queue: List<UploadItem>,
@@ -1695,15 +1363,17 @@ private fun HeroBackupCard(
     mockForcedPunTitle: String? = null,
     selectedAccount: GoogleAccount?,
     onStartBackup: () -> Unit,
+    onPauseBackup: () -> Unit = {},
+    onResumeBackup: () -> Unit = {},
     onCancelBackup: () -> Unit,
     onCancelScan: () -> Unit = {},
     onSignInAgain: () -> Unit = {},
     onRemoveRestrictedAccount: () -> Unit = {},
     onClearBlock: () -> Unit = {},
-    onNavigateToAccounts: () -> Unit = {},
     onPickPhotos: () -> Unit,
     onPickFiles: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     if (accountBlock != null) {
         com.reiux.lumen.ui.components.AccountBlockCard(
             block = accountBlock,
@@ -1757,7 +1427,7 @@ private fun HeroBackupCard(
                     onClick = onCancelScan,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    Text(stringResource(R.string.btn_cancel_scan), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_cancel_scan), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1765,8 +1435,15 @@ private fun HeroBackupCard(
     }
 
     val totalInQueue = queue.size
+    val remainingCount = queue.count {
+        it.status == UploadStatus.QUEUED ||
+            it.status == UploadStatus.UPLOADING ||
+            it.status == UploadStatus.HASHING ||
+            it.status == UploadStatus.CHECKING ||
+            it.status == UploadStatus.COMMITTING
+    }
     val isDone = totalInQueue == 0 || queue.all { it.status == UploadStatus.COMPLETED || it.status == UploadStatus.SKIPPED }
-    val completedRecently = !isOffline && !hasMissingAlbum && isDone && queue.isNotEmpty() && (completedCount > 0 || skippedCount > 0) && !isUploading && conditionNotice == null
+    val completedRecently = !isOffline && !hasMissingAlbum && isDone && queue.isNotEmpty() && (completedCount > 0 || skippedCount > 0) && !isUploading && !isPaused && conditionNotice == null
 
     if (completedRecently || showMockCompletionCelebration) {
         PlayfulCompletionCelebration(
@@ -1789,6 +1466,7 @@ private fun HeroBackupCard(
                     isOffline -> MaterialTheme.colorScheme.tertiaryContainer
                     hasMissingAlbum -> MaterialTheme.colorScheme.errorContainer
                     conditionNotice != null -> MaterialTheme.colorScheme.tertiaryContainer
+                    isPaused -> MaterialTheme.colorScheme.secondaryContainer
                     isUploading -> MaterialTheme.colorScheme.primaryContainer
                     else -> MaterialTheme.colorScheme.surfaceContainer
                 }
@@ -1810,6 +1488,7 @@ private fun HeroBackupCard(
                                 isOffline -> Icons.Rounded.CloudOff
                                 hasMissingAlbum -> Icons.Rounded.Warning
                                 conditionNotice != null -> Icons.Rounded.HourglassEmpty
+                                isPaused -> Icons.Rounded.Pause
                                 isUploading -> Icons.Rounded.CloudUpload
                                 else -> Icons.Rounded.CloudDone
                             },
@@ -1817,6 +1496,7 @@ private fun HeroBackupCard(
                             tint = when {
                                 isOffline || conditionNotice != null -> MaterialTheme.colorScheme.onTertiaryContainer
                                 hasMissingAlbum -> MaterialTheme.colorScheme.onErrorContainer
+                                isPaused -> MaterialTheme.colorScheme.onSecondaryContainer
                                 isUploading -> MaterialTheme.colorScheme.onPrimaryContainer
                                 else -> MaterialTheme.colorScheme.secondary
                             },
@@ -1828,15 +1508,16 @@ private fun HeroBackupCard(
                                 isOffline -> stringResource(R.string.backup_paused_no_internet)
                                 hasMissingAlbum -> stringResource(R.string.title_album_not_found)
                                 conditionNotice != null -> conditionNotice
+                                isPaused -> stringResource(R.string.backup_paused_title)
                                 isUploading -> stringResource(R.string.backup_status_uploading)
                                 isDone -> stringResource(R.string.backup_status_ready)
                                 else -> stringResource(R.string.backup_status_ready)
                             },
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.headlineSmallEmphasized,
                             color = when {
                                 isOffline || conditionNotice != null -> MaterialTheme.colorScheme.onTertiaryContainer
                                 hasMissingAlbum -> MaterialTheme.colorScheme.onErrorContainer
+                                isPaused -> MaterialTheme.colorScheme.onSecondaryContainer
                                 isUploading -> MaterialTheme.colorScheme.onPrimaryContainer
                                 else -> MaterialTheme.colorScheme.onSurface
                             }
@@ -1853,7 +1534,7 @@ private fun HeroBackupCard(
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 } else if (hasMissingAlbum) {
-                    val albumNickname = missingAlbum?.title ?: "target album"
+                    val albumNickname = missingAlbum?.title ?: stringResource(R.string.backup_target_album_fallback)
                     val accountName = selectedAccount?.displayName ?: selectedAccount?.email ?: stringResource(R.string.accounts_active_fallback)
                     val hasCompletedFiles = completedCount > 0 || queue.any { it.status == UploadStatus.COMPLETED }
                     val bodyText = if (!hasCompletedFiles) {
@@ -1872,12 +1553,17 @@ private fun HeroBackupCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
-                } else if (isUploading && currentUploadingItem != null) {
+                } else if ((isPaused || isUploading) && currentUploadingItem != null) {
+                val contentColor = if (isPaused) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                }
                 Text(
                     text = currentUploadingItem.fileName,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1890,8 +1576,8 @@ private fun HeroBackupCard(
 
                 ExpressiveWavyLinearProgress(
                     progress = progress.coerceIn(0f, 1f),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.22f),
+                    color = contentColor,
+                    trackColor = contentColor.copy(alpha = 0.22f),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1905,15 +1591,22 @@ private fun HeroBackupCard(
                     Text(
                         text = "${formatBytes(currentUploadingItem.bytesUploaded)} / ${formatBytes(currentUploadingItem.fileSize)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        color = contentColor.copy(alpha = 0.85f)
                     )
 
-                    if (!uploadSpeed.isNullOrEmpty()) {
+                    if (isPaused) {
+                        Text(
+                            text = stringResource(R.string.backup_paused_subtitle, remainingCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = contentColor.copy(alpha = 0.85f)
+                        )
+                    } else if (!uploadSpeed.isNullOrEmpty()) {
                         val remainingBytes = remember(queue, currentUploadingItem) {
                             queue.filter { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
                                 .sumOf { (it.fileSize - it.bytesUploaded).coerceAtLeast(0L) }
                         }
-                        val eta = calculateRemainingTimeText(remainingBytes, uploadSpeed)
+                        val eta = calculateRemainingTimeText(context, remainingBytes, uploadSpeed)
                         val speedLabel = if (!eta.isNullOrBlank()) "$uploadSpeed • $eta" else uploadSpeed
 
                         Surface(
@@ -1924,12 +1617,18 @@ private fun HeroBackupCard(
                                 text = speedLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = contentColor,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                 }
+            } else if (isPaused) {
+                Text(
+                    text = stringResource(R.string.backup_paused_subtitle, remainingCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                )
             } else {
                 Text(
                     text = if (isDone) stringResource(R.string.backup_idle_subtitle) else stringResource(R.string.backup_queue_count, totalInQueue),
@@ -1940,49 +1639,7 @@ private fun HeroBackupCard(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            if (isUploading || conditionNotice != null) {
-                // When actively uploading or waiting on a condition, provide prominent Cancel Backup action
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ExpressiveTonalButton(
-                        onClick = onCancelBackup,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.btn_cancel_backup), fontWeight = FontWeight.SemiBold)
-                    }
-
-                    ExpressiveTonalButton(
-                        onClick = onPickPhotos,
-                        enabled = selectedAccount != null && !isOffline,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.pick_photos_button))
-                    }
-
-                    ExpressiveTonalButton(
-                        onClick = onPickFiles,
-                        enabled = selectedAccount != null && !isOffline,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.pick_files_button))
-                    }
-                }
-            } else if (hasMissingAlbum) {
+            if (hasMissingAlbum) {
                 // Missing album state: single Open Album Manager button replacing the 3 action buttons
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -1998,8 +1655,177 @@ private fun HeroBackupCard(
                         Text(stringResource(R.string.btn_open_album_manager))
                     }
                 }
+            } else if (isPaused) {
+                // Paused state: Prominent primary Resume + side-by-side Cancel + paired Pick Photos & Choose from Files
+                val buttonsEnabled = selectedAccount != null && !isOffline
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ExpressiveButton(
+                            onClick = onResumeBackup,
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.btn_resume_backup),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        ExpressiveTonalButton(
+                            onClick = onCancelBackup,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.btn_cancel_backup),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = onPickPhotos,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_photos_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onPickFiles,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_files_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            } else if (isUploading || conditionNotice != null) {
+                // When actively uploading or waiting on a condition, provide Pause and Cancel Backup actions
+                val buttonsEnabled = selectedAccount != null && !isOffline
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ExpressiveTonalButton(
+                            onClick = onPauseBackup,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.btn_pause_backup),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        ExpressiveTonalButton(
+                            onClick = onCancelBackup,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.btn_cancel_backup),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = onPickPhotos,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_photos_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = onPickFiles,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_files_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             } else {
-                // Idle state: Sync Folders, Pick Photos & Videos, and Choose from Files
+                // Idle state: Prominent primary Sync Folders + paired secondary Pick Photos & Choose from Files
                 val buttonsEnabled = selectedAccount != null && !isOffline
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -2015,25 +1841,41 @@ private fun HeroBackupCard(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(stringResource(R.string.btn_sync_folders))
                     }
-                    ExpressiveTonalButton(
-                        onClick = onPickPhotos,
-                        enabled = buttonsEnabled,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.pick_photos_button))
-                    }
-                    ExpressiveTonalButton(
-                        onClick = onPickFiles,
-                        enabled = buttonsEnabled,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.pick_files_button))
+                        FilledTonalButton(
+                            onClick = onPickPhotos,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_photos_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onPickFiles,
+                            shapes = ButtonDefaults.shapes(),
+                            enabled = buttonsEnabled,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.FolderCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.pick_files_button),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -2042,10 +1884,33 @@ private fun HeroBackupCard(
 }
 
 @Composable
-fun UploadItemRow(item: UploadItem, accounts: List<GoogleAccount> = emptyList(), showAccountBadge: Boolean = false) {
+fun UploadItemRow(
+    item: UploadItem,
+    position: GroupPosition = GroupPosition.Single,
+    accounts: List<GoogleAccount> = emptyList(),
+    showAccountBadge: Boolean = false,
+    onRetry: (() -> Unit)? = null
+) {
+    val canRetry = onRetry != null && (item.status == UploadStatus.FAILED || item.status == UploadStatus.STOPPED)
+    val haptic = LocalHapticFeedback.current
+    val shape = groupedCardShape(position)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .then(
+                if (canRetry) {
+                    Modifier.clickable {
+                        try {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        } catch (_: Exception) {}
+                        onRetry?.invoke()
+                    }
+                } else {
+                    Modifier
+                }
+            ),
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
@@ -2124,6 +1989,33 @@ fun UploadItemRow(item: UploadItem, accounts: List<GoogleAccount> = emptyList(),
                     color = if (item.status == UploadStatus.FAILED || item.status == UploadStatus.STOPPED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            if (canRetry) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.queue_item_tap_to_retry),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2138,25 +2030,29 @@ fun formatBytes(bytes: Long): String {
     return "%.2f GB".format(gb)
 }
 
-fun calculateRemainingTimeText(remainingBytes: Long, uploadSpeedStr: String?): String? {
+fun calculateRemainingTimeText(
+    context: android.content.Context,
+    remainingBytes: Long,
+    uploadSpeedStr: String?
+): String? {
     if (remainingBytes <= 0 || uploadSpeedStr.isNullOrBlank()) return null
 
     val bytesPerSec = parseSpeedToBytesPerSecond(uploadSpeedStr) ?: return null
     if (bytesPerSec <= 0) return null
 
     val totalSeconds = remainingBytes / bytesPerSec
-    if (totalSeconds < 1) return "~1s left"
-    if (totalSeconds < 60) return "~${totalSeconds}s left"
+    if (totalSeconds < 1) return context.getString(R.string.backup_eta_seconds, 1L)
+    if (totalSeconds < 60) return context.getString(R.string.backup_eta_seconds, totalSeconds)
 
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     if (minutes < 60) {
-        return if (seconds > 0) "~${minutes}m ${seconds}s left" else "~${minutes}m left"
+        return context.getString(R.string.backup_eta_minutes, minutes, seconds)
     }
 
     val hours = minutes / 60
     val remMinutes = minutes % 60
-    return if (remMinutes > 0) "~${hours}h ${remMinutes}m left" else "~${hours}h left"
+    return context.getString(R.string.backup_eta_hours, hours, remMinutes)
 }
 
 fun parseSpeedToBytesPerSecond(speedStr: String): Long? {
@@ -2200,7 +2096,7 @@ private fun QueueFilterChips(
             com.reiux.lumen.ui.components.ExpressiveFilterChip(
                 selected = selectedFilter == null,
                 onClick = { onSelectFilter(null) },
-                label = { Text("${stringResource(R.string.albums_filter_all)} (${queue.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                label = { Text("${stringResource(R.string.albums_filter_all)} (${queue.size})", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
             )
         }
         if (uploadingCount > 0) {
@@ -2209,7 +2105,7 @@ private fun QueueFilterChips(
                 com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "uploading") },
-                    label = { Text(stringResource(R.string.filter_uploading, uploadingCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                    label = { Text(stringResource(R.string.filter_uploading, uploadingCount), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
                 )
             }
         }
@@ -2219,7 +2115,7 @@ private fun QueueFilterChips(
                 com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "failed") },
-                    label = { Text(stringResource(R.string.filter_failed, failedCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                    label = { Text(stringResource(R.string.filter_failed, failedCount), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) },
                     colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
@@ -2233,7 +2129,7 @@ private fun QueueFilterChips(
                 com.reiux.lumen.ui.components.ExpressiveFilterChip(
                     selected = isSelected,
                     onClick = { onSelectFilter(if (isSelected) null else "done") },
-                    label = { Text(stringResource(R.string.filter_done, doneCount), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                    label = { Text(stringResource(R.string.filter_done, doneCount), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
                 )
             }
         }

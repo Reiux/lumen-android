@@ -1,17 +1,20 @@
 package com.reiux.lumen.ui.screens
 
-import android.content.res.Configuration
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,10 +32,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -41,32 +44,33 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +87,10 @@ import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.rememberExpressivePressed
+import com.reiux.lumen.ui.components.rememberHapticClick
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
@@ -269,203 +277,266 @@ fun AccountsScreen(
         }
     }
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
     val wideLazyListState = rememberLazyListState()
     val portraitLazyListState = rememberLazyListState()
 
     val otherAccounts = accounts.filterNot { it.email == selectedAccount?.email }
 
-    if (isWideLayout) {
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Pane: Active Account & Add Action
-            val leftScrollState = rememberScrollState()
-            Column(
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWideLayout = maxWidth >= 640.dp
+
+        if (isWideLayout) {
+            Row(
                 modifier = Modifier
-                    .weight(0.48f)
-                    .fillMaxHeight()
-                    .verticalScroll(leftScrollState),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.accounts_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.accounts_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (selectedAccount != null) {
-                    ActiveAccountHeroCard(
-                        selectedAccount = selectedAccount,
-                        onPickAvatar = {
-                            targetAvatarAccountEmail = selectedAccount.email
-                            avatarPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        onRename = { accountToRenameEmail = selectedAccount.email },
-                        onRemove = { handleRemoveAccount(selectedAccount) },
-                        onTriggerCapsule = { showTimeCapsule = true }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                ExpressiveButton(
-                    onClick = { showAddDialog = true },
-                    modifier = Modifier.fillMaxWidth()
+                // Left Pane: Active Account & Add Action
+                val leftScrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .weight(0.48f)
+                        .fillMaxHeight()
+                        .verticalScroll(leftScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.accounts_btn_add))
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.accounts_title),
+                            style = MaterialTheme.typography.headlineMediumEmphasized,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.accounts_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-            // Right Pane: Other Connected Accounts List
-            Column(
+                    if (selectedAccount != null) {
+                        ActiveAccountHeroCard(
+                            selectedAccount = selectedAccount,
+                            onPickAvatar = {
+                                targetAvatarAccountEmail = selectedAccount.email
+                                avatarPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            onRename = { accountToRenameEmail = selectedAccount.email },
+                            onRemove = { handleRemoveAccount(selectedAccount) },
+                            onTriggerCapsule = { showTimeCapsule = true }
+                        )
+                    } else {
+                        NoAccountEmptyCard()
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    ExpressiveButton(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.accounts_btn_add))
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                // Right Pane: Other Connected Accounts List
+                Column(
+                    modifier = Modifier
+                        .weight(0.52f)
+                        .fillMaxHeight()
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (otherAccounts.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.accounts_other_title, otherAccounts.size),
+                            style = MaterialTheme.typography.titleMediumEmphasized,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyColumn(
+                            state = wideLazyListState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            itemsIndexed(
+                                items = otherAccounts,
+                                key = { _, account -> account.email }
+                            ) { index, account ->
+                                OtherAccountRowItem(
+                                    account = account,
+                                    position = groupPositionOf(index, otherAccounts.size),
+                                    onSelectAccount = handleSelectAccount,
+                                    onRemove = { handleRemoveAccount(account) }
+                                )
+                            }
+                            item { Spacer(modifier = Modifier.height(24.dp)) }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 16.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.accounts_no_other_connected),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Single Column Layout
+            LazyColumn(
+                state = portraitLazyListState,
                 modifier = Modifier
-                    .weight(0.52f)
-                    .fillMaxHeight()
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
-                if (otherAccounts.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        text = stringResource(R.string.accounts_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LazyColumn(
-                        state = wideLazyListState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        itemsIndexed(
-                            items = otherAccounts,
-                            key = { _, account -> account.email }
-                        ) { index, account ->
-                            OtherAccountRowItem(
-                                account = account,
-                                position = groupPositionOf(index, otherAccounts.size),
-                                onSelectAccount = handleSelectAccount,
-                                onRemove = { handleRemoveAccount(account) }
-                            )
-                        }
-                        item { Spacer(modifier = Modifier.height(16.dp)) }
+                    Text(
+                        text = stringResource(R.string.accounts_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (selectedAccount != null) {
+                    item {
+                        ActiveAccountHeroCard(
+                            selectedAccount = selectedAccount,
+                            onPickAvatar = {
+                                targetAvatarAccountEmail = selectedAccount.email
+                                avatarPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            onRename = { accountToRenameEmail = selectedAccount.email },
+                            onRemove = { handleRemoveAccount(selectedAccount) },
+                            onTriggerCapsule = { showTimeCapsule = true }
+                        )
                     }
                 } else {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow
-                    ) {
+                    item {
+                        NoAccountEmptyCard()
+                    }
+                }
+
+                if (otherAccounts.isNotEmpty()) {
+                    item {
                         Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.accounts_no_other_connected),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = stringResource(R.string.accounts_other_title, otherAccounts.size),
+                                style = MaterialTheme.typography.titleMediumEmphasized,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                otherAccounts.forEachIndexed { index, account ->
+                                    androidx.compose.runtime.key(account.email) {
+                                        OtherAccountRowItem(
+                                            account = account,
+                                            position = groupPositionOf(index, otherAccounts.size),
+                                            onSelectAccount = handleSelectAccount,
+                                            onRemove = { handleRemoveAccount(account) }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ExpressiveButton(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.accounts_btn_add))
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
-    } else {
-        // Single Column Layout
-        LazyColumn(
-            state = portraitLazyListState,
-            modifier = modifier
-                .fillMaxSize()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 720.dp)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+    }
+}
+
+@Composable
+private fun NoAccountEmptyCard() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.accounts_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(R.string.accounts_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (selectedAccount != null) {
-                item {
-                    ActiveAccountHeroCard(
-                        selectedAccount = selectedAccount,
-                        onPickAvatar = {
-                            targetAvatarAccountEmail = selectedAccount.email
-                            avatarPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        onRename = { accountToRenameEmail = selectedAccount.email },
-                        onRemove = { handleRemoveAccount(selectedAccount) },
-                        onTriggerCapsule = { showTimeCapsule = true }
+            Surface(
+                modifier = Modifier.size(68.dp),
+                shape = MaterialShapes.Flower.toShape(),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
                     )
                 }
             }
-
-            if (otherAccounts.isNotEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.accounts_other_title, otherAccounts.size),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                itemsIndexed(
-                    items = otherAccounts,
-                    key = { _, account -> account.email }
-                ) { index, account ->
-                    OtherAccountRowItem(
-                        account = account,
-                        position = groupPositionOf(index, otherAccounts.size),
-                        onSelectAccount = handleSelectAccount,
-                        onRemove = { handleRemoveAccount(account) }
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                ExpressiveButton(
-                    onClick = { showAddDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.accounts_btn_add))
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = stringResource(R.string.account_no_selected),
+                style = MaterialTheme.typography.titleMediumEmphasized,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.subtitle_no_account),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -480,6 +551,30 @@ private fun ActiveAccountHeroCard(
     onTriggerCapsule: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+    val avatarShape = MaterialShapes.Cookie9Sided.toShape()
+    val badgeInteractionSource = remember { MutableInteractionSource() }
+    val isBadgeGesturePressed by rememberExpressivePressed(badgeInteractionSource)
+    val badgeClickPulse = remember { mutableStateOf(false) }
+    val isBadgeVisuallyPressed = isBadgeGesturePressed || badgeClickPulse.value
+    val badgeHapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            badgeClickPulse.value = true
+            delay(180)
+            badgeClickPulse.value = false
+        }
+        onPickAvatar()
+    }
+    val badgeCorner by animateDpAsState(
+        targetValue = if (isBadgeVisuallyPressed) 8.dp else 14.dp,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "cameraBadgeCorner"
+    )
+    val badgeScale by animateFloatAsState(
+        targetValue = if (isBadgeVisuallyPressed) 0.90f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "cameraBadgeScale"
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -502,7 +597,7 @@ private fun ActiveAccountHeroCard(
                         modifier = Modifier
                             .size(64.dp)
                             .align(Alignment.TopStart)
-                            .clip(CircleShape)
+                            .clip(avatarShape)
                             .combinedClickable(
                                 onClick = onPickAvatar,
                                 onLongClick = {
@@ -510,9 +605,9 @@ private fun ActiveAccountHeroCard(
                                     onTriggerCapsule()
                                 }
                             ),
-                        shape = CircleShape,
+                        shape = avatarShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.20f)),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.20f)),
                         tonalElevation = 2.dp
                     ) {
                         val avatarFile = selectedAccount.avatarPath?.let { File(it) }
@@ -539,20 +634,22 @@ private fun ActiveAccountHeroCard(
                     }
 
                     Surface(
+                        onClick = badgeHapticClick,
                         modifier = Modifier
-                            .size(26.dp)
+                            .size(28.dp)
                             .align(Alignment.BottomEnd)
-                            .clickable { onPickAvatar() },
-                        shape = CircleShape,
+                            .scale(badgeScale),
+                        shape = RoundedCornerShape(badgeCorner),
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)),
-                        tonalElevation = 4.dp
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)),
+                        tonalElevation = 4.dp,
+                        interactionSource = badgeInteractionSource
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Rounded.CameraAlt,
-                                contentDescription = "Change profile picture",
-                                modifier = Modifier.size(13.dp),
+                                contentDescription = stringResource(R.string.cd_change_avatar),
+                                modifier = Modifier.size(14.dp),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -565,8 +662,7 @@ private fun ActiveAccountHeroCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = selectedAccount.displayName ?: selectedAccount.email,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLargeEmphasized,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -653,6 +749,7 @@ private fun OtherAccountRowItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val rowAvatarShape = MaterialShapes.Clover4Leaf.toShape()
             val avatarFile = account.avatarPath?.let { File(it) }
             if (avatarFile != null && avatarFile.exists()) {
                 AsyncImage(
@@ -661,13 +758,13 @@ private fun OtherAccountRowItem(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(CircleShape)
+                        .clip(rowAvatarShape)
                 )
             } else {
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(CircleShape)
+                        .clip(rowAvatarShape)
                         .background(MaterialTheme.colorScheme.secondaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
@@ -717,7 +814,7 @@ private fun OtherAccountRowItem(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "Remove",
+                    contentDescription = stringResource(R.string.cd_remove_account),
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp)
                 )
@@ -730,73 +827,42 @@ private fun OtherAccountRowItem(
 fun LumenTimeCapsuleDialog(
     onDismiss: () -> Unit
 ) {
-    com.reiux.lumen.ui.components.PredictiveAlertDialog(
+    ExpressiveAlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.CameraAlt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "Lumen Memory Capsule",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Preserved Lifetime Stats",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "• Pixels Preserved: 4.2 Trillion",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "• Space Saved: 133.7 GB",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "• Photos Protected: ∞",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "• Account Status: Verified & Encrypted",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            ExpressiveButton(onClick = onDismiss) {
-                Text("Close Capsule")
-            }
-        },
-        shape = RoundedCornerShape(28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    )
+        icon = Icons.Rounded.CameraAlt,
+        title = "Lumen Memory Capsule",
+        tone = ExpressiveDialogTone.PRIMARY,
+        confirmText = "Close Capsule",
+        onConfirm = onDismiss
+    ) {
+        ExpressiveDialogCallout(tone = ExpressiveDialogTone.SECONDARY) {
+            Text(
+                text = "Preserved Lifetime Stats",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "• Pixels Preserved: 4.2 Trillion",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "• Space Saved: 133.7 GB",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "• Photos Protected: ∞",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "• Account Status: Verified & Encrypted",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

@@ -22,13 +22,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -129,6 +130,7 @@ fun GoogleSignInWebViewDialog(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .safeDrawingPadding()
                     .padding(
                         horizontal = if (isWideLayout) 32.dp else 16.dp,
                         vertical = if (isWideLayout) 24.dp else 18.dp
@@ -158,7 +160,10 @@ fun GoogleSignInWebViewDialog(
                                 )
                             },
                             navigationIcon = {
-                                IconButton(onClick = onDismiss) {
+                                ExpressiveIconButton(
+                                    onClick = onDismiss,
+                                    colors = IconButtonDefaults.iconButtonColors()
+                                ) {
                                     Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close))
                                 }
                             },

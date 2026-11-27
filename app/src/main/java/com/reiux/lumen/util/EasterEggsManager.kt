@@ -82,7 +82,7 @@ object EasterEggsManager {
             LumenLogger.i("EasterEgg") { "Triggered completion pun: '$punText'" }
             return punText
         }
-        return "All Backed Up!"
+        return context.getString(R.string.completion_default_title)
     }
 
     fun checkMilestoneToast(context: Context, milestone: Int) {
@@ -120,7 +120,7 @@ object EasterEggsManager {
     }
 
     fun getEmptyStateSubtitle(context: Context, force: Boolean = false, forcedIndex: Int? = null): String {
-        val defaultSubtitle = "Choose photos & videos or tap Sync Folders to start backup"
+        val defaultSubtitle = context.getString(R.string.empty_state_default_subtitle)
         val variants = listOf(
             R.string.empty_state_variant_1,
             R.string.empty_state_variant_2,

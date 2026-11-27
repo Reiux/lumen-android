@@ -24,7 +24,8 @@ data class BackupFolder(
     val customAlbumName: String? = null,
     val customAlbumNickname: String? = null,
     val accountEmail: String? = null,
-    val isMissingAlbum: Boolean = false
+    val isMissingAlbum: Boolean = false,
+    val deleteAfterBackup: Boolean = false
 )
 
 data class BackupSettings(

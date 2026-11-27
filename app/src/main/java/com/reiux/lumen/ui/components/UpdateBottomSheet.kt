@@ -6,12 +6,17 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,15 +24,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -51,6 +55,7 @@ fun UpdateBottomSheet(
     updateInfo: UpdateInfo,
     isDownloading: Boolean,
     downloadProgress: Int,
+    downloadError: String? = null,
     onDismiss: () -> Unit,
     onUpdateClick: () -> Unit
 ) {
@@ -76,6 +81,7 @@ fun UpdateBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp)
                 .padding(bottom = 24.dp)
         ) {
@@ -110,7 +116,9 @@ fun UpdateBottomSheet(
             Spacer(modifier = Modifier.height(24.dp))
 
             Surface(
-                modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
@@ -140,7 +148,13 @@ fun UpdateBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            AnimatedVisibility(visible = isDownloading) {
+            AnimatedVisibility(
+                visible = isDownloading,
+                enter = fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
+                exit = fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    shrinkVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec())
+            ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -161,9 +175,44 @@ fun UpdateBottomSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                     ExpressiveWavyLinearProgress(
                         progress = (downloadProgress / 100f).coerceIn(0f, 1f),
-                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = !downloadError.isNullOrBlank() && !isDownloading,
+                enter = fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
+                exit = fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    shrinkVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec())
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = downloadError.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
@@ -171,7 +220,7 @@ fun UpdateBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(
+                ExpressiveTextButton(
                     onClick = onDismiss,
                     enabled = !isDownloading
                 ) {

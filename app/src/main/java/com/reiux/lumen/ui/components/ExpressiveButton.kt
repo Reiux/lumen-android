@@ -2,7 +2,6 @@ package com.reiux.lumen.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,6 +22,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -108,13 +108,13 @@ fun ExpressiveButton(
 
     val cornerRadius by animateDpAsState(
         targetValue = if (isVisuallyPressed) 12.dp else 28.dp,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "buttonCornerRadius",
     )
 
     val scale by animateFloatAsState(
         targetValue = if (isVisuallyPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "buttonScale",
     )
 
@@ -190,13 +190,13 @@ fun ExpressiveIconButton(
 
     val cornerRadius by animateDpAsState(
         targetValue = if (isVisuallyPressed) 10.dp else 24.dp,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "iconButtonCornerRadius",
     )
 
     val scale by animateFloatAsState(
         targetValue = if (isVisuallyPressed) 0.94f else 1f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "iconButtonScale",
     )
 
@@ -251,13 +251,13 @@ fun ExpressiveExtendedFloatingActionButton(
 
     val cornerRadius by animateDpAsState(
         targetValue = if (isVisuallyPressed) 12.dp else 20.dp,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "fabCornerRadius",
     )
 
     val scale by animateFloatAsState(
         targetValue = if (isVisuallyPressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "fabScale",
     )
 
@@ -279,4 +279,25 @@ fun ExpressiveExtendedFloatingActionButton(
             text()
         }
     }
+}
+
+@Composable
+fun ExpressiveTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove, onClick)
+    TextButton(
+        onClick = hapticClick,
+        shapes = ButtonDefaults.shapes(),
+        modifier = modifier,
+        enabled = enabled,
+        colors = colors,
+        contentPadding = contentPadding,
+        content = content
+    )
 }

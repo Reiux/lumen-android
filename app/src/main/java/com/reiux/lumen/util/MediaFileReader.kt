@@ -1,7 +1,9 @@
 package com.reiux.lumen.util
 
+import android.Manifest
 import android.content.ContentUris
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -10,6 +12,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
+import androidx.core.content.ContextCompat
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
@@ -515,6 +518,109 @@ object MediaFileReader {
         return null
     }
 
+    fun hasMediaLocationPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+            return true
+        }
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_MEDIA_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    internal fun isDirectMediaStoreContentUri(scheme: String?, authority: String?, path: String?): Boolean {
+        return scheme.equals("content", ignoreCase = true) &&
+            authority.equals("media", ignoreCase = true) &&
+            path?.contains("picker", ignoreCase = true) != true
+    }
+
+    internal fun isDirectMediaStoreContentUri(uri: Uri): Boolean {
+        return isDirectMediaStoreContentUri(uri.scheme, uri.authority, uri.path)
+    }
+
+    fun resolveOriginalReadableUri(context: Context, uri: Uri): Uri {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !hasMediaLocationPermission(context)) {
+            return uri
+        }
+        return try {
+            when {
+                isDirectMediaStoreContentUri(uri) -> MediaStore.setRequireOriginal(uri)
+                uri.scheme.equals("content", ignoreCase = true) &&
+                    uri.authority.equals("com.android.providers.media.documents", ignoreCase = true) -> {
+                    val mediaUri = MediaStore.getMediaUri(context, uri)
+                    if (mediaUri != null && isDirectMediaStoreContentUri(mediaUri)) {
+                        MediaStore.setRequireOriginal(mediaUri)
+                    } else {
+                        uri
+                    }
+                }
+                uri.scheme.equals("content", ignoreCase = true) &&
+                    uri.authority.equals(MediaStore.AUTHORITY, ignoreCase = true) &&
+                    uri.path?.contains("picker", ignoreCase = true) == true -> {
+                    val details = resolveRealNameFromPickerUriDetails(context, uri)
+                    val pickerSize = details?.pickerSize
+                    val targetId = uri.lastPathSegment?.toLongOrNull()
+                    if (targetId != null && pickerSize != null && pickerSize > 0L && pickerSize == details.mediaStoreSize) {
+                        val collections = listOf(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        )
+                        var verifiedMediaUri: Uri? = null
+                        for (collectionUri in collections) {
+                            try {
+                                context.contentResolver.query(
+                                    collectionUri,
+                                    arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE),
+                                    "${MediaStore.MediaColumns._ID} = ?",
+                                    arrayOf(targetId.toString()),
+                                    null
+                                )?.use { cursor ->
+                                    if (cursor.moveToFirst()) {
+                                        val idIdx = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                                        val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                                        val rowId = if (idIdx >= 0 && !cursor.isNull(idIdx)) cursor.getLong(idIdx) else -1L
+                                        val rowSize = if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) cursor.getLong(sizeIdx) else -1L
+                                        if (rowId == targetId && rowSize == pickerSize) {
+                                            verifiedMediaUri = ContentUris.withAppendedId(collectionUri, rowId)
+                                        }
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                            if (verifiedMediaUri != null) break
+                        }
+                        if (verifiedMediaUri != null) {
+                            MediaStore.setRequireOriginal(verifiedMediaUri)
+                        } else {
+                            uri
+                        }
+                    } else {
+                        uri
+                    }
+                }
+                else -> uri
+            }
+        } catch (_: Exception) {
+            uri
+        }
+    }
+
+    fun openOriginalInputStream(context: Context, uri: Uri): InputStream? {
+        val originalUri = resolveOriginalReadableUri(context, uri)
+        if (originalUri != uri) {
+            try {
+                val originalStream = context.contentResolver.openInputStream(originalUri)
+                if (originalStream != null) {
+                    return originalStream
+                }
+                LumenLogger.d(TAG) { "setRequireOriginal open returned null; falling back to standard URI" }
+            } catch (e: Exception) {
+                LumenLogger.d(TAG) { "setRequireOriginal open failed (${e.javaClass.simpleName}); falling back to standard URI" }
+            }
+        }
+        return context.contentResolver.openInputStream(uri)
+    }
+
     fun openInputStream(context: Context, filePath: String): InputStream? {
         val file = File(filePath)
         try {
@@ -532,14 +638,14 @@ object MediaFileReader {
 
         if (filePath.startsWith("content://")) {
             try {
-                return context.contentResolver.openInputStream(Uri.parse(filePath))
+                return openOriginalInputStream(context, Uri.parse(filePath))
             } catch (_: Exception) {}
         }
 
         val contentUri = resolveToMediaStoreUri(context, filePath)
         if (contentUri != null) {
             try {
-                return context.contentResolver.openInputStream(contentUri)
+                return openOriginalInputStream(context, contentUri)
             } catch (_: Exception) {}
         }
 
@@ -1088,7 +1194,7 @@ object MediaFileReader {
 
             val stream = if (sourceUri != null) {
                 try {
-                    context.contentResolver.openInputStream(sourceUri)
+                    openOriginalInputStream(context, sourceUri)
                 } catch (_: Exception) {
                     null
                 } ?: openInputStream(context, filePath)
@@ -1230,7 +1336,7 @@ object MediaFileReader {
                 return null
             }
 
-            val stream = context.contentResolver.openInputStream(uri)
+            val stream = openOriginalInputStream(context, uri)
             if (stream == null) {
                 try { uniqueStagingDir.deleteRecursively() } catch (_: Exception) {}
                 return null

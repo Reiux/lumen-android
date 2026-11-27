@@ -1,8 +1,6 @@
 package com.reiux.lumen.ui.components
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -30,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,7 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +66,7 @@ fun EditFolderDialog(
 ) {
     var displayName by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.displayName) }
     var includeSubfolders by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.includeSubfolders) }
+    var deleteAfterBackup by remember(folder) { mutableStateOf(folder.deleteAfterBackup) }
     var assignedAccountEmail by rememberSaveable(folder.path, folder.accountEmail) { mutableStateOf(folder.accountEmail ?: activeAccount?.email) }
     val selectedAccount = remember(assignedAccountEmail, activeAccount, accounts) {
         accounts.firstOrNull { !assignedAccountEmail.isNullOrBlank() && it.email.equals(assignedAccountEmail, ignoreCase = true) }
@@ -177,6 +175,7 @@ fun EditFolderDialog(
                                 val updated = folder.copy(
                                     displayName = displayName.ifBlank { folder.displayName },
                                     includeSubfolders = includeSubfolders,
+                                    deleteAfterBackup = deleteAfterBackup,
                                     targetAlbumMode = mode,
                                     customAlbumName = albumName,
                                     customAlbumNickname = albumNickname,
@@ -222,6 +221,58 @@ fun EditFolderDialog(
                         )
                     }
                 }
+
+                val toggleDeleteAfterBackup: (Boolean) -> Unit = { next ->
+                    try { editHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                    deleteAfterBackup = next
+                }
+                val deleteContainerColor by animateColorAsState(
+                    targetValue = if (deleteAfterBackup) {
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                    label = "editDeleteAfterBackupContainer"
+                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = deleteContainerColor
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { toggleDeleteAfterBackup(!deleteAfterBackup) }
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = null,
+                            tint = if (deleteAfterBackup) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.folder_delete_after_backup_title),
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (deleteAfterBackup) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.folder_delete_after_backup_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (deleteAfterBackup) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        ExpressiveSwitch(
+                            checked = deleteAfterBackup,
+                            onCheckedChange = toggleDeleteAfterBackup
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -244,6 +295,7 @@ fun EditFolderDialog(
                         folder.copy(
                             displayName = displayName.ifBlank { folder.displayName },
                             includeSubfolders = includeSubfolders,
+                            deleteAfterBackup = deleteAfterBackup,
                             targetAlbumMode = mode,
                             customAlbumName = albumName,
                             customAlbumNickname = albumNickname,
@@ -257,7 +309,7 @@ fun EditFolderDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            ExpressiveTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.btn_cancel))
             }
         }

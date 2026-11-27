@@ -1,17 +1,13 @@
 package com.reiux.lumen.ui.screens
 
-import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +26,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChipDefaults
 import com.reiux.lumen.ui.components.ExpressiveFilterChip
 import androidx.compose.foundation.shape.CircleShape
@@ -41,19 +39,18 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,14 +61,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -79,6 +74,8 @@ import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveDialogTone
+import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
+import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
@@ -88,7 +85,6 @@ import com.reiux.lumen.data.repository.SettingsRepository
 import com.reiux.lumen.ui.components.AddFolderDialog
 import com.reiux.lumen.ui.components.NullableBackupFolderSaver
 import com.reiux.lumen.ui.components.isAllowedBackupFolderPath
-import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveWavyIndeterminateProgress
@@ -297,43 +293,50 @@ fun FoldersScreen(
     }
     val isSyncingAlbums = albumSyncState is AlbumSyncState.Syncing
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
     val wideLazyListState = rememberLazyListState()
     val portraitLazyListState = rememberLazyListState()
+    val leftScrollState = rememberScrollState()
 
-    if (isWideLayout) {
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Pane: Title & Controls
-            Column(
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWideLayout = maxWidth >= 640.dp
+
+        if (isWideLayout) {
+            Row(
                 modifier = Modifier
-                    .weight(0.42f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                FoldersHeader(
-                    hasAlbumAssignedFolders = hasAlbumAssignedFolders,
-                    isSyncingAlbums = isSyncingAlbums,
-                    onSyncAllAlbums = onSyncAllAlbums
-                )
+                // Left Pane: Title & Controls
+                Column(
+                    modifier = Modifier
+                        .weight(0.42f)
+                        .fillMaxHeight()
+                        .verticalScroll(leftScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FoldersHeader(
+                        hasAlbumAssignedFolders = hasAlbumAssignedFolders,
+                        isSyncingAlbums = isSyncingAlbums,
+                        onSyncAllAlbums = onSyncAllAlbums
+                    )
 
-                AlbumSyncStatusCard(
-                    albumSyncState = albumSyncState,
-                    onCancel = onCancelAlbumSync,
-                    onDismiss = onDismissAlbumSync
-                )
+                    AlbumSyncStatusCard(
+                        albumSyncState = albumSyncState,
+                        onCancel = onCancelAlbumSync,
+                        onDismiss = onDismissAlbumSync
+                    )
 
-                FoldersActionControls(
-                    onAddFolder = onOpenDeviceFolders,
-                    onOpenAlbumManager = onOpenAlbumManager
-                )
-            }
+                    FoldersActionControls(
+                        onAddFolder = onOpenDeviceFolders,
+                        onOpenAlbumManager = onOpenAlbumManager
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
             // Right Pane: Folder Items List
             LazyColumn(
@@ -341,16 +344,19 @@ fun FoldersScreen(
                 modifier = Modifier
                     .weight(0.58f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                item { Spacer(modifier = Modifier.height(4.dp)) }
+                item { Spacer(modifier = Modifier.height(9.dp)) }
                 item {
-                    AccountFilterChips(
-                        accounts = accounts,
-                        folders = folders,
-                        selectedFilter = selectedAccountFilter,
-                        onSelectFilter = { selectedAccountFilter = it }
-                    )
+                    Column {
+                        AccountFilterChips(
+                            accounts = accounts,
+                            folders = folders,
+                            selectedFilter = selectedAccountFilter,
+                            onSelectFilter = { selectedAccountFilter = it }
+                        )
+                        Spacer(modifier = Modifier.height(9.dp))
+                    }
                 }
                 if (filteredFolders.isEmpty()) {
                     item(key = "folders_empty_wide") {
@@ -382,19 +388,19 @@ fun FoldersScreen(
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(16.dp)) }
+                item { Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp)) }
             }
         }
     } else {
         // Portrait Single Column
         LazyColumn(
             state = portraitLazyListState,
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -403,22 +409,26 @@ fun FoldersScreen(
                     isSyncingAlbums = isSyncingAlbums,
                     onSyncAllAlbums = onSyncAllAlbums
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 AccountFilterChips(
                     accounts = accounts,
                     folders = folders,
                     selectedFilter = selectedAccountFilter,
                     onSelectFilter = { selectedAccountFilter = it }
                 )
+                Spacer(modifier = Modifier.height(9.dp))
             }
 
             if (albumSyncState !is AlbumSyncState.Idle) {
                 item {
-                    AlbumSyncStatusCard(
-                        albumSyncState = albumSyncState,
-                        onCancel = onCancelAlbumSync,
-                        onDismiss = onDismissAlbumSync
-                    )
+                    Column {
+                        AlbumSyncStatusCard(
+                            albumSyncState = albumSyncState,
+                            onCancel = onCancelAlbumSync,
+                            onDismiss = onDismissAlbumSync
+                        )
+                        Spacer(modifier = Modifier.height(9.dp))
+                    }
                 }
             }
 
@@ -454,13 +464,14 @@ fun FoldersScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(9.dp))
                 FoldersActionControls(
                     onAddFolder = onOpenDeviceFolders,
                     onOpenAlbumManager = onOpenAlbumManager
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp))
             }
+        }
         }
     }
 }
@@ -484,7 +495,7 @@ private fun FoldersEmptyStateCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Surface(
-                shape = CircleShape,
+                shape = MaterialShapes.Clover4Leaf.toShape(),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(64.dp)
             ) {
@@ -502,8 +513,7 @@ private fun FoldersEmptyStateCard(
                 text = stringResource(
                     if (isFilteredByAccount) R.string.folders_empty_account_title else R.string.folders_empty_title
                 ),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
@@ -547,15 +557,22 @@ private fun FoldersHeader(
 
         if (hasAlbumAssignedFolders) {
             Spacer(modifier = Modifier.width(8.dp))
-            TextButton(
+            ExpressiveTextButton(
                 onClick = onSyncAllAlbums,
                 enabled = !isSyncingAlbums
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Sync,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
+                if (isSyncingAlbums) {
+                    ExpressiveLoadingIndicator(
+                        size = 20.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (isSyncingAlbums) stringResource(R.string.settings_action_syncing) else stringResource(R.string.btn_sync_albums),
@@ -577,7 +594,8 @@ private fun FoldersActionControls(
     ) {
         ExpressiveButton(
             onClick = onAddFolder,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
@@ -586,7 +604,8 @@ private fun FoldersActionControls(
 
         ExpressiveTonalButton(
             onClick = onOpenAlbumManager,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
@@ -603,8 +622,8 @@ private fun AlbumSyncStatusCard(
 ) {
     AnimatedVisibility(
         visible = albumSyncState !is AlbumSyncState.Idle,
-        enter = fadeIn(animationSpec = spring(dampingRatio = 1f, stiffness = 800f)),
-        exit = fadeOut(animationSpec = spring(dampingRatio = 1f, stiffness = 800f))
+        enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
+        exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec())
     ) {
         when (albumSyncState) {
             is AlbumSyncState.Syncing -> {
@@ -628,11 +647,9 @@ private fun AlbumSyncStatusCard(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Sync,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
+                                ExpressiveLoadingIndicator(
+                                    size = 20.dp,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
@@ -660,7 +677,7 @@ private fun AlbumSyncStatusCard(
                                     )
                                 }
                             }
-                            TextButton(onClick = onCancel) {
+                            ExpressiveTextButton(onClick = onCancel) {
                                 Text(stringResource(R.string.btn_cancel))
                             }
                         }
@@ -937,8 +954,8 @@ private fun FolderRowItem(
                 }
             }
 
-            // Row 2: Media type chip, Subfolders chip, and Album label
-            val showRow2 = mediaKind != null || (folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE))
+            // Row 2: Media type chip, Subfolders chip, Auto-delete badge, and Album label
+            val showRow2 = mediaKind != null || folder.deleteAfterBackup || (folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE))
             if (showRow2) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -960,11 +977,38 @@ private fun FolderRowItem(
                         ) {
                             Text(
                                 text = stringResource(R.string.tag_subfolders),
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
+                        }
+                    }
+
+                    if (folder.deleteAfterBackup) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.folder_delete_after_backup_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
 

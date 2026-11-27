@@ -69,13 +69,16 @@ fun AccountBlockCard(
         }
     }
 
-    val countdownText = remember(remainingMillis) {
-        if (remainingMillis <= 0) "a few seconds"
-        else {
-            val totalSec = remainingMillis / 1000
-            val min = totalSec / 60
-            val sec = totalSec % 60
-            if (min > 0) "${min}m ${sec}s" else "${sec}s"
+    val countdownText = if (remainingMillis <= 0) {
+        stringResource(R.string.account_block_few_seconds)
+    } else {
+        val totalSec = remainingMillis / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        if (min > 0) {
+            stringResource(R.string.account_block_minutes_seconds, min, sec)
+        } else {
+            stringResource(R.string.account_block_seconds, sec)
         }
     }
 
