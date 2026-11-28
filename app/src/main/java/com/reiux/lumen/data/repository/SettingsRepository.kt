@@ -7,6 +7,7 @@ import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.AuthFailureKind
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.BackupSettings
+import com.reiux.lumen.data.model.WhatsNewCatalog
 import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,13 @@ class SettingsRepository(
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<BackupSettings> = _settings.asStateFlow()
+
+    private val _readWhatsNewIds = MutableStateFlow(loadReadWhatsNewIds())
+    val readWhatsNewIds: StateFlow<Set<String>> = _readWhatsNewIds.asStateFlow()
+
+    private fun loadReadWhatsNewIds(): Set<String> = synchronized(prefsLock) {
+        prefs.getStringSet(KEY_WHATS_NEW_READ_IDS, null)?.toSet() ?: emptySet()
+    }
 
     private fun loadSettings(): BackupSettings {
         LumenLogger.d("Storage") { "Reading settings from SharedPreferences key='lumen_settings'" }
@@ -358,6 +366,7 @@ class SettingsRepository(
                     val customNickname = obj.optNullableString("customAlbumNickname")
                     val accountEmail = obj.optNullableString("accountEmail")
                     val isMissingAlbum = obj.optBoolean("isMissingAlbum", false)
+                    val deleteAfterBackup = obj.optBoolean("deleteAfterBackup", false)
                     list.add(
                         BackupFolder(
                             path = path,
@@ -368,7 +377,8 @@ class SettingsRepository(
                             customAlbumName = customName,
                             customAlbumNickname = customNickname,
                             accountEmail = accountEmail,
-                            isMissingAlbum = isMissingAlbum
+                            isMissingAlbum = isMissingAlbum,
+                            deleteAfterBackup = deleteAfterBackup
                         )
                     )
                 } catch (itemErr: Exception) {
@@ -391,6 +401,7 @@ class SettingsRepository(
             obj.put("includeSubfolders", f.includeSubfolders)
             obj.put("targetAlbumMode", f.targetAlbumMode.name)
             obj.put("isMissingAlbum", f.isMissingAlbum)
+            obj.put("deleteAfterBackup", f.deleteAfterBackup)
             if (f.customAlbumName != null) {
                 obj.put("customAlbumName", f.customAlbumName)
             }
@@ -481,6 +492,16 @@ class SettingsRepository(
         val current = getAllFolders()
         val updated = current.map {
             if (matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) it.copy(includeSubfolders = includeSubfolders) else it
+        }
+        saveFolders(updated)
+    }
+
+    fun setFolderDeleteAfterBackup(path: String, accountEmail: String?, deleteAfterBackup: Boolean) = synchronized(prefsLock) {
+        val current = getAllFolders()
+        val updated = current.map {
+            if (matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) {
+                it.copy(deleteAfterBackup = deleteAfterBackup)
+            } else it
         }
         saveFolders(updated)
     }
@@ -878,6 +899,14 @@ class SettingsRepository(
         prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_MILLIS, millis).apply()
     }
 
+    fun getLastForegroundUpdateCheckMillis(): Long = synchronized(prefsLock) {
+        return prefs.getLong(KEY_LAST_FOREGROUND_UPDATE_CHECK_MILLIS, 0L)
+    }
+
+    fun setLastForegroundUpdateCheckMillis(millis: Long) = synchronized(prefsLock) {
+        prefs.edit().putLong(KEY_LAST_FOREGROUND_UPDATE_CHECK_MILLIS, millis).apply()
+    }
+
     /** Version string of the last release we posted an update notification for. */
     fun getLastNotifiedUpdateVersion(): String? = synchronized(prefsLock) {
         return prefs.getString(KEY_LAST_NOTIFIED_UPDATE_VERSION, null)
@@ -885,6 +914,130 @@ class SettingsRepository(
 
     fun setLastNotifiedUpdateVersion(version: String) = synchronized(prefsLock) {
         prefs.edit().putString(KEY_LAST_NOTIFIED_UPDATE_VERSION, version).apply()
+    }
+
+    fun savePendingUpdateInfo(info: com.reiux.lumen.data.model.UpdateInfo) = synchronized(prefsLock) {
+        val cleanSha256 = info.expectedSha256?.trim()?.takeIf { it.isNotEmpty() }
+        if (!info.isUpdateAvailable ||
+            !UpdateRepository.isValidVersionName(info.versionName) ||
+            !UpdateRepository.isAllowedInitialDownloadUrl(info.downloadUrl) ||
+            (cleanSha256 != null && !UpdateRepository.isValidSha256Hex(cleanSha256))
+        ) {
+            prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+            return
+        }
+        val obj = JSONObject()
+        obj.put("versionName", info.versionName.trim())
+        obj.put("releaseNotes", info.releaseNotes)
+        obj.put("downloadUrl", info.downloadUrl.trim())
+        obj.put("savedAtMillis", System.currentTimeMillis())
+        if (cleanSha256 != null) {
+            obj.put("expectedSha256", cleanSha256.lowercase(java.util.Locale.US))
+        }
+        prefs.edit().putString(KEY_PENDING_UPDATE_INFO_JSON, obj.toString()).apply()
+    }
+
+    fun getPendingUpdateInfo(): com.reiux.lumen.data.model.UpdateInfo? = synchronized(prefsLock) {
+        val raw = prefs.getString(KEY_PENDING_UPDATE_INFO_JSON, null)
+        if (raw.isNullOrBlank()) return null
+        return try {
+            val obj = JSONObject(raw)
+            if (obj.has("savedAtMillis") && !obj.isNull("savedAtMillis")) {
+                val savedAtMillis = obj.optLong("savedAtMillis", -1L)
+                val now = System.currentTimeMillis()
+                val maxAgeMillis = 12L * 60 * 60 * 1000
+                val maxFutureSkewMillis = 5L * 60 * 1000
+                if (savedAtMillis <= 0L || now - savedAtMillis > maxAgeMillis || savedAtMillis - now > maxFutureSkewMillis) {
+                    prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+                    return null
+                }
+            }
+            val versionName = obj.optNullableString("versionName")?.trim().orEmpty()
+            val releaseNotes = obj.optNullableString("releaseNotes").orEmpty()
+            val downloadUrl = obj.optNullableString("downloadUrl")?.trim().orEmpty()
+            val sha256 = obj.optNullableString("expectedSha256")?.trim()?.takeIf { it.isNotEmpty() }
+            if (!UpdateRepository.isValidVersionName(versionName) ||
+                !UpdateRepository.isAllowedInitialDownloadUrl(downloadUrl) ||
+                (sha256 != null && !UpdateRepository.isValidSha256Hex(sha256))
+            ) {
+                prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+                null
+            } else {
+                com.reiux.lumen.data.model.UpdateInfo(
+                    versionName = versionName,
+                    releaseNotes = releaseNotes,
+                    downloadUrl = downloadUrl,
+                    isUpdateAvailable = true,
+                    expectedSha256 = sha256?.lowercase(java.util.Locale.US)
+                )
+            }
+        } catch (_: Exception) {
+            prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+            null
+        }
+    }
+
+    fun clearPendingUpdateInfo() = synchronized(prefsLock) {
+        prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+    }
+
+    fun getDismissedUpdateVersion(): String? = synchronized(prefsLock) {
+        return prefs.getString(KEY_DISMISSED_UPDATE_VERSION, null)
+    }
+
+    fun getDismissedUpdateMillis(): Long = synchronized(prefsLock) {
+        return prefs.getLong(KEY_DISMISSED_UPDATE_MILLIS, 0L)
+    }
+
+    fun setDismissedUpdate(version: String, millis: Long) = synchronized(prefsLock) {
+        prefs.edit()
+            .putString(KEY_DISMISSED_UPDATE_VERSION, version)
+            .putLong(KEY_DISMISSED_UPDATE_MILLIS, millis)
+            .apply()
+    }
+
+    fun clearDismissedUpdate() = synchronized(prefsLock) {
+        prefs.edit()
+            .remove(KEY_DISMISSED_UPDATE_VERSION)
+            .remove(KEY_DISMISSED_UPDATE_MILLIS)
+            .apply()
+    }
+
+    fun getReadWhatsNewIds(): Set<String> = _readWhatsNewIds.value
+
+    fun markWhatsNewItemRead(itemId: String) {
+        if (itemId.isBlank()) return
+        synchronized(prefsLock) {
+            val current = prefs.getStringSet(KEY_WHATS_NEW_READ_IDS, null)
+            val updated = HashSet<String>(current ?: emptySet())
+            if (updated.add(itemId)) {
+                prefs.edit().putStringSet(KEY_WHATS_NEW_READ_IDS, updated).apply()
+            }
+            _readWhatsNewIds.value = updated.toSet()
+        }
+    }
+
+    fun markAllWhatsNewRead(itemIds: Collection<String>) {
+        if (itemIds.isEmpty()) return
+        synchronized(prefsLock) {
+            val current = prefs.getStringSet(KEY_WHATS_NEW_READ_IDS, null)
+            val updated = HashSet<String>(current ?: emptySet())
+            if (updated.addAll(itemIds.filter { it.isNotBlank() })) {
+                prefs.edit().putStringSet(KEY_WHATS_NEW_READ_IDS, updated).apply()
+            }
+            _readWhatsNewIds.value = updated.toSet()
+        }
+    }
+
+    fun getLastSeenWhatsNewVersion(): String? = synchronized(prefsLock) {
+        return prefs.getString(KEY_LAST_SEEN_WHATS_NEW_VERSION, null)
+    }
+
+    fun setLastSeenWhatsNewVersion(version: String) = synchronized(prefsLock) {
+        val normalized = WhatsNewCatalog.normalizeBaseVersion(version)
+        if (normalized.isNotBlank()) {
+            prefs.edit().putString(KEY_LAST_SEEN_WHATS_NEW_VERSION, normalized).apply()
+        }
     }
 
     fun getAccountBlock(email: String): AccountBlock? = synchronized(prefsLock) {
@@ -1014,12 +1167,14 @@ class SettingsRepository(
 
     companion object {
         fun normalizeFolderPath(path: String): String {
-            return path.trim()
-                .replace('\\', '/')
-                .removePrefix("/storage/emulated/0/")
-                .removePrefix("/sdcard/")
+            val normalized = com.reiux.lumen.util.FolderWatcherManager.normalizeStoragePath(path)
+            return when {
+                normalized == "/storage/emulated/0" -> ""
+                normalized.startsWith("/storage/emulated/0/") -> normalized.removePrefix("/storage/emulated/0/")
+                else -> normalized
+            }
                 .trimEnd('/')
-                .lowercase()
+                .lowercase(java.util.Locale.ROOT)
         }
 
         fun matchesFolderPath(path1: String, path2: String): Boolean {
@@ -1065,8 +1220,21 @@ class SettingsRepository(
         private const val KEY_MILESTONE_10000_SHOWN = "milestone_10000_shown"
         private const val KEY_LATE_NIGHT_DATE = "last_late_night_date"
         private const val KEY_LAST_UPDATE_CHECK_MILLIS = "last_update_check_millis"
+        private const val KEY_LAST_FOREGROUND_UPDATE_CHECK_MILLIS = "last_foreground_update_check_millis"
         private const val KEY_LAST_NOTIFIED_UPDATE_VERSION = "last_notified_update_version"
+        private const val KEY_PENDING_UPDATE_INFO_JSON = "pending_update_info_json"
+        private const val KEY_DISMISSED_UPDATE_VERSION = "dismissed_update_version"
+        private const val KEY_DISMISSED_UPDATE_MILLIS = "dismissed_update_millis"
+        private const val KEY_WHATS_NEW_READ_IDS = "whats_new_read_ids"
+        private const val KEY_LAST_SEEN_WHATS_NEW_VERSION = "last_seen_whats_new_version"
         private const val KEY_FOLDERS = "folders"
+
+        fun defaultStarterFolders(): List<BackupFolder> = listOf(
+            BackupFolder("/sdcard/DCIM/Camera", "Camera Roll", false),
+            BackupFolder("/sdcard/Pictures/Screenshots", "Screenshots", false),
+            BackupFolder("/sdcard/Pictures", "Pictures", false),
+            BackupFolder("/sdcard/Download", "Downloads", false)
+        )
         private const val KEY_INTERNAL_LAUNCH_TOKEN = "internal_launch_token"
     }
 }

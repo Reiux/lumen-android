@@ -1,14 +1,12 @@
 package com.reiux.lumen.ui.components
 
 import android.content.res.Configuration
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,28 +21,20 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +62,7 @@ fun AddAccountDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     if (showWebView) {
         GoogleSignInWebViewDialog(
@@ -90,14 +81,22 @@ fun AddAccountDialog(
             dismissOnBackPress = !isLoading,
             dismissOnClickOutside = !isLoading
         ),
-        modifier = Modifier
-            .widthIn(min = 340.dp, max = if (isWideLayout) 700.dp else 500.dp)
-            .padding(horizontal = 16.dp),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF,
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 4.dp)
+        } else {
+            Modifier
+                .widthIn(min = 340.dp, max = if (isWideLayout) 560.dp else 500.dp)
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Text(
                 text = stringResource(R.string.account_add_dialog_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmallEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
         },
@@ -172,7 +171,7 @@ fun AddAccountDialog(
                 }
 
                 if (!isManualOnly) {
-                    Button(
+                    ExpressiveButton(
                         onClick = {
                             onClearError()
                             showWebView = true
@@ -180,7 +179,6 @@ fun AddAccountDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
                         enabled = !isLoading && localAcknowledged
                     ) {
                         if (isLoading && !showManualInput) {
@@ -221,11 +219,10 @@ fun AddAccountDialog(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (!showManualInput) {
-                        FilledTonalButton(
+                        ExpressiveTonalButton(
                             onClick = { showManualInput = true },
                             enabled = !isLoading && localAcknowledged,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Rounded.Key, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
@@ -266,7 +263,7 @@ fun AddAccountDialog(
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    TextButton(
+                    ExpressiveTextButton(
                         onClick = { isRawCredential = !isRawCredential },
                         modifier = Modifier.align(Alignment.End)
                     ) {
@@ -302,7 +299,7 @@ fun AddAccountDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            ExpressiveTextButton(
                 onClick = onDismiss,
                 enabled = !isLoading
             ) {

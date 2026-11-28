@@ -3,19 +3,19 @@ package com.reiux.lumen.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalIndication
@@ -24,16 +24,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -43,8 +48,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
@@ -53,18 +60,21 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.toShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -81,11 +91,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -110,8 +120,11 @@ import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
+import com.reiux.lumen.ui.components.ExpressiveWavyIndeterminateProgress
 import com.reiux.lumen.ui.components.FolderMediaTypeChip
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
 import com.reiux.lumen.ui.components.NullableBackupFolderSaver
@@ -389,14 +402,13 @@ fun DeviceFoldersScreen(
         )
     }
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
-
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                 title = {
                     Column {
                         Text(
@@ -446,10 +458,17 @@ fun DeviceFoldersScreen(
                         enabled = hasMediaPermission && !isDiscovering,
                         colors = IconButtonDefaults.iconButtonColors()
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.folders_btn_scan)
-                        )
+                        if (isDiscovering) {
+                            ExpressiveLoadingIndicator(
+                                size = 20.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = stringResource(R.string.folders_btn_scan)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -463,6 +482,7 @@ fun DeviceFoldersScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -477,7 +497,7 @@ fun DeviceFoldersScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Surface(
-                            shape = CircleShape,
+                            shape = MaterialShapes.SoftBurst.toShape(),
                             color = MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.size(64.dp)
                         ) {
@@ -492,9 +512,9 @@ fun DeviceFoldersScreen(
                         }
                         Text(
                             text = stringResource(R.string.device_folders_permission_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            style = MaterialTheme.typography.titleMediumEmphasized,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
                         )
                         Text(
                             text = stringResource(R.string.device_folders_permission_desc),
@@ -540,19 +560,134 @@ fun DeviceFoldersScreen(
             { discovered: LocalMediaFolder, email: String? -> findConfiguredMatchForEmail(discovered, email) }
         }
 
-        if (isWideLayout) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            val foldPosture = LocalFoldPosture.current
+            val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
+            val isWideLayout = maxWidth >= 700.dp
+            val isTallViewport = maxHeight >= 560.dp
+
+            if (isTabletop) {
+                val tabletopControlsScrollState = rememberScrollState()
+                TabletopSplitLayout(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    topContent = {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .verticalScroll(tabletopControlsScrollState)
+                                .padding(vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                        ) {
+                            DeviceFoldersControls(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = { searchQuery = it },
+                                accounts = accounts,
+                                selectedAccount = targetAccount,
+                                onSelectAccount = { targetAccountEmail = it.email },
+                                sortMode = sortMode,
+                                onSelectSort = { sortModeName = it.name },
+                                enabledCount = enabledCount,
+                                totalCount = discoveredFolders.size
+                            )
+                        }
+                    },
+                    bottomContent = {
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .align(Alignment.TopCenter)
+                        ) {
+                            DeviceFoldersListContent(
+                                folders = searchedFolders,
+                                isDiscovering = isDiscovering,
+                                searchQuery = searchQuery,
+                                sortMode = sortMode,
+                                selectedAccountEmail = targetEmail,
+                                findMatchForEmail = rememberedFindMatchForEmail,
+                                remoteAlbums = remoteAlbums,
+                                isWideLayout = false,
+                                onClearSearch = { searchQuery = "" },
+                                onToggle = handleFolderToggle,
+                                onPickAlbum = { folder, pageEmail ->
+                                    albumPickerAccountEmail = pageEmail ?: targetEmail
+                                    albumPickerTargetPath = folder.path
+                                }
+                            )
+                        }
+                    }
+                )
+            } else if (isWideLayout) {
+                val leftWeight = if (isTallViewport) 0.44f else 0.38f
+                val rightWeight = if (isTallViewport) 0.56f else 0.62f
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = 1080.dp)
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 28.dp else 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(leftWeight)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        DeviceFoldersControls(
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it },
+                            accounts = accounts,
+                            selectedAccount = targetAccount,
+                            onSelectAccount = { targetAccountEmail = it.email },
+                            sortMode = sortMode,
+                            onSelectSort = { sortModeName = it.name },
+                            enabledCount = enabledCount,
+                            totalCount = discoveredFolders.size
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(rightWeight)
+                            .fillMaxHeight()
+                    ) {
+                        DeviceFoldersListContent(
+                            folders = searchedFolders,
+                            isDiscovering = isDiscovering,
+                            searchQuery = searchQuery,
+                            sortMode = sortMode,
+                            selectedAccountEmail = targetEmail,
+                            findMatchForEmail = rememberedFindMatchForEmail,
+                            remoteAlbums = remoteAlbums,
+                            isWideLayout = true,
+                            onClearSearch = { searchQuery = "" },
+                            onToggle = handleFolderToggle,
+                            onPickAlbum = { folder, pageEmail ->
+                                albumPickerAccountEmail = pageEmail ?: targetEmail
+                                albumPickerTargetPath = folder.path
+                            }
+                        )
+                    }
+                }
+            } else {
                 Column(
                     modifier = Modifier
-                        .weight(0.38f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .fillMaxSize()
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = 720.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     DeviceFoldersControls(
                         searchQuery = searchQuery,
@@ -565,66 +700,25 @@ fun DeviceFoldersScreen(
                         enabledCount = enabledCount,
                         totalCount = discoveredFolders.size
                     )
-                }
 
-                Box(
-                    modifier = Modifier
-                        .weight(0.62f)
-                        .fillMaxHeight()
-                ) {
-                    DeviceFoldersListContent(
-                        folders = searchedFolders,
-                        isDiscovering = isDiscovering,
-                        searchQuery = searchQuery,
-                        sortMode = sortMode,
-                        selectedAccountEmail = targetEmail,
-                        findMatchForEmail = rememberedFindMatchForEmail,
-                        remoteAlbums = remoteAlbums,
-                        onToggle = handleFolderToggle,
-                        onPickAlbum = { folder, pageEmail ->
-                            albumPickerAccountEmail = pageEmail ?: targetEmail
-                            albumPickerTargetPath = folder.path
-                        }
-                    )
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .wrapContentWidth(Alignment.CenterHorizontally)
-                    .widthIn(max = 720.dp)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                DeviceFoldersControls(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    accounts = accounts,
-                    selectedAccount = targetAccount,
-                    onSelectAccount = { targetAccountEmail = it.email },
-                    sortMode = sortMode,
-                    onSelectSort = { sortModeName = it.name },
-                    enabledCount = enabledCount,
-                    totalCount = discoveredFolders.size
-                )
-
-                Box(modifier = Modifier.weight(1f)) {
-                    DeviceFoldersListContent(
-                        folders = searchedFolders,
-                        isDiscovering = isDiscovering,
-                        searchQuery = searchQuery,
-                        sortMode = sortMode,
-                        selectedAccountEmail = targetEmail,
-                        findMatchForEmail = rememberedFindMatchForEmail,
-                        remoteAlbums = remoteAlbums,
-                        onToggle = handleFolderToggle,
-                        onPickAlbum = { folder, pageEmail ->
-                            albumPickerAccountEmail = pageEmail ?: targetEmail
-                            albumPickerTargetPath = folder.path
-                        }
-                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        DeviceFoldersListContent(
+                            folders = searchedFolders,
+                            isDiscovering = isDiscovering,
+                            searchQuery = searchQuery,
+                            sortMode = sortMode,
+                            selectedAccountEmail = targetEmail,
+                            findMatchForEmail = rememberedFindMatchForEmail,
+                            remoteAlbums = remoteAlbums,
+                            isWideLayout = false,
+                            onClearSearch = { searchQuery = "" },
+                            onToggle = handleFolderToggle,
+                            onPickAlbum = { folder, pageEmail ->
+                                albumPickerAccountEmail = pageEmail ?: targetEmail
+                                albumPickerTargetPath = folder.path
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -670,7 +764,10 @@ private fun DeviceFoldersControls(
             },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
+                    ExpressiveIconButton(
+                        onClick = { onSearchQueryChange("") },
+                        colors = IconButtonDefaults.iconButtonColors()
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.btn_clear),
@@ -712,22 +809,45 @@ private fun DeviceFoldersControls(
         }
     }
 
+    val sortHaptic = LocalHapticFeedback.current
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
-        ExpressiveFilterChip(
-            selected = sortMode == DeviceFolderSort.RECENT,
-            onClick = { onSelectSort(DeviceFolderSort.RECENT) },
-            label = { Text(stringResource(R.string.device_folders_sort_recent), fontWeight = FontWeight.SemiBold) }
-        )
+        TonalToggleButton(
+            checked = sortMode == DeviceFolderSort.RECENT,
+            onCheckedChange = {
+                try { sortHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                onSelectSort(DeviceFolderSort.RECENT)
+            },
+            shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = stringResource(R.string.device_folders_sort_recent),
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
 
-        ExpressiveFilterChip(
-            selected = sortMode == DeviceFolderSort.MOST_ITEMS,
-            onClick = { onSelectSort(DeviceFolderSort.MOST_ITEMS) },
-            label = { Text(stringResource(R.string.device_folders_sort_most), fontWeight = FontWeight.SemiBold) }
-        )
+        TonalToggleButton(
+            checked = sortMode == DeviceFolderSort.MOST_ITEMS,
+            onCheckedChange = {
+                try { sortHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                onSelectSort(DeviceFolderSort.MOST_ITEMS)
+            },
+            shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = stringResource(R.string.device_folders_sort_most),
+                style = MaterialTheme.typography.labelLargeEmphasized,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 
     if (totalCount > 0) {
@@ -749,6 +869,8 @@ private fun DeviceFoldersListContent(
     selectedAccountEmail: String?,
     findMatchForEmail: (LocalMediaFolder, String?) -> BackupFolder?,
     remoteAlbums: List<GoogleAlbum>,
+    isWideLayout: Boolean = false,
+    onClearSearch: () -> Unit,
     onToggle: (LocalMediaFolder, Boolean, String?) -> Unit,
     onPickAlbum: (LocalMediaFolder, String?) -> Unit
 ) {
@@ -771,42 +893,100 @@ private fun DeviceFoldersListContent(
 
     if (folders.isEmpty()) {
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = if (isWideLayout) 12.dp else 0.dp),
+            contentAlignment = if (isWideLayout) Alignment.TopCenter else Alignment.Center
         ) {
             Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .padding(horizontal = 16.dp)
             ) {
-                Text(
-                    text = if (searchQuery.isNotBlank()) {
-                        stringResource(R.string.device_folders_no_matches, searchQuery.trim())
-                    } else {
-                        stringResource(R.string.device_folders_empty)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp, vertical = 30.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        shape = MaterialShapes.Puffy.toShape(),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (searchQuery.isNotBlank()) Icons.Rounded.Search else Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = if (searchQuery.isNotBlank()) {
+                            stringResource(R.string.device_folders_no_matches, searchQuery.trim())
+                        } else {
+                            stringResource(R.string.device_folders_empty)
+                        },
+                        style = MaterialTheme.typography.titleMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+
+                    if (searchQuery.isNotBlank()) {
+                        ExpressiveTonalButton(onClick = onClearSearch) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.btn_clear))
+                        }
+                    }
+                }
             }
         }
         return
     }
 
     val accountKey = selectedAccountEmail?.lowercase().orEmpty()
-    AnimatedContent(
-        targetState = accountKey,
-        transitionSpec = {
-            (fadeIn(animationSpec = tween(durationMillis = 220)) + slideInVertically(
-                animationSpec = spring(dampingRatio = 0.85f, stiffness = 500f),
-                initialOffsetY = { it / 28 }
-            )).togetherWith(
-                fadeOut(animationSpec = tween(durationMillis = 130))
+    Column(modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = isDiscovering && folders.isNotEmpty(),
+            enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                expandVertically(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()),
+            exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                shrinkVertically(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
+        ) {
+            ExpressiveWavyIndeterminateProgress(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
             )
-        },
-        modifier = Modifier.fillMaxSize(),
-        label = "deviceFoldersAccountSwitch"
-    ) { pageAccountKey ->
+        }
+
+        val motionScheme = MaterialTheme.motionScheme
+        AnimatedContent(
+            targetState = accountKey,
+            transitionSpec = {
+                (fadeIn(animationSpec = motionScheme.fastEffectsSpec()) + slideInVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec(),
+                    initialOffsetY = { it / 28 }
+                )).togetherWith(
+                    fadeOut(animationSpec = motionScheme.fastEffectsSpec())
+                )
+            },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            label = "deviceFoldersAccountSwitch"
+        ) { pageAccountKey ->
         val pageEmail = pageAccountKey.ifBlank { null }
         val sortedFolders = remember(folders, findMatchForEmail, pageEmail, sortMode) {
             val comparator = when (sortMode) {
@@ -836,7 +1016,7 @@ private fun DeviceFoldersListContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             itemsIndexed(
@@ -856,6 +1036,7 @@ private fun DeviceFoldersListContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -871,7 +1052,7 @@ private fun DeviceFolderCardItem(
     val isEnabled = configured?.enabled == true
     val cardColor by animateColorAsState(
         targetValue = if (isEnabled) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
-        animationSpec = spring(dampingRatio = 1f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "deviceFolderCardColor"
     )
     val shortPath = remember(folder.path) { MediaFileReader.toShortDisplayPath(folder.path) }
@@ -984,22 +1165,22 @@ private fun DeviceFolderCardItem(
                         hasAlbum -> 18.dp
                         else -> 10.dp
                     },
-                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 750f),
+                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                     label = "deviceFolderAlbumChipCorner"
                 )
                 val chipScale by animateFloatAsState(
                     targetValue = if (isChipPressed) 0.96f else 1f,
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                     label = "deviceFolderAlbumChipScale"
                 )
                 val chipContainerColor by animateColorAsState(
                     targetValue = if (hasAlbum) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = 700f),
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     label = "deviceFolderAlbumChipBg"
                 )
                 val chipContentColor by animateColorAsState(
                     targetValue = if (hasAlbum) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = 700f),
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     label = "deviceFolderAlbumChipContent"
                 )
                 val chipShape = RoundedCornerShape(chipCorner)

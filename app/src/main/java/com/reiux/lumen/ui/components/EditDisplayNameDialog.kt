@@ -32,7 +32,8 @@ fun EditDisplayNameDialog(
         tone = ExpressiveDialogTone.PRIMARY,
         confirmText = stringResource(R.string.btn_save),
         onConfirm = { onSave(name.trim()) },
-        dismissText = stringResource(R.string.btn_cancel)
+        dismissText = stringResource(R.string.btn_cancel),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF
     ) {
         Text(
             text = stringResource(R.string.dialog_edit_display_name_desc),

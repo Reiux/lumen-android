@@ -15,9 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -220,14 +222,35 @@ class FolderWatcherManager(
                 return
             }
             mediaStoreRescanPending = false
-            mediaStoreScanJob = scope.launch {
-                do {
-                    synchronized(mediaStoreQueryLock) {
-                        mediaStoreRescanPending = false
+            lateinit var launchedJob: Job
+            launchedJob = scope.launch {
+                try {
+                    while (true) {
+                        synchronized(mediaStoreQueryLock) {
+                            mediaStoreRescanPending = false
+                        }
+                        runMediaStoreWatermarkScan()
+                        val shouldContinue = synchronized(mediaStoreQueryLock) {
+                            if (mediaStoreRescanPending) {
+                                true
+                            } else {
+                                if (mediaStoreScanJob === launchedJob) {
+                                    mediaStoreScanJob = null
+                                }
+                                false
+                            }
+                        }
+                        if (!shouldContinue) break
                     }
-                    runMediaStoreWatermarkScan()
-                } while (synchronized(mediaStoreQueryLock) { mediaStoreRescanPending })
+                } finally {
+                    synchronized(mediaStoreQueryLock) {
+                        if (mediaStoreScanJob === launchedJob) {
+                            mediaStoreScanJob = null
+                        }
+                    }
+                }
             }
+            mediaStoreScanJob = launchedJob
         }
     }
 
@@ -264,6 +287,7 @@ class FolderWatcherManager(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                 )
+                val highestMediaStoreId by lazy { queryHighestMediaStoreId(context.contentResolver) }
 
                 for ((accountEmail, accFolders) in foldersByAccount) {
                     if (accountEmail.isNullOrBlank()) continue
@@ -337,6 +361,9 @@ class FolderWatcherManager(
                             }
                         }
 
+                        if (lastWatermarkId == 0L && maxId == 0L && firstNotReadyId == null) {
+                            maxId = highestMediaStoreId
+                        }
                         val newWatermark = computeSafeWatermark(lastWatermarkId, maxId, firstNotReadyId)
                         if (newWatermark > lastWatermarkId) {
                             settingsRepository.saveFolderWatermarkId(accountEmail, folder.path, newWatermark)
@@ -379,6 +406,7 @@ class FolderWatcherManager(
 
             val filesToSend = mutableListOf<File>()
             synchronized(pendingLock) {
+                if (!isActive) return@synchronized
                 val nowMs = System.currentTimeMillis()
                 val stillWriting = mutableListOf<File>()
                 var discarded = 0
@@ -403,10 +431,12 @@ class FolderWatcherManager(
                 }
             }
 
+            ensureActive()
             if (filesToSend.isNotEmpty()) {
                 LumenLogger.i(TAG) {
                     "Debounce complete: enqueued ${filesToSend.size} new media file(s) for auto-backup: ${filesToSend.map { it.name }}"
                 }
+                ensureActive()
                 onNewMediaDetected(filesToSend)
             } else {
                 LumenLogger.d(TAG) { "Debounce complete: 0 valid files to enqueue" }
@@ -487,6 +517,50 @@ class FolderWatcherManager(
         internal fun computeSafeWatermark(lastWatermark: Long, maxSeenId: Long, firstNotReadyId: Long?): Long {
             val capped = if (firstNotReadyId == null) maxSeenId else minOf(maxSeenId, firstNotReadyId - 1)
             return maxOf(lastWatermark, capped)
+        }
+
+        /**
+         * Returns the highest MediaStore `_ID` across Images and Video so an initial empty 24h
+         * scan can establish a baseline watermark instead of repeatedly re-scanning 24h windows.
+         */
+        internal fun queryHighestMediaStoreId(resolver: android.content.ContentResolver): Long {
+            var highestId = 0L
+            val queryUris = listOf(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            )
+            val projection = arrayOf(MediaStore.MediaColumns._ID)
+            for (uri in queryUris) {
+                try {
+                    val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val args = android.os.Bundle().apply {
+                            putString(
+                                android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
+                                "${MediaStore.MediaColumns._ID} DESC"
+                            )
+                            putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, 1)
+                        }
+                        resolver.query(uri, projection, args, null)
+                    } else {
+                        resolver.query(
+                            uri,
+                            projection,
+                            null,
+                            null,
+                            "${MediaStore.MediaColumns._ID} DESC"
+                        )
+                    }
+                    cursor?.use { c ->
+                        if (c.moveToFirst()) {
+                            val id = c.getLong(0)
+                            if (id > highestId) {
+                                highestId = id
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return highestId
         }
 
         private const val PRIMARY_STORAGE_ROOT = "/storage/emulated/0"

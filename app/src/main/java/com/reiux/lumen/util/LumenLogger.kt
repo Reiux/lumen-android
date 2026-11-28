@@ -137,6 +137,7 @@ object LumenLogger {
         LogCategory.entries.forEach { put(it, true) }
     }
 
+    private var userSaveLogsEnabled = false
     private var isFileLoggingEnabled = false
     private var logDir: File? = null
     private var currentFileIndex = 0
@@ -155,8 +156,11 @@ object LumenLogger {
     private val sensitiveParamPattern = Pattern.compile(
         "(?i)(token|masterToken|credentialString|upload_token|upload_id|uploadId|mediaKey|albumMediaKey|initialMediaKey|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)=([^&\\s'\"\\)]+)"
     )
+    private val sensitiveIdentityOrCustomPattern = Pattern.compile(
+        "(?i)\\b(androidId|customName|customNickname)=(?!\\[REDACTED\\])('[^']*'|\"[^\"]*\"|[^&\\s,\\)\\]'\"]+)"
+    )
     private val sensitiveJsonPattern = Pattern.compile(
-        "(?i)(\"(?:token|masterToken|credentialString|upload_token|upload_id|uploadId|mediaKey|albumMediaKey|initialMediaKey|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt)\"\\s*:\\s*\")([^\"]+)(\")"
+        "(?i)(\"(?:token|masterToken|credentialString|upload_token|upload_id|uploadId|mediaKey|albumMediaKey|initialMediaKey|password|auth|secret|sid|lsid|oauth_token|access_token|refresh_token|assertion_jwt|androidId|customName|customNickname)\"\\s*:\\s*\")([^\"]+)(\")"
     )
     private val spaceTolerantMediaPathPattern = Pattern.compile(
         "(?i)(?:/storage/(?:emulated/\\d+|[A-Za-z0-9_-]+)|/sdcard|/data/(?:user/\\d+|data)/[^\\s:'\"\\]\\)]+)" +
@@ -195,9 +199,10 @@ object LumenLogger {
     fun init(context: Context, saveLogsEnabled: Boolean, isDevDiagnostics: Boolean = BuildConfig.DEBUG) {
         appContext = context.applicationContext
         logDir = File(context.cacheDir, "logs").apply { mkdirs() }
+        userSaveLogsEnabled = saveLogsEnabled
         devDiagnosticsEnabled = isDevDiagnostics
         isVerboseEnabled = isDevDiagnostics || BuildConfig.DEBUG
-        isFileLoggingEnabled = saveLogsEnabled || BuildConfig.DEBUG
+        isFileLoggingEnabled = userSaveLogsEnabled || devDiagnosticsEnabled
 
         installCrashHandler()
         startPeriodicSnapshot()
@@ -244,18 +249,19 @@ object LumenLogger {
     fun setDevDiagnostics(enabled: Boolean, context: Context? = null) {
         devDiagnosticsEnabled = enabled
         isVerboseEnabled = enabled || BuildConfig.DEBUG
-        isFileLoggingEnabled = enabled || isFileLoggingEnabled
+        isFileLoggingEnabled = userSaveLogsEnabled || devDiagnosticsEnabled
         context?.let { appContext = it.applicationContext }
         i("LumenLogger") { "devDiagnosticsEnabled set to: $enabled (isVerboseEnabled=$isVerboseEnabled, isFileLoggingEnabled=$isFileLoggingEnabled)" }
     }
 
     fun setFileLogging(enabled: Boolean, context: Context) {
         appContext = context.applicationContext
-        isFileLoggingEnabled = enabled || BuildConfig.DEBUG
+        userSaveLogsEnabled = enabled
+        isFileLoggingEnabled = userSaveLogsEnabled || devDiagnosticsEnabled
         if (logDir == null) {
             logDir = File(context.cacheDir, "logs").apply { mkdirs() }
         }
-        i("LumenLogger") { "File logging changed: $enabled (dir=${logDir?.absolutePath})" }
+        i("LumenLogger") { "File logging changed: $enabled (effective=$isFileLoggingEnabled, dir=${logDir?.absolutePath})" }
     }
 
     fun setCategoryEnabled(category: LogCategory, enabled: Boolean) {
@@ -284,6 +290,7 @@ object LumenLogger {
 
         result = bearerPattern.matcher(result).replaceAll("$1[REDACTED]")
         result = sensitiveParamPattern.matcher(result).replaceAll("$1=[REDACTED]")
+        result = sensitiveIdentityOrCustomPattern.matcher(result).replaceAll("$1=[REDACTED]")
         result = sensitiveJsonPattern.matcher(result).replaceAll("$1[REDACTED]$3")
 
         return result
@@ -372,6 +379,8 @@ object LumenLogger {
 
         val rawMessage = try { messageProvider() } catch (e: Exception) { "<Log evaluation failed: ${e.message}>" }
         val redactedMessage = redact(rawMessage)
+        val redactedUserMessage = userMessage?.let { redact(it) }
+        val redactedSuggestedAction = suggestedAction?.let { redact(it) }
         val threadName = Thread.currentThread().name
         val category = inferCategory(tag)
 
@@ -390,8 +399,8 @@ object LumenLogger {
             durationMs = durationMs,
             outcome = outcome,
             reasonCode = reasonCode,
-            userMessage = userMessage,
-            suggestedAction = suggestedAction,
+            userMessage = redactedUserMessage,
+            suggestedAction = redactedSuggestedAction,
             isMock = isMock
         )
     }
@@ -416,6 +425,8 @@ object LumenLogger {
         isMock: Boolean = false
     ) {
         val throwableText = throwable?.let { redact(buildStackTraceString(it)) }
+        val redactedUserMessage = userMessage?.let { redact(it) }
+        val redactedSuggestedAction = suggestedAction?.let { redact(it) }
 
         synchronized(memoryLogBuffer) {
             // Collapse consecutive identical lines
@@ -453,8 +464,8 @@ object LumenLogger {
                 durationMs = durationMs,
                 outcome = outcome,
                 reasonCode = reasonCode,
-                userMessage = userMessage,
-                suggestedAction = suggestedAction,
+                userMessage = redactedUserMessage,
+                suggestedAction = redactedSuggestedAction,
                 repeatCount = 1,
                 isMock = isMock
             )
@@ -792,7 +803,7 @@ object LumenLogger {
                     FileWriter(exportFile, false).use { writer ->
                         dir.listFiles()?.sortedBy { it.name }?.forEach { logFile ->
                             writer.appendLine("--- FILE: ${logFile.name} ---")
-                            writer.append(redact(logFile.readText()))
+                            writer.append(redactFileNamesAndPaths(redact(logFile.readText())))
                             writer.appendLine()
                         }
                     }

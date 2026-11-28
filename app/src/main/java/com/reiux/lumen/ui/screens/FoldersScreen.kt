@@ -1,18 +1,17 @@
 package com.reiux.lumen.ui.screens
 
-import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +29,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChipDefaults
 import com.reiux.lumen.ui.components.ExpressiveFilterChip
 import androidx.compose.foundation.shape.CircleShape
@@ -41,19 +42,18 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,14 +64,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -79,6 +78,8 @@ import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.ExpressiveAlertDialog
 import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveDialogTone
+import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
+import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.BackupFolder
@@ -88,13 +89,15 @@ import com.reiux.lumen.data.repository.SettingsRepository
 import com.reiux.lumen.ui.components.AddFolderDialog
 import com.reiux.lumen.ui.components.NullableBackupFolderSaver
 import com.reiux.lumen.ui.components.isAllowedBackupFolderPath
-import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveWavyIndeterminateProgress
 import com.reiux.lumen.ui.components.ExpressiveWavyLinearProgress
 import com.reiux.lumen.ui.components.FolderMediaKind
 import com.reiux.lumen.ui.components.FolderMediaTypeChip
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
+import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
 import com.reiux.lumen.ui.components.resolveFolderMediaKindForPath
@@ -280,6 +283,7 @@ fun FoldersScreen(
     }
 
     var selectedAccountFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var inspectedFolderKey by rememberSaveable { mutableStateOf<String?>(null) }
 
     val filteredFolders = remember(folders, selectedAccountFilter) {
         val base = if (selectedAccountFilter == null) {
@@ -292,65 +296,295 @@ fun FoldersScreen(
         base.sortedByDescending { it.enabled }
     }
 
+    val folderKey: (BackupFolder) -> String = {
+        "${it.accountEmail.orEmpty().lowercase()}:${SettingsRepository.normalizeFolderPath(it.path)}"
+    }
+    val inspectedFolder = remember(filteredFolders, inspectedFolderKey) {
+        filteredFolders.firstOrNull { folderKey(it) == inspectedFolderKey }
+            ?: filteredFolders.firstOrNull { it.enabled }
+            ?: filteredFolders.firstOrNull()
+    }
+
     val hasAlbumAssignedFolders = remember(folders) {
         folders.any { it.enabled && it.targetAlbumMode != AlbumTargetMode.NONE }
     }
     val isSyncingAlbums = albumSyncState is AlbumSyncState.Syncing
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
     val wideLazyListState = rememberLazyListState()
     val portraitLazyListState = rememberLazyListState()
+    val leftScrollState = rememberScrollState()
 
-    if (isWideLayout) {
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Pane: Title & Controls
-            Column(
-                modifier = Modifier
-                    .weight(0.42f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                FoldersHeader(
-                    hasAlbumAssignedFolders = hasAlbumAssignedFolders,
-                    isSyncingAlbums = isSyncingAlbums,
-                    onSyncAllAlbums = onSyncAllAlbums
-                )
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val foldPosture = LocalFoldPosture.current
+        val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
+        val isWideLayout = maxWidth >= 640.dp
+        val isTallViewport = maxHeight >= 560.dp
 
-                AlbumSyncStatusCard(
-                    albumSyncState = albumSyncState,
-                    onCancel = onCancelAlbumSync,
-                    onDismiss = onDismissAlbumSync
-                )
-
-                FoldersActionControls(
-                    onAddFolder = onOpenDeviceFolders,
-                    onOpenAlbumManager = onOpenAlbumManager
-                )
+        if (isTabletop) {
+            val isWideTabletop = maxWidth >= 640.dp
+            val enabledCount = remember(folders) { folders.count { it.enabled } }
+            val albumLinkedCount = remember(folders) {
+                folders.count { it.enabled && it.targetAlbumMode != AlbumTargetMode.NONE }
             }
+            val tabletopLazyListState = rememberLazyListState()
+            TabletopSplitLayout(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                topContent = {
+                    if (isWideTabletop) {
+                        val tabletopLeftScrollState = rememberScrollState()
+                        val tabletopRightScrollState = rememberScrollState()
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 960.dp)
+                                .fillMaxSize()
+                                .padding(top = 6.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(0.92f)
+                                    .fillMaxHeight()
+                                    .verticalScroll(tabletopLeftScrollState),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                FoldersHeader(
+                                    hasAlbumAssignedFolders = hasAlbumAssignedFolders,
+                                    isSyncingAlbums = isSyncingAlbums,
+                                    onSyncAllAlbums = onSyncAllAlbums
+                                )
+
+                                Surface(
+                                    shape = groupedCardShape(GroupPosition.Single),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        FolderOverviewStat(
+                                            value = "$enabledCount / ${folders.size}",
+                                            label = stringResource(R.string.accounts_active_badge)
+                                        )
+                                        FolderOverviewStat(
+                                            value = "$albumLinkedCount",
+                                            label = stringResource(R.string.albums_title)
+                                        )
+                                        FolderOverviewStat(
+                                            value = "${filteredFolders.size}",
+                                            label = stringResource(R.string.nav_folders)
+                                        )
+                                    }
+                                }
+
+                                AccountFilterChips(
+                                    accounts = accounts,
+                                    folders = folders,
+                                    selectedFilter = selectedAccountFilter,
+                                    onSelectFilter = { selectedAccountFilter = it }
+                                )
+
+                                FoldersActionControls(
+                                    onAddFolder = onOpenDeviceFolders,
+                                    onOpenAlbumManager = onOpenAlbumManager
+                                )
+
+                                if (albumSyncState !is AlbumSyncState.Idle) {
+                                    AlbumSyncStatusCard(
+                                        albumSyncState = albumSyncState,
+                                        onCancel = onCancelAlbumSync,
+                                        onDismiss = onDismissAlbumSync
+                                    )
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .weight(1.08f)
+                                    .fillMaxHeight()
+                                    .verticalScroll(tabletopRightScrollState),
+                                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                            ) {
+                                if (inspectedFolder != null) {
+                                    TabletopFolderInspectorCard(
+                                        folder = inspectedFolder,
+                                        accounts = accounts,
+                                        remoteAlbums = remoteAlbums,
+                                        isSyncingAlbums = isSyncingAlbums,
+                                        onToggleEnabled = { nextEnabled ->
+                                            if (nextEnabled && com.reiux.lumen.ui.components.requiresAllFilesPermission(context, inspectedFolder.path)) {
+                                                pendingFolderToToggle = inspectedFolder
+                                                showAllFilesDialog = true
+                                            } else {
+                                                onToggleFolder(inspectedFolder.path, inspectedFolder.accountEmail, nextEnabled)
+                                            }
+                                        },
+                                        onEditFolder = { folderToEdit = inspectedFolder },
+                                        onSyncFolderToAlbum = { onSyncFolderToAlbum(inspectedFolder) },
+                                        onRemoveFolder = { folderToRemove = inspectedFolder }
+                                    )
+                                } else {
+                                    FoldersEmptyStateCard(
+                                        isFilteredByAccount = selectedAccountFilter != null && folders.isNotEmpty()
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        val tabletopTopScrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 680.dp)
+                                .fillMaxSize()
+                                .padding(top = 6.dp, bottom = 4.dp)
+                                .verticalScroll(tabletopTopScrollState),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            FoldersHeader(
+                                hasAlbumAssignedFolders = hasAlbumAssignedFolders,
+                                isSyncingAlbums = isSyncingAlbums,
+                                onSyncAllAlbums = onSyncAllAlbums
+                            )
+
+                            FoldersActionControls(
+                                onAddFolder = onOpenDeviceFolders,
+                                onOpenAlbumManager = onOpenAlbumManager
+                            )
+
+                            if (albumSyncState !is AlbumSyncState.Idle) {
+                                AlbumSyncStatusCard(
+                                    albumSyncState = albumSyncState,
+                                    onCancel = onCancelAlbumSync,
+                                    onDismiss = onDismissAlbumSync
+                                )
+                            }
+
+                            AccountFilterChips(
+                                accounts = accounts,
+                                folders = folders,
+                                selectedFilter = selectedAccountFilter,
+                                onSelectFilter = { selectedAccountFilter = it }
+                            )
+                        }
+                    }
+                },
+                bottomContent = {
+                    LazyColumn(
+                        state = tabletopLazyListState,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .widthIn(max = if (isWideTabletop) 960.dp else 680.dp)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                        contentPadding = PaddingValues(
+                            top = 4.dp,
+                            bottom = if (isMockMode) 88.dp else 16.dp
+                        )
+                    ) {
+                        if (filteredFolders.isEmpty()) {
+                            item(key = "folders_empty_tabletop") {
+                                FoldersEmptyStateCard(
+                                    isFilteredByAccount = selectedAccountFilter != null && folders.isNotEmpty()
+                                )
+                            }
+                        } else {
+                            itemsIndexed(
+                                items = filteredFolders,
+                                key = { _, folder -> folderKey(folder) }
+                            ) { index, folder ->
+                                val key = folderKey(folder)
+                                FolderRowItem(
+                                    folder = folder,
+                                    position = groupPositionOf(index, filteredFolders.size),
+                                    accounts = accounts,
+                                    remoteAlbums = remoteAlbums,
+                                    mediaKind = resolveFolderMediaKindForPath(folder, discoveredFolders),
+                                    accountsCount = accounts.size,
+                                    isSelected = isWideTabletop && inspectedFolder != null && key == folderKey(inspectedFolder),
+                                    onSelect = if (isWideTabletop) {
+                                        { inspectedFolderKey = key }
+                                    } else {
+                                        null
+                                    },
+                                    onToggleFolder = onToggleFolder,
+                                    onRequestAllFilesToggle = { targetFolder ->
+                                        pendingFolderToToggle = targetFolder
+                                        showAllFilesDialog = true
+                                    },
+                                    onSetIncludeSubfolders = onSetIncludeSubfolders,
+                                    onEditFolder = { folderToEdit = it },
+                                    onRemoveFolder = { folderToRemove = it },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        } else if (isWideLayout) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 1080.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 28.dp else 16.dp)
+            ) {
+                // Left Pane: Title & Controls
+                Column(
+                    modifier = Modifier
+                        .weight(if (isTallViewport) 1f else 0.42f)
+                        .fillMaxHeight()
+                        .verticalScroll(leftScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FoldersHeader(
+                        hasAlbumAssignedFolders = hasAlbumAssignedFolders,
+                        isSyncingAlbums = isSyncingAlbums,
+                        onSyncAllAlbums = onSyncAllAlbums
+                    )
+
+                    AlbumSyncStatusCard(
+                        albumSyncState = albumSyncState,
+                        onCancel = onCancelAlbumSync,
+                        onDismiss = onDismissAlbumSync
+                    )
+
+                    FoldersActionControls(
+                        onAddFolder = onOpenDeviceFolders,
+                        onOpenAlbumManager = onOpenAlbumManager
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
             // Right Pane: Folder Items List
             LazyColumn(
                 state = wideLazyListState,
                 modifier = Modifier
-                    .weight(0.58f)
+                    .weight(if (isTallViewport) 1f else 0.58f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                item { Spacer(modifier = Modifier.height(4.dp)) }
+                item { Spacer(modifier = Modifier.height(9.dp)) }
                 item {
-                    AccountFilterChips(
-                        accounts = accounts,
-                        folders = folders,
-                        selectedFilter = selectedAccountFilter,
-                        onSelectFilter = { selectedAccountFilter = it }
-                    )
+                    Column {
+                        AccountFilterChips(
+                            accounts = accounts,
+                            folders = folders,
+                            selectedFilter = selectedAccountFilter,
+                            onSelectFilter = { selectedAccountFilter = it }
+                        )
+                        Spacer(modifier = Modifier.height(9.dp))
+                    }
                 }
                 if (filteredFolders.isEmpty()) {
                     item(key = "folders_empty_wide") {
@@ -382,19 +616,19 @@ fun FoldersScreen(
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(16.dp)) }
+                item { Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp)) }
             }
         }
     } else {
         // Portrait Single Column
         LazyColumn(
             state = portraitLazyListState,
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -403,22 +637,26 @@ fun FoldersScreen(
                     isSyncingAlbums = isSyncingAlbums,
                     onSyncAllAlbums = onSyncAllAlbums
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 AccountFilterChips(
                     accounts = accounts,
                     folders = folders,
                     selectedFilter = selectedAccountFilter,
                     onSelectFilter = { selectedAccountFilter = it }
                 )
+                Spacer(modifier = Modifier.height(9.dp))
             }
 
             if (albumSyncState !is AlbumSyncState.Idle) {
                 item {
-                    AlbumSyncStatusCard(
-                        albumSyncState = albumSyncState,
-                        onCancel = onCancelAlbumSync,
-                        onDismiss = onDismissAlbumSync
-                    )
+                    Column {
+                        AlbumSyncStatusCard(
+                            albumSyncState = albumSyncState,
+                            onCancel = onCancelAlbumSync,
+                            onDismiss = onDismissAlbumSync
+                        )
+                        Spacer(modifier = Modifier.height(9.dp))
+                    }
                 }
             }
 
@@ -454,14 +692,42 @@ fun FoldersScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(9.dp))
                 FoldersActionControls(
                     onAddFolder = onOpenDeviceFolders,
                     onOpenAlbumManager = onOpenAlbumManager
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(if (isMockMode) 88.dp else 16.dp))
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun FolderOverviewStat(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLargeEmphasized,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
     }
 }
 
@@ -484,7 +750,7 @@ private fun FoldersEmptyStateCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Surface(
-                shape = CircleShape,
+                shape = MaterialShapes.Clover4Leaf.toShape(),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(64.dp)
             ) {
@@ -502,8 +768,7 @@ private fun FoldersEmptyStateCard(
                 text = stringResource(
                     if (isFilteredByAccount) R.string.folders_empty_account_title else R.string.folders_empty_title
                 ),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
@@ -547,15 +812,22 @@ private fun FoldersHeader(
 
         if (hasAlbumAssignedFolders) {
             Spacer(modifier = Modifier.width(8.dp))
-            TextButton(
+            ExpressiveTextButton(
                 onClick = onSyncAllAlbums,
                 enabled = !isSyncingAlbums
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Sync,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
+                if (isSyncingAlbums) {
+                    ExpressiveLoadingIndicator(
+                        size = 20.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (isSyncingAlbums) stringResource(R.string.settings_action_syncing) else stringResource(R.string.btn_sync_albums),
@@ -577,7 +849,8 @@ private fun FoldersActionControls(
     ) {
         ExpressiveButton(
             onClick = onAddFolder,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
@@ -586,7 +859,8 @@ private fun FoldersActionControls(
 
         ExpressiveTonalButton(
             onClick = onOpenAlbumManager,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
@@ -603,8 +877,8 @@ private fun AlbumSyncStatusCard(
 ) {
     AnimatedVisibility(
         visible = albumSyncState !is AlbumSyncState.Idle,
-        enter = fadeIn(animationSpec = spring(dampingRatio = 1f, stiffness = 800f)),
-        exit = fadeOut(animationSpec = spring(dampingRatio = 1f, stiffness = 800f))
+        enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
+        exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec())
     ) {
         when (albumSyncState) {
             is AlbumSyncState.Syncing -> {
@@ -628,11 +902,9 @@ private fun AlbumSyncStatusCard(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Sync,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
+                                ExpressiveLoadingIndicator(
+                                    size = 20.dp,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
@@ -660,7 +932,7 @@ private fun AlbumSyncStatusCard(
                                     )
                                 }
                             }
-                            TextButton(onClick = onCancel) {
+                            ExpressiveTextButton(onClick = onCancel) {
                                 Text(stringResource(R.string.btn_cancel))
                             }
                         }
@@ -807,6 +1079,371 @@ private fun AccountFilterChips(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TabletopFolderInspectorCard(
+    folder: BackupFolder,
+    accounts: List<GoogleAccount>,
+    remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
+    isSyncingAlbums: Boolean,
+    onToggleEnabled: (Boolean) -> Unit,
+    onEditFolder: () -> Unit,
+    onSyncFolderToAlbum: () -> Unit,
+    onRemoveFolder: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (folder.enabled) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Folder,
+                            contentDescription = null,
+                            tint = if (folder.enabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = folder.displayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (folder.enabled) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        }
+                    ) {
+                        Text(
+                            text = stringResource(
+                                if (folder.enabled) R.string.folders_status_enabled else R.string.folders_status_disabled
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (folder.enabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                ExpressiveSwitch(
+                    checked = folder.enabled,
+                    onCheckedChange = onToggleEnabled
+                )
+            }
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = folder.path,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                )
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!folder.accountEmail.isNullOrBlank()) {
+                    val acc = accounts.find { it.email.equals(folder.accountEmail, ignoreCase = true) }
+                    val accountLabel = acc?.displayName?.takeIf { it.isNotBlank() && it != "null" } ?: folder.accountEmail
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            com.reiux.lumen.ui.components.AccountAvatar(
+                                account = acc,
+                                emailFallback = folder.accountEmail,
+                                size = 16.dp
+                            )
+                            Text(
+                                text = accountLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.folder_unassigned_warning),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                if (folder.targetAlbumMode != AlbumTargetMode.NONE) {
+                    val matchingAlbum = remoteAlbums.find {
+                        (it.mediaKey == folder.customAlbumName || it.title == folder.customAlbumName) &&
+                            (folder.accountEmail.isNullOrBlank() || it.accountEmail.isNullOrBlank() || it.accountEmail.equals(folder.accountEmail, ignoreCase = true))
+                    }
+                    val isMissing = folder.isMissingAlbum || matchingAlbum?.isMissing == true
+                    val albumNickname = when (folder.targetAlbumMode) {
+                        AlbumTargetMode.AUTO_FOLDER_NAME -> folder.displayName
+                        AlbumTargetMode.CUSTOM_NAME -> folder.customAlbumNickname ?: folder.customAlbumName ?: folder.displayName
+                        AlbumTargetMode.NONE -> ""
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (isMissing) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isMissing) Icons.Rounded.Warning else Icons.Rounded.PhotoLibrary,
+                                contentDescription = null,
+                                tint = if (isMissing) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onTertiaryContainer
+                                },
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (isMissing) {
+                                    stringResource(R.string.folder_album_missing, albumNickname)
+                                } else {
+                                    albumNickname
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isMissing) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onTertiaryContainer
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoLibrary,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.album_choice_none),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                if (folder.includeSubfolders) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = stringResource(R.string.tag_subfolders),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                if (folder.deleteAfterBackup) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.folder_delete_after_backup_badge),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ExpressiveTonalButton(
+                    onClick = onEditFolder,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.folders_edit_desc),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (folder.enabled && folder.targetAlbumMode != AlbumTargetMode.NONE) {
+                    ExpressiveTonalButton(
+                        onClick = onSyncFolderToAlbum,
+                        enabled = !isSyncingAlbums,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        if (isSyncingAlbums) {
+                            ExpressiveLoadingIndicator(
+                                size = 16.dp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(
+                                if (isSyncingAlbums) R.string.settings_action_syncing else R.string.settings_action_sync
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                ExpressiveIconButton(
+                    onClick = onRemoveFolder,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = stringResource(R.string.btn_delete),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun FolderRowItem(
     folder: BackupFolder,
@@ -815,6 +1452,8 @@ private fun FolderRowItem(
     remoteAlbums: List<com.reiux.lumen.data.network.GoogleAlbum> = emptyList(),
     mediaKind: FolderMediaKind? = null,
     accountsCount: Int = 1,
+    isSelected: Boolean = false,
+    onSelect: (() -> Unit)? = null,
     onToggleFolder: (path: String, accountEmail: String?, enabled: Boolean) -> Unit,
     onRequestAllFilesToggle: (folder: BackupFolder) -> Unit,
     onSetIncludeSubfolders: (path: String, accountEmail: String?, includeSubfolders: Boolean) -> Unit,
@@ -823,12 +1462,19 @@ private fun FolderRowItem(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val cardShape = groupedCardShape(position)
+    val cardColor = if (isSelected) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val cardBorder = if (isSelected) {
+        BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
+    } else {
+        null
+    }
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = groupedCardShape(position),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
+    val cardContent: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -871,7 +1517,7 @@ private fun FolderRowItem(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                                .background(cardColor, CircleShape)
                                 .padding(1.5.dp)
                         ) {
                             com.reiux.lumen.ui.components.AccountAvatar(
@@ -911,8 +1557,7 @@ private fun FolderRowItem(
                 Spacer(modifier = Modifier.width(4.dp))
 
                 ExpressiveIconButton(
-                    onClick = { onEditFolder(folder) },
-                    modifier = Modifier.size(36.dp)
+                    onClick = { onEditFolder(folder) }
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
@@ -925,8 +1570,7 @@ private fun FolderRowItem(
                 Spacer(modifier = Modifier.width(2.dp))
 
                 ExpressiveIconButton(
-                    onClick = { onRemoveFolder(folder) },
-                    modifier = Modifier.size(36.dp)
+                    onClick = { onRemoveFolder(folder) }
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
@@ -937,8 +1581,8 @@ private fun FolderRowItem(
                 }
             }
 
-            // Row 2: Media type chip, Subfolders chip, and Album label
-            val showRow2 = mediaKind != null || (folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE))
+            // Row 2: Media type chip, Subfolders chip, Auto-delete badge, and Album label
+            val showRow2 = mediaKind != null || folder.deleteAfterBackup || (folder.enabled && (folder.includeSubfolders || folder.targetAlbumMode != AlbumTargetMode.NONE))
             if (showRow2) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -960,11 +1604,38 @@ private fun FolderRowItem(
                         ) {
                             Text(
                                 text = stringResource(R.string.tag_subfolders),
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
+                        }
+                    }
+
+                    if (folder.deleteAfterBackup) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.folder_delete_after_backup_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
 
@@ -1038,5 +1709,24 @@ private fun FolderRowItem(
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+
+    if (onSelect != null) {
+        Surface(
+            onClick = onSelect,
+            modifier = modifier.fillMaxWidth(),
+            shape = cardShape,
+            color = cardColor,
+            border = cardBorder,
+            content = cardContent
+        )
+    } else {
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            shape = cardShape,
+            color = cardColor,
+            border = cardBorder,
+            content = cardContent
+        )
     }
 }

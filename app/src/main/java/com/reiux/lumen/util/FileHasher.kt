@@ -28,7 +28,7 @@ object FileHasher {
 
     suspend fun calculateSha1(context: Context, uri: Uri): Sha1Result = withContext(Dispatchers.IO) {
         val digest = MessageDigest.getInstance("SHA-1")
-        context.contentResolver.openInputStream(uri)?.buffered()?.use { stream ->
+        MediaFileReader.openOriginalInputStream(context, uri)?.buffered()?.use { stream ->
             val buffer = ByteArray(64 * 1024)
             var bytesRead: Int
             while (stream.read(buffer).also { bytesRead = it } != -1) {
