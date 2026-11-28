@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,18 +21,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,8 +41,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -114,6 +116,14 @@ fun AddAlbumBottomSheet(
         isValidKeyOrUrl && nicknameInput.isNotBlank() && !isDuplicateKey && !isDuplicateNickname
     }
 
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val tabletopHeightMod = if (foldPosture.isTabletop) {
+        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+    } else {
+        Modifier
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -124,6 +134,7 @@ fun AddAlbumBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(tabletopHeightMod)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -135,21 +146,43 @@ fun AddAlbumBottomSheet(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // Connected Segmented Button Group
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = selectedSegment == 0,
-                    onClick = { selectedSegment = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            // M3E Connected Toggle Button Group
+            val segmentHaptic = LocalHapticFeedback.current
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+            ) {
+                TonalToggleButton(
+                    checked = selectedSegment == 0,
+                    onCheckedChange = {
+                        try { segmentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                        selectedSegment = 0
+                    },
+                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(R.string.album_segment_paste), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.album_segment_paste),
+                        style = MaterialTheme.typography.labelLargeEmphasized,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                SegmentedButton(
-                    selected = selectedSegment == 1,
-                    onClick = { selectedSegment = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                TonalToggleButton(
+                    checked = selectedSegment == 1,
+                    onCheckedChange = {
+                        try { segmentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                        selectedSegment = 1
+                    },
+                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(R.string.album_segment_create), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.album_segment_create),
+                        style = MaterialTheme.typography.labelLargeEmphasized,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -219,7 +252,7 @@ fun AddAlbumBottomSheet(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.CenterEnd
                 ) {
-                    TextButton(
+                    ExpressiveTextButton(
                         onClick = { showHelpDialog = true }
                     ) {
                         Icon(
@@ -237,7 +270,7 @@ fun AddAlbumBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onDismiss) {
+                ExpressiveTextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.btn_cancel))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -351,6 +384,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
     val steps = listOf(
         stringResource(R.string.album_help_step_1),
         stringResource(R.string.album_help_step_2),
@@ -361,9 +395,17 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 320.dp, max = if (isWideLayout) 540.dp else 440.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp)
+        } else {
+            Modifier
+                .widthIn(min = 320.dp, max = if (isWideLayout) 540.dp else 440.dp)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        },
         shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {

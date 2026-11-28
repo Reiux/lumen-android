@@ -2,6 +2,7 @@ package com.reiux.lumen.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.reiux.lumen.R
 import com.reiux.lumen.data.model.AccountBlock
 import com.reiux.lumen.data.model.AlbumTargetMode
 import com.reiux.lumen.data.model.AuthFailureKind
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,7 @@ import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 sealed class AlbumSyncState {
@@ -61,6 +64,7 @@ sealed class AlbumSyncState {
 }
 
 class UploadSpeedTracker {
+    private val lock = Any()
     private var lastCalculationTime = System.currentTimeMillis()
     private val bytesAccumulator = AtomicLong(0L)
     private var smoothedSpeedBps = 0.0
@@ -71,11 +75,11 @@ class UploadSpeedTracker {
         }
     }
 
-    fun tick(): String? {
+    fun tick(): String? = synchronized(lock) {
         val now = System.currentTimeMillis()
         val elapsedMs = now - lastCalculationTime
         if (elapsedMs < 300) {
-            return if (smoothedSpeedBps > 100) formatSpeed(smoothedSpeedBps) else null
+            return@synchronized if (smoothedSpeedBps > 100) formatSpeed(smoothedSpeedBps) else null
         }
 
         val bytes = bytesAccumulator.getAndSet(0L)
@@ -88,10 +92,10 @@ class UploadSpeedTracker {
             (0.35 * instantaneousBps) + (0.65 * smoothedSpeedBps)
         }
 
-        return if (smoothedSpeedBps > 100) formatSpeed(smoothedSpeedBps) else null
+        if (smoothedSpeedBps > 100) formatSpeed(smoothedSpeedBps) else null
     }
 
-    fun reset() {
+    fun reset() = synchronized(lock) {
         bytesAccumulator.set(0L)
         smoothedSpeedBps = 0.0
         lastCalculationTime = System.currentTimeMillis()
@@ -189,6 +193,10 @@ class UploadRepository(
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
 
+    private val pausedFlag = AtomicBoolean(false)
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+
     private val _uploadSpeed = MutableStateFlow<String?>(null)
     val uploadSpeed: StateFlow<String?> = _uploadSpeed.asStateFlow()
 
@@ -254,7 +262,6 @@ class UploadRepository(
         )
 
         var hasOtherActiveItems = false
-        val stagedPathsToCleanup = mutableListOf<String>()
 
         synchronized(_queue) {
             _queue.value = _queue.value.map { item ->
@@ -266,9 +273,6 @@ class UploadRepository(
                     item.status == UploadStatus.COMMITTING
 
                 if (isActiveStatus && isTargetAccount) {
-                    if (item.status == UploadStatus.QUEUED) {
-                        stagedPathsToCleanup.add(item.filePath)
-                    }
                     val err = when (kind) {
                         AuthFailureKind.RATE_LIMITED -> "Rate limited by Google Photos"
                         AuthFailureKind.SIGN_IN_REQUIRED -> "Sign in required"
@@ -284,11 +288,9 @@ class UploadRepository(
             _currentUploadingItem.value = getActiveUploadingItem()
         }
 
-        stagedPathsToCleanup.forEach { path ->
-            MediaFileReader.cleanupStagedFile(context, File(path))
-        }
-
         if (!hasOtherActiveItems) {
+            pausedFlag.set(false)
+            _isPaused.value = false
             detachAndCancelJobs()
             speedTracker.reset()
             _uploadSpeed.value = null
@@ -368,6 +370,10 @@ class UploadRepository(
             }
         }
 
+        if (shouldResetUploadState) {
+            pausedFlag.set(false)
+            _isPaused.value = false
+        }
         jobsToCancel?.let { (job, ticker) ->
             job?.cancel()
             ticker?.cancel()
@@ -569,6 +575,15 @@ class UploadRepository(
     }
 
     fun startQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+        startQueue(account, storageSaver, useQuota, preservePauseState = false)
+    }
+
+    private fun startQueue(
+        account: GoogleAccount,
+        storageSaver: Boolean,
+        useQuota: Boolean = false,
+        preservePauseState: Boolean = false
+    ) {
         val block = getAccountBlock(account.email)
         if (block != null && !hasEligibleQueuedItems(account.email)) {
             LumenLogger.i("UploadEngine") { "Skipped: account blocked (${block.kind})" }
@@ -593,14 +608,25 @@ class UploadRepository(
             }
             speedTracker.reset()
             _uploadSpeed.value = null
+            if (!preservePauseState) {
+                pausedFlag.set(false)
+                _isPaused.value = false
+            }
             _isUploading.value = true
 
             speedTickerJob?.cancel()
             val ticker = scope.launch {
                 while (isActive) {
                     delay(500)
-                    if (_isUploading.value) {
-                        _uploadSpeed.value = speedTracker.tick()
+                    if (_isUploading.value && !_isPaused.value) {
+                        val speed = speedTracker.tick()
+                        if (_isUploading.value && !_isPaused.value) {
+                            _uploadSpeed.value = speed
+                        } else {
+                            _uploadSpeed.value = null
+                        }
+                    } else if (_isPaused.value) {
+                        _uploadSpeed.value = null
                     }
                 }
             }
@@ -628,22 +654,35 @@ class UploadRepository(
                     val isCurrent = synchronized(jobLock) {
                         if (uploadJob === job) {
                             uploadJob = null
+                            if (speedTickerJob === ticker) {
+                                speedTickerJob = null
+                            }
                             if (finishedCleanly && hasEligibleQueuedItems(account.email)) {
                                 relaunchNeeded = true
+                                startQueue(account, storageSaver, useQuota, preservePauseState = true)
+                                if (uploadJob == null) {
+                                    relaunchNeeded = false
+                                    pausedFlag.set(false)
+                                    _isPaused.value = false
+                                    _isUploading.value = false
+                                    speedTracker.reset()
+                                    _uploadSpeed.value = null
+                                    _currentUploadingItem.value = null
+                                    _conditionNotice.value = null
+                                }
+                            } else {
+                                pausedFlag.set(false)
+                                _isPaused.value = false
+                                _isUploading.value = false
+                                speedTracker.reset()
+                                _uploadSpeed.value = null
+                                _currentUploadingItem.value = null
+                                _conditionNotice.value = null
                             }
                             true
                         } else {
                             false
                         }
-                    }
-                    if (relaunchNeeded) {
-                        startQueue(account, storageSaver, useQuota)
-                    } else if (isCurrent) {
-                        _isUploading.value = false
-                        speedTracker.reset()
-                        _uploadSpeed.value = null
-                        _currentUploadingItem.value = null
-                        _conditionNotice.value = null
                     }
                     LumenLogger.i("UploadEngine") { "Upload queue completed / finished" }
                     if (isCurrent && finishedCleanly && !relaunchNeeded) {
@@ -671,30 +710,17 @@ class UploadRepository(
     }
 
     fun pauseQueue() {
-        LumenLogger.i("UploadEngine") { "Pausing upload queue (preserving queued items and staged files)" }
-        detachAndCancelJobs()
+        val isActiveJob = synchronized(jobLock) { uploadJob?.isActive == true }
+        if (!_isUploading.value && !isActiveJob) {
+            pausedFlag.set(false)
+            _isPaused.value = false
+            return
+        }
+        LumenLogger.i("UploadEngine") { "Pausing upload queue in-place (preserving active chunks and progress)" }
+        pausedFlag.set(true)
+        _isPaused.value = true
         speedTracker.reset()
         _uploadSpeed.value = null
-        _isUploading.value = false
-        _currentUploadingItem.value = null
-        _conditionNotice.value = null
-
-        synchronized(_queue) {
-            lastProgressEmitAt.clear()
-            _queue.value = _queue.value.map { item ->
-                when (item.status) {
-                    UploadStatus.HASHING,
-                    UploadStatus.CHECKING,
-                    UploadStatus.UPLOADING,
-                    UploadStatus.COMMITTING -> item.copy(
-                        status = UploadStatus.QUEUED,
-                        bytesUploaded = 0L,
-                        error = null
-                    )
-                    else -> item
-                }
-            }
-        }
     }
 
     fun clearCompleted() {
@@ -719,20 +745,42 @@ class UploadRepository(
 
     fun retryFailedItems(itemIds: Set<String>) {
         if (itemIds.isEmpty()) return
+        var retriedCount = 0
         synchronized(_queue) {
             _queue.value = _queue.value.map { item ->
-                if (item.id in itemIds) {
+                if (item.id in itemIds && (item.status == UploadStatus.FAILED || item.status == UploadStatus.STOPPED)) {
+                    retriedCount++
                     item.copy(status = UploadStatus.QUEUED, error = null, bytesUploaded = 0L)
                 } else item
             }
             _currentUploadingItem.value = getActiveUploadingItem()
         }
-        LumenLogger.i("UploadEngine") { "Re-queued ${itemIds.size} failed/stopped items for retry" }
+        LumenLogger.i("UploadEngine") { "Re-queued $retriedCount failed/stopped items for retry" }
+    }
+
+    fun resumeQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean = false) {
+        val wasPaused = pausedFlag.getAndSet(false)
+        _isPaused.value = false
+        val isActiveJob = synchronized(jobLock) { uploadJob?.isActive == true }
+        if (isActiveJob) {
+            if (wasPaused) {
+                speedTracker.reset()
+                LumenLogger.i("UploadEngine") { "Resumed paused upload queue in-place" }
+            }
+            return
+        }
+        val hasQueued = synchronized(_queue) {
+            _queue.value.any { it.status == UploadStatus.QUEUED }
+        }
+        if (!hasQueued) return
+        startQueue(account, storageSaver, useQuota)
     }
 
     fun cancelQueue() {
         val pendingCount = _queue.value.count { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
         LumenLogger.w("UploadEngine") { "Cancelling upload queue ($pendingCount pending items)" }
+        pausedFlag.set(false)
+        _isPaused.value = false
         detachAndCancelJobs()
         speedTracker.reset()
         _uploadSpeed.value = null
@@ -753,6 +801,13 @@ class UploadRepository(
         }
     }
 
+    private suspend fun waitIfPaused() {
+        while (pausedFlag.get()) {
+            currentCoroutineContext().ensureActive()
+            delay(150)
+        }
+    }
+
     private suspend fun processQueue(account: GoogleAccount, storageSaver: Boolean, useQuota: Boolean) {
         val concurrency = settingsRepository.settings.value.uploadThreads.coerceIn(1, 20)
         LumenLogger.i("UploadEngine") { "processQueue started with $concurrency concurrent worker threads" }
@@ -761,6 +816,8 @@ class UploadRepository(
             val workers = List(concurrency) { workerIndex ->
                 launch {
                     while (isActive) {
+                        waitIfPaused()
+
                         // Atomically claim the next QUEUED item and immediately mark it HASHING
                         var queueRemaining = 0
                         val nextItem = synchronized(_queue) {
@@ -793,7 +850,7 @@ class UploadRepository(
                             val chargingOk = !isChargingRequired || DeviceConditions.isDeviceCharging(context)
 
                             if (!wifiOk) {
-                                _conditionNotice.value = "Waiting for Wi-Fi"
+                                _conditionNotice.value = context.getString(R.string.condition_waiting_wifi)
                                 if (!conditionLogged) {
                                     LumenLogger.w("UploadEngine", opId = opId) {
                                         "Worker #$workerIndex waiting: Wi-Fi required but device is on cellular or offline"
@@ -804,7 +861,7 @@ class UploadRepository(
                                 continue
                             }
                             if (!chargingOk) {
-                                _conditionNotice.value = "Waiting for charger"
+                                _conditionNotice.value = context.getString(R.string.condition_waiting_charger)
                                 if (!conditionLogged) {
                                     LumenLogger.w("UploadEngine", opId = opId) {
                                         "Worker #$workerIndex waiting: Charging required but device is running on battery"
@@ -934,6 +991,8 @@ class UploadRepository(
                 "Hashing complete algorithm=SHA-1 bytes=${file.length()} durationMs=$hashDuration sha1=${sha1Result.base64}"
             }
 
+            waitIfPaused()
+
             // Step 2: Local cache check (fast, zero network)
             val cachedMediaKey = hashCache.get(accountEmail, sha1Result.base64, file.length())
             if (!cachedMediaKey.isNullOrEmpty()) {
@@ -942,12 +1001,15 @@ class UploadRepository(
                     "Local cache HIT mediaKey=$cachedMediaKey reason=already_backed_up totalDurationMs=$totalMs. Skipping upload."
                 }
 
+                waitIfPaused()
                 handleAlbumAssignmentWithTokenRefresh(tokenProvider, accountEmail, albumMatchPath, item, cachedMediaKey, opId)
 
                 updateItemCompleted(item.id, cachedMediaKey, isSkipped = true)
                 return
             }
             LumenLogger.d("UploadEngine", opId = opId) { "Local cache MISS" }
+
+            waitIfPaused()
 
             // Step 3: Remote Google Photos dedup check
             updateItemStatus(item.id, UploadStatus.CHECKING)
@@ -960,6 +1022,7 @@ class UploadRepository(
                 throw e
             }
 
+            waitIfPaused()
             val remoteCheckStart = System.currentTimeMillis()
             val existingMediaKey = remoteDedupMutex.withLock {
                 val elapsed = System.currentTimeMillis() - lastRemoteDedupTime
@@ -989,6 +1052,7 @@ class UploadRepository(
                 }
             }
             val remoteCheckDuration = System.currentTimeMillis() - remoteCheckStart
+            waitIfPaused()
 
             if (!existingMediaKey.isNullOrEmpty()) {
                 val totalMs = System.currentTimeMillis() - overallStartTime
@@ -996,6 +1060,7 @@ class UploadRepository(
                     "Remote dedup HIT in Google Photos cloud mediaKey=$existingMediaKey checkDurationMs=$remoteCheckDuration totalDurationMs=$totalMs. Skipping upload."
                 }
 
+                waitIfPaused()
                 handleAlbumAssignmentWithTokenRefresh(tokenProvider, accountEmail, albumMatchPath, item, existingMediaKey, opId)
 
                 hashCache.put(
@@ -1084,6 +1149,8 @@ class UploadRepository(
                         }
                     }
 
+                    waitIfPaused()
+
                     // Stage 4a: Acquire upload token
                     updateItemStatus(item.id, UploadStatus.UPLOADING)
                     LumenLogger.d("UploadEngine", opId = opId) {
@@ -1102,13 +1169,21 @@ class UploadRepository(
                     var lastLoggedPercent = 0
                     val streamStartTime = System.currentTimeMillis()
 
-                    val commitToken = photosClient.uploadFile(uploadToken, file, activeToken, opId) { bytesSent, total ->
+                    val commitToken = photosClient.uploadFile(
+                        uploadToken = uploadToken,
+                        file = file,
+                        bearerToken = activeToken,
+                        opId = opId,
+                        isPaused = { pausedFlag.get() },
+                        tokenProvider = tokenProvider,
+                        onInvalidateToken = { authClient.invalidateCache(accountEmail) }
+                    ) { bytesSent, total ->
                         val delta = bytesSent - lastSentBytes
                         if (delta > 0) {
                             speedTracker.addBytes(delta)
                             lastSentBytes = bytesSent
+                            updateItemProgress(item.id, bytesSent)
                         }
-                        updateItemProgress(item.id, bytesSent)
 
                         val percent = if (total > 0) ((bytesSent * 100) / total).toInt() else 0
                         if (percent >= lastLoggedPercent + 10 || (percent == 100 && lastLoggedPercent < 100)) {
@@ -1126,6 +1201,10 @@ class UploadRepository(
                         }
                     }
 
+                    if (getAccountBlock(accountEmail) != null) return
+                    waitIfPaused()
+                    if (getAccountBlock(accountEmail) != null) return
+
                     // Stage 5: Commit upload
                     updateItemStatus(item.id, UploadStatus.COMMITTING)
                     hadPriorCommitAttempt = true
@@ -1135,8 +1214,19 @@ class UploadRepository(
 
                     val commitStart = System.currentTimeMillis()
                     val timestampSec = file.lastModified() / 1000
+                    val commitBearerToken = try {
+                        tokenProvider()
+                    } catch (e: com.reiux.lumen.util.AuthFailureException) {
+                        if (e.kind == AuthFailureKind.SIGN_IN_REQUIRED ||
+                            e.kind == AuthFailureKind.ACCOUNT_RESTRICTED ||
+                            e.kind == AuthFailureKind.RATE_LIMITED
+                        ) {
+                            triggerAccountBlock(accountEmail, e.kind, e.rawDetail, e.retryAfterSec)
+                        }
+                        throw e
+                    }
                     val mediaKey = photosClient.commitUpload(
-                        activeToken,
+                        commitBearerToken,
                         commitToken,
                         item.fileName,
                         sha1Result.bytes,
@@ -1279,15 +1369,15 @@ class UploadRepository(
 
         } finally {
             val finalStatus = getItemStatus(item.id)
-            val shouldCleanupItemSource = finalStatus == null ||
-                finalStatus == UploadStatus.COMPLETED ||
-                finalStatus == UploadStatus.SKIPPED ||
-                finalStatus == UploadStatus.FAILED
-            if (file.absolutePath != item.filePath || shouldCleanupItemSource) {
+            val shouldCleanupItemSource = finalStatus == UploadStatus.COMPLETED ||
+                finalStatus == UploadStatus.SKIPPED
+            if (shouldCleanupItemSource) {
                 MediaFileReader.cleanupStagedFile(context, file)
-            }
-            if (shouldCleanupItemSource && file.absolutePath != item.filePath) {
-                MediaFileReader.cleanupStagedFile(context, File(item.filePath))
+                if (file.absolutePath != item.filePath) {
+                    MediaFileReader.cleanupStagedFile(context, File(item.filePath))
+                }
+            } else if (finalStatus == null && file.absolutePath != item.filePath) {
+                MediaFileReader.cleanupStagedFile(context, file)
             }
         }
     }
@@ -1926,11 +2016,21 @@ class UploadRepository(
     }
 
     private fun updateItemStatus(id: String, status: UploadStatus) {
+        val isTerminalTarget = status == UploadStatus.COMPLETED ||
+            status == UploadStatus.SKIPPED ||
+            status == UploadStatus.FAILED ||
+            status == UploadStatus.STOPPED
         synchronized(_queue) {
+            var changed = false
             _queue.value = _queue.value.map {
-                if (it.id == id) it.copy(status = status) else it
+                if (it.id == id && (isTerminalTarget || (it.status != UploadStatus.FAILED && it.status != UploadStatus.STOPPED))) {
+                    changed = true
+                    it.copy(status = status)
+                } else it
             }
-            _currentUploadingItem.value = getActiveUploadingItem()
+            if (changed) {
+                _currentUploadingItem.value = getActiveUploadingItem()
+            }
         }
     }
 
@@ -1940,12 +2040,16 @@ class UploadRepository(
             // (O(N) .map + active-item scan + StateFlow re-emit) per chunk made the UI jank
             // on large batches, so throttle to one emission per item per ~250ms. Status
             // transitions still go through updateItemStatus(), which emits immediately.
+            val current = _queue.value.firstOrNull { it.id == id } ?: return
+            if (current.status == UploadStatus.FAILED || current.status == UploadStatus.STOPPED) return
             val now = System.currentTimeMillis()
             val last = lastProgressEmitAt[id] ?: 0L
             if (now - last < 250L) return
             lastProgressEmitAt[id] = now
             _queue.value = _queue.value.map {
-                if (it.id == id) it.copy(bytesUploaded = bytesUploaded) else it
+                if (it.id == id && it.status != UploadStatus.FAILED && it.status != UploadStatus.STOPPED) {
+                    it.copy(bytesUploaded = bytesUploaded)
+                } else it
             }
             _currentUploadingItem.value = getActiveUploadingItem()
         }
@@ -1981,8 +2085,11 @@ class UploadRepository(
         // Clean up temporary staging cache copy if this item was staged
         MediaFileReader.cleanupStagedFile(context, file)
 
+        if (!item.allowDeleteAfterBackup) return
+
         val deleteAfterBackupSetting = settingsRepository.settings.value.deleteAfterBackup
-        if (!deleteAfterBackupSetting || !item.allowDeleteAfterBackup) return
+        val configuredFolders = settingsRepository.getAllFolders()
+        if (!deleteAfterBackupSetting && configuredFolders.none { it.enabled && it.deleteAfterBackup }) return
 
         val targetPath = item.originalFilePath ?: item.filePath
         val stagingDir = File(context.cacheDir, "staging")
@@ -1995,7 +2102,7 @@ class UploadRepository(
         if (!isEligibleForPostBackupDeletion(
                 item = item,
                 targetPath = targetPath,
-                configuredFolders = settingsRepository.getAllFolders(),
+                configuredFolders = configuredFolders,
                 deleteAfterBackupSetting = deleteAfterBackupSetting,
                 stagingDirCanonicalPrefix = stagingDirCanonicalPrefix
             )
@@ -2007,6 +2114,51 @@ class UploadRepository(
         }
 
         val targetFile = File(targetPath)
+        val canonicalTargetPath = try {
+            targetFile.canonicalPath
+        } catch (_: Exception) {
+            targetFile.absolutePath
+        }.replace('\\', '/')
+
+        val hasOtherPendingForSameFile = synchronized(_queue) {
+            _queue.value.any { other ->
+                if (other.id == item.id) return@any false
+                val isPending = other.status == UploadStatus.QUEUED ||
+                    other.status == UploadStatus.HASHING ||
+                    other.status == UploadStatus.CHECKING ||
+                    other.status == UploadStatus.UPLOADING ||
+                    other.status == UploadStatus.COMMITTING
+                if (!isPending) return@any false
+                val otherTargetPath = other.originalFilePath ?: other.filePath
+                val otherCanonical = try {
+                    File(otherTargetPath).canonicalPath
+                } catch (_: Exception) {
+                    File(otherTargetPath).absolutePath
+                }.replace('\\', '/')
+                otherCanonical == canonicalTargetPath
+            }
+        }
+        if (hasOtherPendingForSameFile) {
+            LumenLogger.d("UploadEngine", opId = opId) {
+                "Skipping post-backup deletion for '${item.fileName}' (another active queue item references the same file)"
+            }
+            return
+        }
+
+        val blockedByOtherAccountFolder = configuredFolders.any { otherFolder ->
+            otherFolder.enabled &&
+                !otherFolder.accountEmail.equals(item.accountEmail, ignoreCase = true) &&
+                !deleteAfterBackupSetting &&
+                !otherFolder.deleteAfterBackup &&
+                com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(targetPath, otherFolder)
+        }
+        if (blockedByOtherAccountFolder) {
+            LumenLogger.d("UploadEngine", opId = opId) {
+                "Skipping post-backup deletion for '${item.fileName}' (another account's enabled folder has deleteAfterBackup disabled)"
+            }
+            return
+        }
+
         if (targetFile.exists()) {
             try {
                 val deleted = targetFile.delete()
@@ -2054,10 +2206,13 @@ class UploadRepository(
             deleteAfterBackupSetting: Boolean,
             stagingDirCanonicalPrefix: String
         ): Boolean {
-            if (!deleteAfterBackupSetting || !item.allowDeleteAfterBackup) return false
+            if (!item.allowDeleteAfterBackup) return false
             if (targetPath.isBlank()) return false
 
             val targetFile = File(targetPath)
+            try {
+                if (java.nio.file.Files.isSymbolicLink(targetFile.toPath())) return false
+            } catch (_: Exception) {}
             val canonicalTargetPath = try {
                 targetFile.canonicalPath
             } catch (_: Exception) {
@@ -2077,8 +2232,9 @@ class UploadRepository(
 
             return configuredFolders.any { folder ->
                 if (!folder.enabled) return@any false
-                val accountMatches = folder.accountEmail.isNullOrBlank() ||
-                    item.accountEmail.isNullOrBlank() ||
+                if (!deleteAfterBackupSetting && !folder.deleteAfterBackup) return@any false
+                val accountMatches = !folder.accountEmail.isNullOrBlank() &&
+                    !item.accountEmail.isNullOrBlank() &&
                     folder.accountEmail.equals(item.accountEmail, ignoreCase = true)
                 accountMatches && com.reiux.lumen.util.FolderWatcherManager.isPathMatchingFolder(targetPath, folder)
             }

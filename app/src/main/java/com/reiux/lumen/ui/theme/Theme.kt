@@ -3,7 +3,8 @@ package com.reiux.lumen.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
@@ -13,7 +14,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
-import com.reiux.lumen.util.RomDetector
 import com.reiux.lumen.util.Season
 import com.reiux.lumen.util.SystemFontProvider
 
@@ -35,8 +35,6 @@ fun LumenTheme(
         darkTheme -> selectedPreset.darkScheme
         else -> selectedPreset.lightScheme
     }
-
-    val isStock = remember { RomDetector.isStockOrAosp(context) }
 
     val dynamicFont = remember {
         SystemFontProvider.getGoogleSansFamily() ?: FontFamily.Default
@@ -60,8 +58,9 @@ fun LumenTheme(
         }
     }
 
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = colorScheme,
+        motionScheme = MotionScheme.expressive(),
         shapes = LumenShapes,
         typography = typography,
         content = content

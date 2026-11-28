@@ -152,10 +152,10 @@ Lumen is an unofficial tool and isn't affiliated with Google. It uploads photos 
 
 ## Disclaimer
 
-Lumen is an independent open-source project and is not affiliated with, endorsed by, or supported by Google LLC. Google Photos is a trademark of Google LLC. Use at your own risk. The software is provided "as-is" under the Apache 2.0 license.
+Lumen is an independent open-source project and is not affiliated with, endorsed by, or supported by Google LLC. Google Photos is a trademark of Google LLC. Use at your own risk. The software is provided "as-is" under the GNU General Public License v3.0.
 
 ---
 
 ## License
 
-Distributed under the [Apache License 2.0](LICENSE).
+Distributed under the [GNU General Public License v3.0 (GPL-3.0)](LICENSE).

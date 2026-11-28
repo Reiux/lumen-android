@@ -64,8 +64,8 @@
     <string name="seasonal_greeting_christmas">Merry Christmas from Lumen!</string>
     <string name="seasonal_greeting_new_year">Happy New Year from Lumen!</string>
     <string name="secure_storage_unavailable_warning">Secure storage is unavailable on this device. You will need to sign in again each time you open Lumen.</string>
-    <string name="pick_files_button">Choose from Files</string>
-    <string name="pick_photos_button">Pick Photos &amp; Videos</string>
+    <string name="pick_files_button">Pick Files</string>
+    <string name="pick_photos_button">Pick Media</string>
     <!-- Navigation Tabs -->
     <string name="nav_backup">Backup</string>
     <string name="nav_folders">Folders</string>
@@ -135,17 +135,17 @@
     <string name="settings_section_appearance">Appearance &amp; Theme</string>
     <string name="settings_section_about">About &amp; Updates</string>
     <string name="pref_storage_saver_title">Storage Saver Quality</string>
-    <string name="pref_storage_saver_desc">Compress photos to slightly reduce storage while maintaining high visual quality.</string>
+    <string name="pref_storage_saver_desc">Compress photos to slightly reduce storage while maintaining high visual quality</string>
     <string name="pref_wifi_only_title">Back up over Wi-Fi only</string>
-    <string name="pref_wifi_only_desc">Avoid consuming mobile data for uploads.</string>
+    <string name="pref_wifi_only_desc">Avoid consuming mobile data for uploads</string>
     <string name="pref_charging_only_title">Back up only while charging</string>
-    <string name="pref_charging_only_desc">Conserve battery by only uploading when connected to power.</string>
+    <string name="pref_charging_only_desc">Conserve battery by only uploading when connected to power</string>
     <string name="pref_battery_opt_title">Battery Optimization</string>
     <string name="pref_battery_opt_exempt">Exempted (Recommended)</string>
-    <string name="pref_battery_opt_desc">Allow Lumen to run background uploads without OS battery killing.</string>
+    <string name="pref_battery_opt_desc">Allow Lumen to run background uploads without OS battery killing</string>
     <string name="pref_theme_title">Color Theme</string>
     <string name="pref_blur_effects_title">Blur &amp; Transparency Effects</string>
-    <string name="pref_blur_effects_desc">Enable expressive background blurs on supported devices.</string>
+    <string name="pref_blur_effects_desc">Enable expressive background blurs on supported devices</string>
     <string name="pref_version_title">Version</string>
     <string name="pref_licenses_title">Open Source Licenses</string>
     <string name="pref_diagnostics_title">Developer Diagnostics</string>
@@ -218,7 +218,7 @@
     <string name="pref_auto_backup_title">Back up new photos and videos</string>
     <string name="pref_auto_backup_desc">Automatically back up new files in enabled folders</string>
     <string name="pref_upload_threads_title">Parallel Upload Threads</string>
-    <string name="pref_upload_threads_desc">Upload multiple photos simultaneously.</string>
+    <string name="pref_upload_threads_desc">Upload multiple photos simultaneously</string>
     <string name="pref_oem_guide_title">Manufacturer Background Setup</string>
     <string name="pref_oem_guide_desc">Guides for MIUI, HyperOS, One UI, and ColorOS</string>
     <string name="dialog_delete_after_backup_title">Delete original photos from device?</string>
@@ -399,6 +399,8 @@
     <string name="update_dialog_default_notes">Bug fixes and improvements.</string>
     <string name="update_downloading_progress">Downloading update…</string>
     <string name="update_up_to_date">Lumen is up to date</string>
+    <string name="update_check_failed">Couldn\'t check for updates. Check your connection and try again.</string>
+    <string name="update_no_compatible_apk">No compatible APK found in the latest release.</string>
 
     <string name="manual_upload_to_google_photos">Upload to Google Photos</string>
     <string name="manual_upload_to_google_photos_account">Upload to Google Photos • %1$s</string>
@@ -627,4 +629,72 @@
     <string name="accounts_upload_active_switch_msg">You cannot switch accounts while an upload is currently running.\n\nFiles are actively streaming to %1$s.\n\nPlease wait for the current upload batch to complete or cancel the backup first.</string>
     <string name="accounts_upload_active_remove_msg">You cannot remove an account while an upload is currently running.\n\nFiles are actively streaming to %1$s.\n\nPlease wait for the current upload batch to complete or cancel the backup first.</string>
     <string name="dialog_edit_display_name_hint">e.g. Personal or Work</string>
+
+    <!-- Pause/Resume, Notification Actions & Per-Item Retry -->
+    <string name="backup_paused_title">Backup Paused</string>
+    <string name="backup_paused_subtitle">%1$d items remaining in queue</string>
+    <string name="notif_action_pause">Pause</string>
+    <string name="notif_action_cancel">Cancel</string>
+    <string name="notif_backup_chip">Backup</string>
+    <string name="queue_item_tap_to_retry">Tap to retry</string>
+    <string name="queue_item_retrying">Retrying %1$s…</string>
+
+    <!-- Per-Folder Delete After Backup -->
+    <string name="folder_delete_after_backup_title">Delete after backup</string>
+    <string name="folder_delete_after_backup_desc">Remove local files from this folder once uploaded</string>
+    <string name="folder_delete_after_backup_badge">Auto-delete</string>
+    <string name="settings_delete_after_backup_global_hint">Applies to all enabled folders, or configure per folder in Folders</string>
+
+    <!-- Quick Settings Tile & App Shortcuts -->
+    <string name="qs_tile_sync_label">Sync Lumen</string>
+    <string name="qs_tile_syncing">Syncing…</string>
+    <string name="qs_tile_idle">Tap to sync</string>
+    <string name="qs_tile_no_account">No account</string>
+    <string name="shortcut_sync_short">Sync Folders</string>
+    <string name="shortcut_sync_long">Sync Backup Folders</string>
+    <string name="shortcut_pick_short">Pick Media</string>
+    <string name="shortcut_pick_long">Pick Photos &amp; Videos</string>
+
+    <!-- Extracted Remaining Strings -->
+    <string name="completion_default_title">All Backed Up!</string>
+    <string name="completion_cd_complete">Complete</string>
+    <string name="completion_summary_both">%1$d uploaded, %2$d already in Google Photos</string>
+    <string name="completion_summary_uploaded_one">1 item uploaded to Google Photos</string>
+    <string name="completion_summary_uploaded">%1$d items uploaded to Google Photos</string>
+    <string name="completion_summary_skipped_one">Already in Google Photos</string>
+    <string name="completion_summary_skipped">All %1$d items are already in Google Photos</string>
+    <string name="completion_summary_default">Everything is up to date in Google Photos</string>
+    <string name="empty_state_default_subtitle">Choose photos &amp; videos or tap Sync Folders to start backup</string>
+    <string name="condition_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="condition_waiting_charger">Waiting for charger</string>
+    <string name="backup_offline_toast">You\'re offline. Connect to the internet to back up.</string>
+    <string name="backup_eta_seconds">~%1$ds left</string>
+    <string name="backup_eta_minutes">~%1$dm %2$ds left</string>
+    <string name="backup_eta_hours">~%1$dh %2$dm left</string>
+    <string name="backup_sign_in_prompt">Sign in to %1$s to restore access and resume uploads.</string>
+    <string name="backup_target_album_fallback">target album</string>
+    <string name="account_block_few_seconds">a few seconds</string>
+    <string name="account_block_minutes_seconds">%1$dm %2$ds</string>
+    <string name="account_block_seconds">%1$ds</string>
+    <string name="about_prism_badge">Master of Light</string>
+    <string name="about_matrix_title">SYSTEM OVERRIDE</string>
+    <string name="about_matrix_body">There is no spoon. Only raw photos.\n\nYou have unlocked the Matrix theme in Settings.</string>
+    <string name="about_matrix_ack">Acknowledge</string>
+    <string name="cd_change_avatar">Change profile picture</string>
+    <string name="cd_remove_account">Remove account</string>
+    <string name="update_download_failed_retry">Download failed. Tap Update Now to try again.</string>
+
+    <!-- What's New -->
+    <string name="whats_new_title">What\'s New</string>
+    <string name="whats_new_subtitle">See recent features and improvements</string>
+    <string name="whats_new_mark_all_read">Mark all as read</string>
+    <string name="whats_new_view_github">View full releases on GitHub</string>
+    <string name="whats_new_badge_new">New</string>
+    <string name="whats_new_close">Got it</string>
+    <string name="whats_new_sheet_title">What\'s New in %1$s</string>
+    <string name="whats_new_sheet_subtitle">Here\'s what changed in this update</string>
+    <string name="whats_new_see_all">See full history</string>
+    <string name="dev_preview_whats_new_title">Preview What\'s New Sheet</string>
+    <string name="dev_preview_whats_new_desc">Test the post-update highlights popup</string>
+    <string name="action_more_options">More options</string>
 </resources>

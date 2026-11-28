@@ -2,32 +2,31 @@ package com.reiux.lumen.ui.screens
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -36,11 +35,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Description
@@ -50,16 +51,12 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.UploadFile
 import com.reiux.lumen.util.EasterEggsManager
 import com.reiux.lumen.util.Season
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,19 +77,26 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.DynamicLumenIcon
-import com.reiux.lumen.ui.components.ExpressiveButton
+import com.reiux.lumen.ui.components.ExpressiveAlertDialog
+import com.reiux.lumen.ui.components.ExpressiveDialogTone
+import com.reiux.lumen.ui.components.ExpressiveIconButton
+import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
 import com.reiux.lumen.ui.components.ExpressiveSwitch
+import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.LogViewerDialog
 import com.reiux.lumen.ui.components.PlayfulParticleBurstOverlay
+import com.reiux.lumen.ui.components.TabletopSplitLayout
+import com.reiux.lumen.ui.components.animatedGroupedCardShape
+import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.rememberExpressivePressed
+import com.reiux.lumen.ui.components.rememberHapticClick
 import com.reiux.lumen.util.LumenLogger
 
 @Composable
@@ -107,38 +111,28 @@ fun AboutScreen(
     onUnlockPrismTheme: () -> Unit = {},
     onUnlockMatrixTheme: () -> Unit = {},
     forcedSeason: String = "NONE",
+    hasUnreadWhatsNew: Boolean = false,
+    onOpenWhatsNew: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
     onForceUpdateDialog: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     var showLogViewer by rememberSaveable { mutableStateOf(false) }
     var showLicensesDialog by rememberSaveable { mutableStateOf(false) }
     var showMatrixDialog by rememberSaveable { mutableStateOf(false) }
     var showPrismBurst by remember { mutableStateOf(false) }
+    var isCheckingUpdates by remember { mutableStateOf(false) }
     var lastLogOpenTime by remember { mutableLongStateOf(0L) }
 
     val activeSeason = remember(forcedSeason) {
         EasterEggsManager.resolveActiveSeason(forcedSeason)
     }
 
-    val (appVersionName, appVersionCode) = remember(context) {
-        try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val vName = pInfo?.versionName ?: "1.0.0"
-            val vCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                pInfo?.longVersionCode ?: 1L
-            } else {
-                @Suppress("DEPRECATION")
-                pInfo?.versionCode?.toLong() ?: 1L
-            }
-            vName to vCode
-        } catch (_: Exception) {
-            "1.0.0" to 1L
-        }
-    }
+    val appVersionName = com.reiux.lumen.BuildConfig.VERSION_NAME
+    val appVersionCode = com.reiux.lumen.BuildConfig.VERSION_CODE.toLong()
 
     if (showLogViewer) {
         LogViewerDialog(
@@ -153,38 +147,27 @@ fun AboutScreen(
     }
 
     if (showMatrixDialog) {
-        com.reiux.lumen.ui.components.PredictiveAlertDialog(
+        ExpressiveAlertDialog(
             onDismissRequest = { showMatrixDialog = false },
-            title = {
+            icon = Icons.Rounded.Code,
+            title = stringResource(R.string.about_matrix_title),
+            tone = ExpressiveDialogTone.PRIMARY,
+            confirmText = stringResource(R.string.about_matrix_ack),
+            onConfirm = { showMatrixDialog = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D130F), RoundedCornerShape(16.dp))
+                    .padding(16.dp)
+            ) {
                 Text(
-                    text = "SYSTEM OVERRIDE",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    text = stringResource(R.string.about_matrix_body),
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF00FF66)
                 )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0D130F), RoundedCornerShape(16.dp))
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = "SYSTEM OVERRIDE: Welcome, Architect.\nAll cloud systems operational.\n\nDeveloper tools unlocked.\nMatrix theme preset added to Settings.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF00FF66)
-                    )
-                }
-            },
-            confirmButton = {
-                ExpressiveButton(onClick = { showMatrixDialog = false }) {
-                    Text("Acknowledge")
-                }
-            },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = Color(0xFF111713)
-        )
+            }
+        }
     }
 
     if (showPrismBurst) {
@@ -193,56 +176,219 @@ fun AboutScreen(
         )
     }
 
-    val configuration = LocalConfiguration.current
-    val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val handleCheckForUpdates: () -> Unit = {
+        if (!isCheckingUpdates) {
+            isCheckingUpdates = true
+            Toast.makeText(context, context.getString(R.string.toast_checking_updates), Toast.LENGTH_SHORT).show()
+            onCheckForUpdates()
+            coroutineScope.launch {
+                delay(1200L)
+                isCheckingUpdates = false
+            }
+        }
+    }
+
+    val handleOpenLiveLogs: () -> Unit = {
+        val now = System.currentTimeMillis()
+        if (now - lastLogOpenTime > 600L) {
+            lastLogOpenTime = now
+            LumenLogger.i("AboutUI") { "Opened Live Log Viewer dialog" }
+            showLogViewer = true
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(
-                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-                    )
-                )
-        ) {
-            // Top App Bar with back button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isWideLayout = maxWidth >= 700.dp
+            val foldPosture = com.reiux.lumen.ui.components.LocalFoldPosture.current
+            val isTallViewport = maxHeight >= 560.dp
+            val isTabletopMode = foldPosture.isTabletop && maxHeight >= 520.dp
 
-            if (isWideLayout) {
-                // Tablet / Landscape 2-Pane Split
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+            ) {
+                // Top App Bar with back button
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = if (isWideLayout && !isTabletopMode) 1080.dp else 720.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left Pane: Brand Aperture, Title & Secret Developer Unlock
-                    val leftScrollState = rememberScrollState()
+                    ExpressiveIconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                if (isTabletopMode) {
+                    // Tabletop Mode: top angled display holds emblem, bottom flat touch deck holds actions
+                    val tabletopTopScroll = rememberScrollState()
+                    val tabletopBottomScroll = rememberScrollState()
+
+                    TabletopSplitLayout(
+                        modifier = Modifier.fillMaxSize(),
+                        topContent = {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .fillMaxWidth()
+                                    .verticalScroll(tabletopTopScroll)
+                                    .padding(horizontal = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                BrandHeaderSection(
+                                    appVersionName = appVersionName,
+                                    appVersionCode = appVersionCode,
+                                    developerModeUnlocked = developerModeUnlocked,
+                                    unlockedPrismTheme = unlockedPrismTheme,
+                                    activeSeason = activeSeason,
+                                    onUnlockMatrixTheme = onUnlockMatrixTheme,
+                                    onShowMatrixDialog = { showMatrixDialog = true }
+                                )
+                            }
+                        },
+                        bottomContent = {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .widthIn(max = 720.dp)
+                                    .fillMaxWidth()
+                                    .verticalScroll(tabletopBottomScroll)
+                                    .padding(horizontal = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                AboutLinksGroup(
+                                    context = context,
+                                    isCheckingUpdates = isCheckingUpdates,
+                                    hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                    onOpenWhatsNew = onOpenWhatsNew,
+                                    onOpenLicenses = {
+                                        LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
+                                        showLicensesDialog = true
+                                    },
+                                    onCheckForUpdates = handleCheckForUpdates
+                                )
+
+                                CreditsAndDisclaimerSection(context)
+
+                                if (developerModeUnlocked) {
+                                    DebugToolsGroup(
+                                        context = context,
+                                        saveLogsEnabled = saveLogsEnabled,
+                                        onToggleSaveLogs = onToggleSaveLogs,
+                                        onOpenLiveLogs = handleOpenLiveLogs,
+                                        onForceUpdateDialog = onForceUpdateDialog
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+                            }
+                        }
+                    )
+                } else if (isWideLayout && !foldPosture.isTabletop) {
+                    // Tablet / Unfolded Landscape 2-Pane Split
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .wrapContentWidth(Alignment.CenterHorizontally)
+                            .widthIn(max = 1080.dp)
+                            .padding(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 32.dp else 24.dp)
+                    ) {
+                        // Left Pane: Brand Aperture, Title & Secret Developer Unlock
+                        val leftScrollState = rememberScrollState()
+                        Box(
+                            modifier = Modifier
+                                .weight(if (isTallViewport) 1f else 0.44f)
+                                .fillMaxHeight(),
+                            contentAlignment = if (isTallViewport) Alignment.Center else Alignment.TopCenter
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(leftScrollState),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                BrandHeaderSection(
+                                    appVersionName = appVersionName,
+                                    appVersionCode = appVersionCode,
+                                    developerModeUnlocked = developerModeUnlocked,
+                                    unlockedPrismTheme = unlockedPrismTheme,
+                                    activeSeason = activeSeason,
+                                    onUnlockMatrixTheme = onUnlockMatrixTheme,
+                                    onShowMatrixDialog = { showMatrixDialog = true }
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                        }
+
+                        // Right Pane: About Actions & Debug Tools
+                        val rightScrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .weight(if (isTallViewport) 1f else 0.56f)
+                                .fillMaxHeight()
+                                .verticalScroll(rightScrollState),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            AboutLinksGroup(
+                                context = context,
+                                isCheckingUpdates = isCheckingUpdates,
+                                hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                onOpenWhatsNew = onOpenWhatsNew,
+                                onOpenLicenses = {
+                                    LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
+                                    showLicensesDialog = true
+                                },
+                                onCheckForUpdates = handleCheckForUpdates
+                            )
+
+                            CreditsAndDisclaimerSection(context)
+
+                            if (developerModeUnlocked) {
+                                DebugToolsGroup(
+                                    context = context,
+                                    saveLogsEnabled = saveLogsEnabled,
+                                    onToggleSaveLogs = onToggleSaveLogs,
+                                    onOpenLiveLogs = handleOpenLiveLogs,
+                                    onForceUpdateDialog = onForceUpdateDialog
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
+                    }
+                } else {
+                    // Portrait / Single Column Layout
+                    val scrollState = rememberScrollState()
                     Column(
                         modifier = Modifier
-                            .weight(0.44f)
-                            .fillMaxHeight()
-                            .verticalScroll(leftScrollState),
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                            .wrapContentWidth(Alignment.CenterHorizontally)
+                            .widthIn(max = 720.dp)
+                            .padding(horizontal = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         BrandHeaderSection(
                             appVersionName = appVersionName,
@@ -254,380 +400,213 @@ fun AboutScreen(
                             onShowMatrixDialog = { showMatrixDialog = true }
                         )
 
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        AboutLinksGroup(
+                            context = context,
+                            isCheckingUpdates = isCheckingUpdates,
+                            hasUnreadWhatsNew = hasUnreadWhatsNew,
+                            onOpenWhatsNew = onOpenWhatsNew,
+                            onOpenLicenses = {
+                                LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
+                                showLicensesDialog = true
+                            },
+                            onCheckForUpdates = handleCheckForUpdates
+                        )
+
                         Spacer(modifier = Modifier.height(16.dp))
-                    }
-
-                    // Right Pane: About Actions & Debug Tools
-                    val rightScrollState = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .weight(0.56f)
-                            .fillMaxHeight()
-                            .verticalScroll(rightScrollState),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.about_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                            ) {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.Code,
-                                        title = stringResource(R.string.about_source_code_title),
-                                        subtitle = stringResource(R.string.about_source_code_desc),
-                                        onClick = {
-                                            openWebUrl(context, "https://github.com/Reiux/lumen-android")
-                                        }
-                                    )
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.Description,
-                                        title = stringResource(R.string.about_licenses_title),
-                                        subtitle = stringResource(R.string.about_licenses_desc),
-                                        onClick = {
-                                            LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
-                                            showLicensesDialog = true
-                                        }
-                                    )
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.SystemUpdate,
-                                        title = stringResource(R.string.about_check_updates_title),
-                                        subtitle = stringResource(R.string.about_check_updates_desc),
-                                        onClick = {
-                                            android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
-                                            onCheckForUpdates()
-                                        }
-                                    )
-                                }
-                            }
-                        }
 
                         CreditsAndDisclaimerSection(context)
 
                         if (developerModeUnlocked) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.about_debug_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 4.dp)
-                                )
+                            Spacer(modifier = Modifier.height(24.dp))
 
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(24.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                                ) {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        val toggleLogs: (Boolean) -> Unit = { next ->
-                                            try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
-                                            onToggleSaveLogs(next)
-                                        }
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { toggleLogs(!saveLogsEnabled) }
-                                                .padding(horizontal = 20.dp, vertical = 16.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                                Text(
-                                                    text = stringResource(R.string.about_save_logs_title),
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = stringResource(R.string.about_save_logs_desc),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-
-                                            ExpressiveSwitch(
-                                                checked = saveLogsEnabled,
-                                                onCheckedChange = toggleLogs
-                                            )
-                                        }
-
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-
-                                        AboutActionRow(
-                                            icon = Icons.Rounded.UploadFile,
-                                            title = stringResource(R.string.about_export_logs_title),
-                                            subtitle = stringResource(R.string.about_export_logs_desc),
-                                            onClick = {
-                                                LumenLogger.exportLogs(context)
-                                            }
-                                        )
-
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-
-                                        AboutActionRow(
-                                            icon = Icons.Rounded.BugReport,
-                                            title = stringResource(R.string.about_view_live_logs_title),
-                                            subtitle = stringResource(R.string.about_view_live_logs_desc),
-                                            onClick = {
-                                                val now = System.currentTimeMillis()
-                                                if (now - lastLogOpenTime > 600L) {
-                                                    lastLogOpenTime = now
-                                                    LumenLogger.i("AboutUI") { "Opened Live Log Viewer dialog" }
-                                                    showLogViewer = true
-                                                }
-                                            }
-                                        )
-
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-
-                                        AboutActionRow(
-                                            icon = Icons.Rounded.SystemUpdate,
-                                            title = stringResource(R.string.about_force_update_title),
-                                            subtitle = stringResource(R.string.about_force_update_desc),
-                                            onClick = {
-                                                android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
-                                                onForceUpdateDialog()
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
-                }
-            } else {
-                // Portrait Single Column Layout
-                val scrollState = rememberScrollState()
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .wrapContentWidth(Alignment.CenterHorizontally)
-                        .widthIn(max = 680.dp)
-                        .padding(horizontal = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    BrandHeaderSection(
-                        appVersionName = appVersionName,
-                        appVersionCode = appVersionCode,
-                        developerModeUnlocked = developerModeUnlocked,
-                        unlockedPrismTheme = unlockedPrismTheme,
-                        activeSeason = activeSeason,
-                        onUnlockMatrixTheme = onUnlockMatrixTheme,
-                        onShowMatrixDialog = { showMatrixDialog = true }
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.about_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 4.dp)
-                        )
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                AboutActionRow(
-                                    icon = Icons.Rounded.Code,
-                                    title = stringResource(R.string.about_source_code_title),
-                                    subtitle = stringResource(R.string.about_source_code_desc),
-                                    onClick = {
-                                        openWebUrl(context, "https://github.com/Reiux/lumen-android")
-                                    }
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                )
-                                AboutActionRow(
-                                    icon = Icons.Rounded.Description,
-                                    title = stringResource(R.string.about_licenses_title),
-                                    subtitle = stringResource(R.string.about_licenses_desc),
-                                    onClick = {
-                                        LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
-                                        showLicensesDialog = true
-                                    }
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                )
-                                AboutActionRow(
-                                    icon = Icons.Rounded.SystemUpdate,
-                                    title = stringResource(R.string.about_check_updates_title),
-                                    subtitle = stringResource(R.string.about_check_updates_desc),
-                                    onClick = {
-                                        android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
-                                        onCheckForUpdates()
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    CreditsAndDisclaimerSection(context)
-
-                    if (developerModeUnlocked) {
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.about_debug_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 4.dp)
+                            DebugToolsGroup(
+                                context = context,
+                                saveLogsEnabled = saveLogsEnabled,
+                                onToggleSaveLogs = onToggleSaveLogs,
+                                onOpenLiveLogs = handleOpenLiveLogs,
+                                onForceUpdateDialog = onForceUpdateDialog
                             )
-
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                            ) {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    val toggleLogs: (Boolean) -> Unit = { next ->
-                                        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
-                                        onToggleSaveLogs(next)
-                                    }
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { toggleLogs(!saveLogsEnabled) }
-                                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                                            Text(
-                                                text = stringResource(R.string.about_save_logs_title),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = stringResource(R.string.about_save_logs_desc),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        ExpressiveSwitch(
-                                            checked = saveLogsEnabled,
-                                            onCheckedChange = toggleLogs
-                                        )
-                                    }
-
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.UploadFile,
-                                        title = stringResource(R.string.about_export_logs_title),
-                                        subtitle = stringResource(R.string.about_export_logs_desc),
-                                        onClick = {
-                                            LumenLogger.exportLogs(context)
-                                        }
-                                    )
-
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.BugReport,
-                                        title = stringResource(R.string.about_view_live_logs_title),
-                                        subtitle = stringResource(R.string.about_view_live_logs_desc),
-                                        onClick = {
-                                            val now = System.currentTimeMillis()
-                                            if (now - lastLogOpenTime > 600L) {
-                                                lastLogOpenTime = now
-                                                LumenLogger.i("AboutUI") { "Opened Live Log Viewer dialog" }
-                                                showLogViewer = true
-                                            }
-                                        }
-                                    )
-
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-
-                                    AboutActionRow(
-                                        icon = Icons.Rounded.SystemUpdate,
-                                        title = stringResource(R.string.about_force_update_title),
-                                        subtitle = stringResource(R.string.about_force_update_desc),
-                                        onClick = {
-                                            android.widget.Toast.makeText(context, context.getString(R.string.toast_checking_updates), android.widget.Toast.LENGTH_SHORT).show()
-                                            onForceUpdateDialog()
-                                        }
-                                    )
-                                }
-                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AboutLinksGroup(
+    context: Context,
+    isCheckingUpdates: Boolean,
+    hasUnreadWhatsNew: Boolean,
+    onOpenWhatsNew: () -> Unit,
+    onOpenLicenses: () -> Unit,
+    onCheckForUpdates: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.about_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            AboutActionRow(
+                icon = Icons.Rounded.AutoAwesome,
+                title = stringResource(R.string.whats_new_title),
+                subtitle = stringResource(R.string.whats_new_subtitle),
+                position = GroupPosition.Top,
+                showUnreadBadge = hasUnreadWhatsNew,
+                onClick = onOpenWhatsNew
+            )
+            AboutActionRow(
+                icon = Icons.Rounded.Code,
+                title = stringResource(R.string.about_source_code_title),
+                subtitle = stringResource(R.string.about_source_code_desc),
+                position = GroupPosition.Middle,
+                onClick = {
+                    openWebUrl(context, "https://github.com/Reiux/lumen-android")
+                }
+            )
+            AboutActionRow(
+                icon = Icons.Rounded.Description,
+                title = stringResource(R.string.about_licenses_title),
+                subtitle = stringResource(R.string.about_licenses_desc),
+                position = GroupPosition.Middle,
+                onClick = onOpenLicenses
+            )
+            AboutActionRow(
+                icon = Icons.Rounded.SystemUpdate,
+                title = stringResource(R.string.about_check_updates_title),
+                subtitle = stringResource(R.string.about_check_updates_desc),
+                position = GroupPosition.Bottom,
+                isLoading = isCheckingUpdates,
+                onClick = onCheckForUpdates
+            )
+        }
+    }
+}
+
+@Composable
+private fun DebugToolsGroup(
+    context: Context,
+    saveLogsEnabled: Boolean,
+    onToggleSaveLogs: (Boolean) -> Unit,
+    onOpenLiveLogs: () -> Unit,
+    onForceUpdateDialog: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.about_debug_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            val switchInteractionSource = remember { MutableInteractionSource() }
+            val isSwitchGesturePressed by rememberExpressivePressed(switchInteractionSource)
+            var switchClickPulse by remember { mutableStateOf(false) }
+            val switchShape = animatedGroupedCardShape(
+                position = GroupPosition.Top,
+                pressed = isSwitchGesturePressed || switchClickPulse
+            )
+            val toggleLogs: (Boolean) -> Unit = { next ->
+                try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                coroutineScope.launch {
+                    switchClickPulse = true
+                    delay(180L)
+                    switchClickPulse = false
+                }
+                onToggleSaveLogs(next)
+            }
+
+            Surface(
+                onClick = { toggleLogs(!saveLogsEnabled) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = switchShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                interactionSource = switchInteractionSource
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text(
+                            text = stringResource(R.string.about_save_logs_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.about_save_logs_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    ExpressiveSwitch(
+                        checked = saveLogsEnabled,
+                        onCheckedChange = toggleLogs
+                    )
+                }
+            }
+
+            AboutActionRow(
+                icon = Icons.Rounded.UploadFile,
+                title = stringResource(R.string.about_export_logs_title),
+                subtitle = stringResource(R.string.about_export_logs_desc),
+                position = GroupPosition.Middle,
+                onClick = {
+                    LumenLogger.exportLogs(context)
+                }
+            )
+
+            AboutActionRow(
+                icon = Icons.Rounded.BugReport,
+                title = stringResource(R.string.about_view_live_logs_title),
+                subtitle = stringResource(R.string.about_view_live_logs_desc),
+                position = GroupPosition.Middle,
+                onClick = onOpenLiveLogs
+            )
+
+            AboutActionRow(
+                icon = Icons.Rounded.SystemUpdate,
+                title = stringResource(R.string.about_force_update_title),
+                subtitle = stringResource(R.string.about_force_update_desc),
+                position = GroupPosition.Bottom,
+                onClick = {
+                    Toast.makeText(context, context.getString(R.string.toast_checking_updates), Toast.LENGTH_SHORT).show()
+                    onForceUpdateDialog()
+                }
+            )
         }
     }
 }
@@ -651,25 +630,27 @@ private fun BrandHeaderSection(
     var isHolding by remember { mutableStateOf(false) }
 
     val wordmarkPunchScale = remember { Animatable(1.0f) }
+    val fastSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    val defaultSpatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
 
     val onBrandTap: () -> Unit = {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         manualRotation += 360f // Spin logo 360 clockwise!
         coroutineScope.launch {
-            wordmarkPunchScale.animateTo(1.26f, tween(340, easing = FastOutSlowInEasing))
-            wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+            wordmarkPunchScale.animateTo(1.26f, fastSpatialSpec)
+            wordmarkPunchScale.animateTo(1.0f, defaultSpatialSpec)
         }
     }
 
     LaunchedEffect(Unit) {
         delay(220L) // Wait for screen slide-in to finish before springing in
-        wordmarkPunchScale.animateTo(1.26f, tween(340, easing = FastOutSlowInEasing))
-        wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+        wordmarkPunchScale.animateTo(1.26f, fastSpatialSpec)
+        wordmarkPunchScale.animateTo(1.0f, defaultSpatialSpec)
     }
 
     val animatedRotation by animateFloatAsState(
         targetValue = manualRotation + (if (developerModeUnlocked) 360f else 0f),
-        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        animationSpec = defaultSpatialSpec,
         label = "logoDevRotation"
     )
 
@@ -691,7 +672,7 @@ private fun BrandHeaderSection(
     ) {
         Box(
             modifier = Modifier
-                .size(100.dp)
+                .size(124.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onPress = {
@@ -706,8 +687,17 @@ private fun BrandHeaderSection(
                 },
             contentAlignment = Alignment.Center
         ) {
+            Surface(
+                modifier = Modifier
+                    .size(124.dp)
+                    .graphicsLayer {
+                        rotationZ = animatedRotation * 0.15f
+                    },
+                shape = MaterialShapes.SoftBurst.toShape(),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            ) {}
             DynamicLumenIcon(
-                size = 100.dp,
+                size = 96.dp,
                 rotationAngle = animatedRotation,
                 activeSeason = activeSeason
             )
@@ -722,9 +712,8 @@ private fun BrandHeaderSection(
 
         Text(
             text = "Lumen",
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.displaySmallEmphasized,
             fontWeight = dynamicWeight,
-            letterSpacing = (-0.5).sp,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .graphicsLayer {
@@ -733,7 +722,7 @@ private fun BrandHeaderSection(
                     transformOrigin = TransformOrigin.Center
                 }
                 .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {
                     onBrandTap()
@@ -777,7 +766,7 @@ private fun BrandHeaderSection(
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Text(
-                    text = "Master of Light",
+                    text = stringResource(R.string.about_prism_badge),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -793,49 +782,128 @@ private fun AboutActionRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    position: GroupPosition = GroupPosition.Single,
+    isLoading: Boolean = false,
+    showUnreadBadge: Boolean = false,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+    val interactionSource = remember { MutableInteractionSource() }
+    val coroutineScope = rememberCoroutineScope()
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val shape = animatedGroupedCardShape(
+        position = position,
+        pressed = isGesturePressed || clickPulse
+    )
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    val fastEffects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val fastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    Surface(
+        onClick = hapticClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        interactionSource = interactionSource
     ) {
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            AnimatedContent(
+                targetState = isLoading,
+                transitionSpec = {
+                    (fadeIn(animationSpec = fastEffects) +
+                        scaleIn(initialScale = 0.75f, animationSpec = fastSpatial)) togetherWith
+                        fadeOut(animationSpec = fastEffects)
+                },
+                label = "aboutRowTrailing"
+            ) { checking ->
+                if (checking) {
+                    ExpressiveLoadingIndicator(
+                        size = 20.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (showUnreadBadge) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.whats_new_badge_new),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
             }
         }
-
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp)
-        )
     }
 }
 
@@ -851,46 +919,30 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
         "Kotlin Coroutines" to "Apache License 2.0 (JetBrains s.r.o.)"
     )
 
-    com.reiux.lumen.ui.components.PredictiveAlertDialog(
+    ExpressiveAlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = stringResource(R.string.about_licenses_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                licenses.forEach { (lib, license) ->
-                    Column {
-                        Text(
-                            text = lib,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = license,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+        icon = Icons.Rounded.Description,
+        title = stringResource(R.string.about_licenses_title),
+        tone = ExpressiveDialogTone.SECONDARY,
+        confirmText = stringResource(R.string.btn_close),
+        onConfirm = onDismiss,
+        fillTabletopHalf = true
+    ) {
+        licenses.forEach { (lib, license) ->
+            Column {
+                Text(
+                    text = lib,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = license,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        },
-        confirmButton = {
-            ExpressiveButton(onClick = onDismiss) {
-                Text(stringResource(R.string.btn_close))
-            }
-        },
-        shape = RoundedCornerShape(28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    )
+        }
+    }
 }
 
 private fun openWebUrl(context: Context, url: String) {
@@ -916,39 +968,34 @@ private fun CreditsAndDisclaimerSection(context: Context) {
             modifier = Modifier.padding(start = 4.dp)
         )
 
-        Card(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                AboutActionRow(
-                    icon = Icons.Rounded.Person,
-                    title = stringResource(R.string.about_developer_title),
-                    subtitle = "Reiux (GitHub @Reiux)",
-                    onClick = {
-                        openWebUrl(context, "https://github.com/Reiux")
-                    }
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-                AboutActionRow(
-                    icon = Icons.Rounded.Favorite,
-                    title = stringResource(R.string.about_core_protocol_title),
-                    subtitle = "xob0t/gotohp",
-                    onClick = {
-                        openWebUrl(context, "https://github.com/xob0t/gotohp")
-                    }
-                )
-            }
+            AboutActionRow(
+                icon = Icons.Rounded.Person,
+                title = stringResource(R.string.about_developer_title),
+                subtitle = "Reiux (GitHub @Reiux)",
+                position = GroupPosition.Top,
+                onClick = {
+                    openWebUrl(context, "https://github.com/Reiux")
+                }
+            )
+            AboutActionRow(
+                icon = Icons.Rounded.Favorite,
+                title = stringResource(R.string.about_core_protocol_title),
+                subtitle = "xob0t/gotohp",
+                position = GroupPosition.Bottom,
+                onClick = {
+                    openWebUrl(context, "https://github.com/xob0t/gotohp")
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = groupedCardShape(GroupPosition.Single),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {

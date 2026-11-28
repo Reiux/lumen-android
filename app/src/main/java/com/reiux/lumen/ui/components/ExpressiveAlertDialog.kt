@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -53,8 +54,11 @@ fun ExpressiveAlertDialog(
     isDestructiveConfirm: Boolean = (tone == ExpressiveDialogTone.ERROR),
     dismissText: String? = null,
     onDismissAction: (() -> Unit)? = null,
+    tabletopPlacement: TabletopDialogPlacement = TabletopDialogPlacement.BOTTOM_HALF,
+    fillTabletopHalf: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val foldPosture = LocalFoldPosture.current
     val badgeContainerColor = when (tone) {
         ExpressiveDialogTone.PRIMARY -> MaterialTheme.colorScheme.primaryContainer
         ExpressiveDialogTone.SECONDARY -> MaterialTheme.colorScheme.secondaryContainer
@@ -82,9 +86,28 @@ fun ExpressiveAlertDialog(
     PredictiveAlertDialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = modifier
-            .widthIn(min = 312.dp, max = 480.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+        tabletopPlacement = tabletopPlacement,
+        fillTabletopHalf = fillTabletopHalf,
+        modifier = if (foldPosture.isTabletop && fillTabletopHalf) {
+            modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .then(
+                    if (tabletopPlacement == TabletopDialogPlacement.BOTTOM_HALF) {
+                        Modifier.padding(horizontal = 12.dp)
+                    } else {
+                        Modifier
+                    }
+                )
+        } else if (foldPosture.isTabletop) {
+            modifier
+                .widthIn(min = 340.dp, max = 560.dp)
+                .padding(horizontal = 16.dp)
+        } else {
+            modifier
+                .widthIn(min = 312.dp, max = 480.dp)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        },
         shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {

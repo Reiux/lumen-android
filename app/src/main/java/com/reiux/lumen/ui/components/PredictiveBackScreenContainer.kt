@@ -9,17 +9,26 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.LocalContentColor
@@ -33,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -43,6 +53,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -135,10 +148,10 @@ fun PredictiveBackScreenContainer(
     val alpha = remember { Animatable(1f) }
     val backdropAlpha = remember { Animatable(0f) }
 
-    val springSpec = spring<Float>(
-        dampingRatio = 0.82f,
-        stiffness = 380f
-    )
+    val reducedMotion = rememberReducedMotion()
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val fastEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 
     LaunchedEffect(enabled) {
         if (enabled) {
@@ -165,18 +178,29 @@ fun PredictiveBackScreenContainer(
 
             // Card-switch release: current card drops deep into 0.50 scale depth while destination surfaces
             coroutineScope {
-                launch { scale.animateTo(0.50f, springSpec) }
-                launch { alpha.animateTo(0f, springSpec) }
-                launch { backdropAlpha.animateTo(0f, springSpec) }
+                if (reducedMotion) {
+                    launch { alpha.animateTo(0f, fastEffectsSpec) }
+                    launch { backdropAlpha.animateTo(0f, fastEffectsSpec) }
+                } else {
+                    launch { scale.animateTo(0.50f, spatialSpec) }
+                    launch { alpha.animateTo(0f, effectsSpec) }
+                    launch { backdropAlpha.animateTo(0f, effectsSpec) }
+                }
             }
             onProgressUpdate(0f)
             onDismiss()
         } catch (e: CancellationException) {
             // User cancelled gesture: spring back smoothly to resting position
             coroutineScope {
-                launch { scale.animateTo(1f, springSpec) }
-                launch { alpha.animateTo(1f, springSpec) }
-                launch { backdropAlpha.animateTo(0f, springSpec) }
+                if (reducedMotion) {
+                    launch { scale.snapTo(1f) }
+                    launch { alpha.animateTo(1f, fastEffectsSpec) }
+                    launch { backdropAlpha.animateTo(0f, fastEffectsSpec) }
+                } else {
+                    launch { scale.animateTo(1f, spatialSpec) }
+                    launch { alpha.animateTo(1f, effectsSpec) }
+                    launch { backdropAlpha.animateTo(0f, effectsSpec) }
+                }
             }
             onProgressUpdate(0f)
         }
@@ -188,7 +212,7 @@ fun PredictiveBackScreenContainer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = backdropAlpha.value))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = backdropAlpha.value))
             )
         }
 
@@ -223,17 +247,19 @@ class PredictiveBackDialogState(
     val scale = Animatable(initialScale)
     val alpha = Animatable(1f)
 
-    // Original expressive bouncy spring
-    private val bouncySpringSpec = spring<Float>(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
-        stiffness = Spring.StiffnessLow
-    )
-
     @Composable
     fun StartEntrance() {
+        val reducedMotion = rememberReducedMotion()
+        val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+        val fastEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+
         LaunchedEffect(Unit) {
-            if (scale.value != 1f) {
-                scale.animateTo(1f, bouncySpringSpec)
+            if (reducedMotion) {
+                scale.snapTo(1f)
+                alpha.snapTo(0f)
+                alpha.animateTo(1f, fastEffectsSpec)
+            } else if (scale.value != 1f) {
+                scale.animateTo(1f, spatialSpec)
             }
         }
     }
@@ -242,6 +268,10 @@ class PredictiveBackDialogState(
     fun BackHandler(enabled: Boolean = true) {
         val view = LocalView.current
         val blurEnabled = LocalBlurEffectsEnabled.current
+        val reducedMotion = rememberReducedMotion()
+        val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+        val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+        val fastEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 
         fun findDialogOwner(): OnBackPressedDispatcherOwner? {
             val dialogWindow = (view.parent as? DialogWindowProvider)?.window
@@ -303,10 +333,14 @@ class PredictiveBackDialogState(
                             }
                         } catch (_: Throwable) {}
 
-                        // Original expressive bouncy spring dismiss
+                        // Expressive spatial scale + critically damped opacity dismiss
                         coroutineScope {
-                            launch { scale.animateTo(0.70f, bouncySpringSpec) }
-                            launch { alpha.animateTo(0f, bouncySpringSpec) }
+                            if (reducedMotion) {
+                                launch { alpha.animateTo(0f, fastEffectsSpec) }
+                            } else {
+                                launch { scale.animateTo(0.70f, spatialSpec) }
+                                launch { alpha.animateTo(0f, effectsSpec) }
+                            }
                         }
                         onDismiss()
 
@@ -328,13 +362,23 @@ class PredictiveBackDialogState(
                             }
                         } catch (_: Throwable) {}
                         coroutineScope {
-                            launch { scale.animateTo(1f, bouncySpringSpec) }
-                            launch { alpha.animateTo(1f, bouncySpringSpec) }
+                            if (reducedMotion) {
+                                launch { scale.snapTo(1f) }
+                                launch { alpha.animateTo(1f, fastEffectsSpec) }
+                            } else {
+                                launch { scale.animateTo(1f, spatialSpec) }
+                                launch { alpha.animateTo(1f, effectsSpec) }
+                            }
                         }
                     } catch (e: CancellationException) {
                         coroutineScope {
-                            launch { scale.animateTo(1f, bouncySpringSpec) }
-                            launch { alpha.animateTo(1f, bouncySpringSpec) }
+                            if (reducedMotion) {
+                                launch { scale.snapTo(1f) }
+                                launch { alpha.animateTo(1f, fastEffectsSpec) }
+                            } else {
+                                launch { scale.animateTo(1f, spatialSpec) }
+                                launch { alpha.animateTo(1f, effectsSpec) }
+                            }
                         }
                     }
                 }
@@ -356,9 +400,15 @@ class PredictiveBackDialogState(
         }
 }
 
+enum class TabletopDialogPlacement {
+    BOTTOM_HALF,
+    TOP_HALF
+}
+
 /**
  * Drop-in replacement for Material 3 AlertDialog with original M3E spring entrance and Predictive Back support.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PredictiveAlertDialog(
     onDismissRequest: () -> Unit,
@@ -375,9 +425,14 @@ fun PredictiveAlertDialog(
     textContentColor: Color = AlertDialogDefaults.textContentColor,
     tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
     properties: DialogProperties = DialogProperties(),
+    tabletopPlacement: TabletopDialogPlacement = TabletopDialogPlacement.BOTTOM_HALF,
+    fillTabletopHalf: Boolean = false,
 ) {
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
-    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = 0.88f) }
+    val reducedMotion = rememberReducedMotion()
+    val foldPosture = LocalFoldPosture.current
+    val shouldFillTabletop = foldPosture.isTabletop && fillTabletopHalf
+    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = if (reducedMotion) 1f else 0.88f) }
     state.StartEntrance()
 
     val safeProperties = remember(properties) {
@@ -397,20 +452,10 @@ fun PredictiveAlertDialog(
         DialogBlurEffect()
         state.BackHandler(enabled = properties.dismissOnBackPress)
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(properties.dismissOnClickOutside) {
-                    if (properties.dismissOnClickOutside) {
-                        detectTapGestures {
-                            currentOnDismiss()
-                        }
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
+        val dialogSurface: @Composable (Modifier) -> Unit = { extraModifier ->
             Surface(
                 modifier = modifier
+                    .then(extraModifier)
                     .then(state.modifier)
                     .pointerInput(Unit) {
                         detectTapGestures { /* consume taps inside dialog card */ }
@@ -420,7 +465,9 @@ fun PredictiveAlertDialog(
                 tonalElevation = tonalElevation
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp)
+                    modifier = Modifier
+                        .then(if (shouldFillTabletop) Modifier.fillMaxSize() else Modifier)
+                        .padding(24.dp)
                 ) {
                     icon?.let {
                         CompositionLocalProvider(LocalContentColor provides iconContentColor) {
@@ -456,7 +503,7 @@ fun PredictiveAlertDialog(
                             ProvideTextStyle(value = textStyle) {
                                 Box(
                                     modifier = Modifier
-                                        .weight(weight = 1f, fill = false)
+                                        .weight(weight = 1f, fill = shouldFillTabletop)
                                         .padding(bottom = 24.dp)
                                         .align(Alignment.Start)
                                 ) {
@@ -468,9 +515,10 @@ fun PredictiveAlertDialog(
                     Box(modifier = Modifier.align(Alignment.End)) {
                         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
                             ProvideTextStyle(value = MaterialTheme.typography.labelLarge) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     dismissButton?.invoke()
                                     confirmButton()
@@ -479,6 +527,80 @@ fun PredictiveAlertDialog(
                         }
                     }
                 }
+            }
+        }
+
+        if (foldPosture.isTabletop && tabletopPlacement == TabletopDialogPlacement.TOP_HALF) {
+            val density = LocalDensity.current
+            var containerTopInWindowPx by remember { mutableFloatStateOf(0f) }
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(properties.dismissOnClickOutside) {
+                        if (properties.dismissOnClickOutside) {
+                            detectTapGestures {
+                                currentOnDismiss()
+                            }
+                        }
+                    }
+            ) {
+                val containerTopDp = with(density) { containerTopInWindowPx.toDp() }
+                val topMaxHeight = foldPosture.tabletopTopPaneHeight(
+                    containerTopInWindowDp = containerTopDp,
+                    maxAvailableHeightDp = maxHeight,
+                    bottomMarginDp = 8.dp
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+                        )
+                        .padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                        .onGloballyPositioned { coords ->
+                            containerTopInWindowPx = coords.positionInWindow().y
+                        }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(topMaxHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        dialogSurface(Modifier.heightIn(max = topMaxHeight))
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (foldPosture.isTabletop) {
+                            Modifier
+                                .padding(top = (foldPosture.hingeBottomDp + 8.dp).coerceAtLeast(0.dp))
+                                .windowInsetsPadding(
+                                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+                                )
+                                .padding(bottom = 8.dp)
+                        } else {
+                            Modifier
+                                .safeDrawingPadding()
+                                .padding(vertical = 12.dp)
+                        }
+                    )
+                    .pointerInput(properties.dismissOnClickOutside) {
+                        if (properties.dismissOnClickOutside) {
+                            detectTapGestures {
+                                currentOnDismiss()
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                dialogSurface(Modifier)
             }
         }
     }
@@ -493,12 +615,35 @@ fun PredictiveBackDialogContainer(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     dismissOnBackPress: Boolean = true,
+    constrainToTabletop: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = 0.88f) }
+    val reducedMotion = rememberReducedMotion()
+    val foldPosture = LocalFoldPosture.current
+    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = if (reducedMotion) 1f else 0.88f) }
+    val applyTabletop = constrainToTabletop && foldPosture.isTabletop
 
-    Box(modifier = modifier.then(state.modifier)) {
+    Box(
+        modifier = modifier
+            .then(
+                if (applyTabletop) {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = (foldPosture.hingeBottomDp + 8.dp).coerceAtLeast(0.dp))
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+                        )
+                        .padding(bottom = 8.dp)
+                } else if (!foldPosture.isTabletop) {
+                    Modifier.safeDrawingPadding()
+                } else {
+                    Modifier
+                }
+            )
+            .then(state.modifier),
+        contentAlignment = if (applyTabletop) Alignment.Center else Alignment.TopStart
+    ) {
         DialogBlurEffect()
         state.Handler(enabled = dismissOnBackPress)
         content()
@@ -515,7 +660,8 @@ fun rememberPredictiveBackDialogModifier(
     onDismiss: () -> Unit
 ): Modifier {
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = initialScale) }
+    val reducedMotion = rememberReducedMotion()
+    val state = remember { PredictiveBackDialogState({ currentOnDismiss() }, initialScale = if (reducedMotion) 1f else initialScale) }
     state.Handler(enabled = enabled)
     return state.modifier
 }

@@ -30,10 +30,16 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build and Test
+      - name: Build and Test (dev push)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         run: env -u ANDROID_PREFS_ROOT ./gradlew assembleDebug testDebugUnitTest lintDebug lintRelease minifyReleaseWithR8
 
+      - name: Test, Lint and R8 Check (PRs and main)
+        if: github.event_name != 'push' || github.ref != 'refs/heads/dev'
+        run: env -u ANDROID_PREFS_ROOT ./gradlew testDebugUnitTest lintDebug lintRelease minifyReleaseWithR8
+
       - name: Upload debug APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lumen-test-debug

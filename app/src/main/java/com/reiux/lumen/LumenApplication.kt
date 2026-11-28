@@ -2,8 +2,12 @@ package com.reiux.lumen
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.provider.MediaStore
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.reiux.lumen.data.repository.AccountRepository
 import com.reiux.lumen.data.repository.SettingsRepository
 import com.reiux.lumen.data.repository.UploadRepository
@@ -53,14 +57,37 @@ class LumenApplication : Application() {
         accountRepository = AccountRepository(this, authClient = authClient)
         uploadRepository = UploadRepository(this, settingsRepository, accountRepository, authClient = authClient)
 
+        publishDynamicShortcuts()
+
         // Clean stale account blocks for accounts that no longer exist
         val validAccountEmails = accountRepository.accounts.value.map { it.email }.toSet()
         settingsRepository.cleanStaleAccountBlocks(validAccountEmails)
 
-        // Clean leftover temporary staged files from any interrupted/killed previous sessions
+        // Clean leftover temporary staged files and stale update downloads from any interrupted/killed previous sessions
+        val appStartMillis = System.currentTimeMillis()
         appScope.launch {
             try {
-                File(cacheDir, "staging").deleteRecursively()
+                com.reiux.lumen.util.MediaFileReader.cleanupStaleStagingOnStartup(
+                    this@LumenApplication,
+                    appStartMillis - 5_000L
+                )
+            } catch (_: Exception) {}
+            try {
+                val updatesDir = File(cacheDir, "updates")
+                if (updatesDir.exists() && updatesDir.isDirectory) {
+                    val stalePartCutoff = appStartMillis - 5_000L
+                    val twoHoursAgo = appStartMillis - java.util.concurrent.TimeUnit.HOURS.toMillis(2)
+                    updatesDir.listFiles()?.forEach { file ->
+                        try {
+                            if (file.isFile && (
+                                    (file.name.endsWith(".part") && file.lastModified() < stalePartCutoff) ||
+                                        (file.name.endsWith(".apk") && file.lastModified() < twoHoursAgo)
+                                )) {
+                                file.delete()
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
             } catch (_: Exception) {}
         }
 
@@ -112,8 +139,8 @@ class LumenApplication : Application() {
                 .distinctUntilChanged()
                 .collect { enabled ->
                     if (enabled) {
-                        MediaContentJobService.scheduleMediaWatcher(this@LumenApplication)
-                        checkAndEnqueueRecentMedia(fromBoot = false)
+                        MediaContentJobService.ensureMediaWatcherScheduled(this@LumenApplication)
+                        checkAndEnqueueRecentMedia(fromBoot = false, clearBootFlag = false)
                     } else {
                         MediaContentJobService.cancelMediaWatcher(this@LumenApplication)
                     }
@@ -136,6 +163,10 @@ class LumenApplication : Application() {
                             com.reiux.lumen.data.repository.UpdateRepository.BACKGROUND_CHECK_INTERVAL_HOURS,
                             java.util.concurrent.TimeUnit.HOURS
                         )
+                            .setInitialDelay(
+                                com.reiux.lumen.data.repository.UpdateRepository.BACKGROUND_CHECK_INTERVAL_HOURS,
+                                java.util.concurrent.TimeUnit.HOURS
+                            )
                             .setConstraints(constraints)
                             .setBackoffCriteria(
                                 androidx.work.BackoffPolicy.EXPONENTIAL,
@@ -184,15 +215,51 @@ class LumenApplication : Application() {
         }
     }
 
+    private fun publishDynamicShortcuts() {
+        try {
+            val internalToken = settingsRepository.getOrCreateInternalLaunchToken()
+            val syncIntent = Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("action", "shortcut_sync")
+                putExtra("internal_token", internalToken)
+            }
+            val pickIntent = Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("action", "shortcut_pick")
+                putExtra("internal_token", internalToken)
+            }
+
+            val syncShortcut = ShortcutInfoCompat.Builder(this, "shortcut_sync")
+                .setShortLabel(getString(R.string.shortcut_sync_short))
+                .setLongLabel(getString(R.string.shortcut_sync_long))
+                .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                .setIntent(syncIntent)
+                .build()
+
+            val pickShortcut = ShortcutInfoCompat.Builder(this, "shortcut_pick")
+                .setShortLabel(getString(R.string.shortcut_pick_short))
+                .setLongLabel(getString(R.string.shortcut_pick_long))
+                .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                .setIntent(pickIntent)
+                .build()
+
+            ShortcutManagerCompat.setDynamicShortcuts(this, listOf(syncShortcut, pickShortcut))
+        } catch (e: Exception) {
+            com.reiux.lumen.util.LumenLogger.w("LumenApp") { "Failed publishing dynamic shortcuts: ${e.message}" }
+        }
+    }
+
     /**
      * Checks enabled folders for any recent media and enqueues them for background backup.
      * Can be invoked by BootReceiver on startup or MediaContentJobService on OS MediaStore trigger.
      */
     @JvmOverloads
-    fun checkAndEnqueueRecentMedia(fromBoot: Boolean = false): Job {
+    fun checkAndEnqueueRecentMedia(fromBoot: Boolean = false, clearBootFlag: Boolean = false): Job {
         if (fromBoot) {
             startedFromBootBroadcast = true
-        } else {
+        } else if (clearBootFlag) {
             startedFromBootBroadcast = false
         }
         return appScope.launch {
@@ -206,6 +273,7 @@ class LumenApplication : Application() {
                     "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "cr2", "nef", "arw",
                     "mp4", "mov", "mkv", "avi", "3gp", "webm"
                 )
+                val highestMediaStoreId by lazy { FolderWatcherManager.queryHighestMediaStoreId(contentResolver) }
 
                 for (account in allAccounts) {
                     val enabledFolders = settingsRepository.getFoldersForAccount(account.email).filter { it.enabled }
@@ -294,6 +362,9 @@ class LumenApplication : Application() {
                             }
                         }
 
+                        if (lastWatermarkId == 0L && maxId == 0L && firstNotReadyId == null) {
+                            maxId = highestMediaStoreId
+                        }
                         val newWatermark = FolderWatcherManager.computeSafeWatermark(lastWatermarkId, maxId, firstNotReadyId)
                         if (newWatermark > lastWatermarkId) {
                             settingsRepository.saveFolderWatermarkId(account.email, folder.path, newWatermark)
