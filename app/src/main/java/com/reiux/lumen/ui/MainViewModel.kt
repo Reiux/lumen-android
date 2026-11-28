@@ -18,6 +18,8 @@ import com.reiux.lumen.data.model.UploadItem
 import com.reiux.lumen.data.model.UploadStatus
 import com.reiux.lumen.data.repository.AlbumSyncState
 import com.reiux.lumen.data.repository.SettingsRepository
+import com.reiux.lumen.data.repository.UpdateRepository
+import com.reiux.lumen.service.UpdateCheckWorker
 import com.reiux.lumen.ui.components.NavDestination
 import com.reiux.lumen.util.LocalMediaFolder
 import com.reiux.lumen.util.LumenLogger
@@ -58,6 +60,11 @@ sealed class ScanState {
     data class Done(val totalFilesFound: Int) : ScanState()
 }
 
+data class ShareUploadBatch(
+    val batchId: String = UUID.randomUUID().toString(),
+    val uris: List<Uri>
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as LumenApplication
     val accountRepo = app.accountRepository
@@ -71,6 +78,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var secureStorageWarningShown = false
 
+    // --- Transient Intent / Share State (preserved across fold/unfold/rotation) ---
+    private val _incomingShareBatch = MutableStateFlow<ShareUploadBatch?>(null)
+    val incomingShareBatch: StateFlow<ShareUploadBatch?> = _incomingShareBatch.asStateFlow()
+
+    private val _queuedShareReplacement = MutableStateFlow<ShareUploadBatch?>(null)
+    val queuedShareReplacement: StateFlow<ShareUploadBatch?> = _queuedShareReplacement.asStateFlow()
+
+    private val _pendingShowUpdate = MutableStateFlow(false)
+    val pendingShowUpdate: StateFlow<Boolean> = _pendingShowUpdate.asStateFlow()
+
+    private val _pendingShortcutAction = MutableStateFlow<String?>(null)
+    val pendingShortcutAction: StateFlow<String?> = _pendingShortcutAction.asStateFlow()
+
+    var hasRequestedMediaLocationUpgrade: Boolean = false
+
+    fun setIncomingShareBatch(batch: ShareUploadBatch?) {
+        _incomingShareBatch.value = batch
+    }
+
+    fun setQueuedShareReplacement(batch: ShareUploadBatch?) {
+        _queuedShareReplacement.value = batch
+    }
+
+    fun setPendingShowUpdate(show: Boolean) {
+        _pendingShowUpdate.value = show
+    }
+
+    fun setPendingShortcutAction(action: String?) {
+        _pendingShortcutAction.value = action
+    }
+
     // --- Mock Mode & Showcase Mode States ---
     private val _isMockMode = MutableStateFlow(false)
     val isMockMode: StateFlow<Boolean> = _isMockMode.asStateFlow()
@@ -79,15 +117,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isShowcaseMode: StateFlow<Boolean> = _isShowcaseMode.asStateFlow()
 
     private val _simulateOffline = MutableStateFlow(false)
-    val simulateOffline: StateFlow<Boolean> = _simulateOffline.asStateFlow()
+    val simulateOffline: StateFlow<Boolean> = combine(_isMockMode, _simulateOffline) { mock, simOff ->
+        mock && simOff
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _simulateMissingAlbum = MutableStateFlow(false)
-    val simulateMissingAlbum: StateFlow<Boolean> = _simulateMissingAlbum.asStateFlow()
+    val simulateMissingAlbum: StateFlow<Boolean> = combine(_isMockMode, _simulateMissingAlbum) { mock, simMissing ->
+        mock && simMissing
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val connectivityObserver = com.reiux.lumen.util.ConnectivityObserver(application)
-    val isOnline: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(connectivityObserver.isConnected, _simulateOffline) { online, simOffline ->
-        if (simOffline) false else online
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false)
+    val isOnline: StateFlow<Boolean> = combine(connectivityObserver.isConnected, _isMockMode, _simulateOffline) { connected, mock, simOff ->
+        connected && !(mock && simOff)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // Showcase Mode Dataset (Pristine static data for screenshots)
     private val _showcaseAccounts = listOf(
@@ -195,15 +237,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val updateDownloadError: StateFlow<String?> = _updateDownloadError.asStateFlow()
 
     private var updateDownloadJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var isManualUpdateCheckInFlight = false
 
     private val _showUpdateSheet = MutableStateFlow(false)
     val showUpdateSheet: StateFlow<Boolean> = _showUpdateSheet.asStateFlow()
+
+    private val _showPostUpdateWhatsNewSheet = MutableStateFlow(false)
+    val showPostUpdateWhatsNewSheet: StateFlow<Boolean> = _showPostUpdateWhatsNewSheet.asStateFlow()
 
     private val _mockSwipeNudgeNonce = MutableStateFlow(0)
     val mockSwipeNudgeNonce: StateFlow<Int> = _mockSwipeNudgeNonce.asStateFlow()
 
     private val _scrollToAccountForNudge = MutableStateFlow(false)
     val scrollToAccountForNudge: StateFlow<Boolean> = _scrollToAccountForNudge.asStateFlow()
+
+    private val _mockForcedPunTitle = MutableStateFlow<String?>(null)
+    val mockForcedPunTitle: StateFlow<String?> = _mockForcedPunTitle.asStateFlow()
+
+    private val _mockEmptyStateSubtitle = MutableStateFlow<String?>(null)
+    val mockEmptyStateSubtitle: StateFlow<String?> = _mockEmptyStateSubtitle.asStateFlow()
+
+    private val _mockLightsOffNonce = MutableStateFlow(0)
+    val mockLightsOffNonce: StateFlow<Int> = _mockLightsOffNonce.asStateFlow()
+
+    private val _mockShakeFlickerNonce = MutableStateFlow(0)
+    val mockShakeFlickerNonce: StateFlow<Int> = _mockShakeFlickerNonce.asStateFlow()
 
     // Original Frontend Mock Simulation Dataset & State
     private val _mockAccounts = MutableStateFlow(
@@ -241,6 +300,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     )
     private val _mockIsUploading = MutableStateFlow(true)
+    private val _mockIsPaused = MutableStateFlow(false)
     private val _mockCurrentUploadingItem = MutableStateFlow<UploadItem?>(
         UploadItem(
             id = "mock_1",
@@ -400,12 +460,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepo.settings.value)
 
+    val readWhatsNewIds: StateFlow<Set<String>> = settingsRepo.readWhatsNewIds
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val isUploading: StateFlow<Boolean> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
         when {
             showcase -> flowOf(true)
             mock -> _mockIsUploading
             else -> uploadRepo.isUploading
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val isPaused: StateFlow<Boolean> = combine(_isShowcaseMode, _isMockMode) { s, m -> Pair(s, m) }.flatMapLatest { (showcase, mock) ->
+        when {
+            showcase -> flowOf(false)
+            mock -> _mockIsPaused
+            else -> uploadRepo.isPaused
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -518,42 +589,239 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedDestination.value = dest
     }
 
-    fun checkAndShowUpdate(context: Context, forceShow: Boolean = false, onUpToDate: (() -> Unit)? = null) {
+    private fun getCurrentAppVersion(appCtx: Context): String = try {
+        appCtx.packageManager.getPackageInfo(appCtx.packageName, 0)?.versionName ?: "1.0.0"
+    } catch (_: Exception) {
+        "1.0.0"
+    }
+
+    fun checkForForegroundUpdateOnResume(context: Context) {
         val appCtx = getApplication<LumenApplication>()
-        viewModelScope.launch {
-            val repo = com.reiux.lumen.data.repository.UpdateRepository()
-            val currentVersion = try {
-                appCtx.packageManager.getPackageInfo(appCtx.packageName, 0)?.versionName ?: "1.0.0"
-            } catch (_: Exception) { "1.0.0" }
-            
-            val info = repo.checkForUpdates(currentVersion)
-            if (info != null) {
-                if (info.isUpdateAvailable || forceShow) {
-                    _updateInfo.value = info
-                    _updateDownloadProgress.value = -1
-                    _updateDownloadError.value = null
-                    _showUpdateSheet.value = true
-                } else {
-                    withContext(Dispatchers.Main) { onUpToDate?.invoke() }
+        if (!settingsRepo.settings.value.autoCheckUpdates || !settingsRepo.settings.value.hasCompletedOnboarding) {
+            return
+        }
+        if (updateDownloadJob?.isActive == true || _showUpdateSheet.value || updateCheckJob?.isActive == true) {
+            return
+        }
+
+        val pending = settingsRepo.getPendingUpdateInfo()
+        val currentVersion = getCurrentAppVersion(appCtx)
+        val now = System.currentTimeMillis()
+        if (pending != null) {
+            if (!UpdateRepository.isNewerVersion(currentVersion, pending.versionName)) {
+                settingsRepo.clearPendingUpdateInfo()
+                settingsRepo.clearDismissedUpdate()
+                UpdateCheckWorker.cancelUpdateNotification(appCtx)
+            } else if (pending.downloadUrl.isNotBlank() &&
+                UpdateRepository.shouldPromptInAppForUpdate(
+                    pending.versionName,
+                    settingsRepo.getDismissedUpdateVersion(),
+                    settingsRepo.getDismissedUpdateMillis(),
+                    now
+                )
+            ) {
+                _updateInfo.value = pending
+                _updateDownloadProgress.value = -1
+                _updateDownloadError.value = null
+                _showUpdateSheet.value = true
+                UpdateCheckWorker.cancelUpdateNotification(appCtx)
+                return
+            }
+        }
+
+        if (UpdateRepository.shouldAutoCheck(settingsRepo.getLastForegroundUpdateCheckMillis(), now)) {
+            checkAndShowUpdate(context, forceShow = false, isAutoCheck = true)
+        }
+    }
+
+    fun openUpdateFromNotification(context: Context) {
+        val appCtx = getApplication<LumenApplication>()
+        UpdateCheckWorker.cancelUpdateNotification(appCtx)
+        if (updateDownloadJob?.isActive == true) {
+            _showUpdateSheet.value = true
+            return
+        }
+
+        val currentVersion = getCurrentAppVersion(appCtx)
+        val pending = settingsRepo.getPendingUpdateInfo()
+        if (pending != null) {
+            if (!UpdateRepository.isNewerVersion(currentVersion, pending.versionName)) {
+                settingsRepo.clearPendingUpdateInfo()
+                settingsRepo.clearDismissedUpdate()
+            } else if (pending.downloadUrl.isNotBlank()) {
+                updateCheckJob?.cancel()
+                updateCheckJob = null
+                isManualUpdateCheckInFlight = false
+                _updateInfo.value = pending
+                _updateDownloadProgress.value = -1
+                _updateDownloadError.value = null
+                _showUpdateSheet.value = true
+                return
+            }
+        }
+
+        checkAndShowUpdate(
+            context = context,
+            forceShow = false,
+            isAutoCheck = false,
+            onUpToDate = {
+                android.widget.Toast.makeText(
+                    appCtx,
+                    appCtx.getString(R.string.update_up_to_date),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            },
+            onError = {
+                android.widget.Toast.makeText(
+                    appCtx,
+                    appCtx.getString(R.string.update_check_failed),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
+
+    fun checkAndShowUpdate(
+        context: Context,
+        forceShow: Boolean = false,
+        isAutoCheck: Boolean = false,
+        onUpToDate: (() -> Unit)? = null,
+        onError: (() -> Unit)? = null
+    ) {
+        val appCtx = getApplication<LumenApplication>()
+        if (updateDownloadJob?.isActive == true) {
+            if (!isAutoCheck) {
+                _showUpdateSheet.value = true
+            }
+            return
+        }
+
+        if (updateCheckJob?.isActive == true) {
+            if (isAutoCheck || isManualUpdateCheckInFlight) return
+            updateCheckJob?.cancel()
+        }
+
+        if (!isAutoCheck) {
+            isManualUpdateCheckInFlight = true
+        }
+
+        updateCheckJob = viewModelScope.launch {
+            try {
+                val repo = UpdateRepository()
+                val currentVersion = getCurrentAppVersion(appCtx)
+                val info = try {
+                    repo.checkForUpdates(currentVersion)
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    LumenLogger.e("Updater", tr = e) { "Update check failed" }
+                    null
                 }
-            } else {
-                withContext(Dispatchers.Main) { onUpToDate?.invoke() }
+
+                if (info == null) {
+                    withContext(Dispatchers.Main) { onError?.invoke() }
+                    return@launch
+                }
+
+                val now = System.currentTimeMillis()
+                settingsRepo.setLastForegroundUpdateCheckMillis(now)
+
+                // Re-check after network I/O so a download started in the meantime isn't clobbered.
+                if (updateDownloadJob?.isActive == true) {
+                    return@launch
+                }
+
+                if (info.isUpdateAvailable) {
+                    settingsRepo.savePendingUpdateInfo(info)
+                    UpdateCheckWorker.cancelUpdateNotification(appCtx)
+                    val shouldSkipAutoPrompt = isAutoCheck && !UpdateRepository.shouldPromptInAppForUpdate(
+                        info.versionName,
+                        settingsRepo.getDismissedUpdateVersion(),
+                        settingsRepo.getDismissedUpdateMillis(),
+                        now
+                    )
+                    if (!shouldSkipAutoPrompt && info.downloadUrl.isNotBlank()) {
+                        _updateInfo.value = info
+                        _updateDownloadProgress.value = -1
+                        _updateDownloadError.value = null
+                        _showUpdateSheet.value = true
+                    }
+                } else {
+                    settingsRepo.clearPendingUpdateInfo()
+                    settingsRepo.clearDismissedUpdate()
+                    UpdateCheckWorker.cancelUpdateNotification(appCtx)
+                    val newerReleaseMissingApk = info.downloadUrl.isBlank() &&
+                        UpdateRepository.isNewerVersion(currentVersion, info.versionName)
+                    if (forceShow) {
+                        if (info.downloadUrl.isNotBlank()) {
+                            _updateInfo.value = info
+                            _updateDownloadProgress.value = -1
+                            _updateDownloadError.value = null
+                            _showUpdateSheet.value = true
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(
+                                    appCtx,
+                                    appCtx.getString(R.string.update_no_compatible_apk),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    } else if (newerReleaseMissingApk && !isAutoCheck) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(
+                                appCtx,
+                                appCtx.getString(R.string.update_no_compatible_apk),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) { onUpToDate?.invoke() }
+                    }
+                }
+            } finally {
+                if (!isAutoCheck) {
+                    isManualUpdateCheckInFlight = false
+                }
             }
         }
     }
 
     fun dismissUpdateSheet() {
+        val currentInfo = _updateInfo.value
         updateDownloadJob?.cancel()
         updateDownloadJob = null
         _showUpdateSheet.value = false
         _updateDownloadProgress.value = -1
         _updateDownloadError.value = null
+        if (currentInfo != null &&
+            currentInfo.isUpdateAvailable &&
+            currentInfo.downloadUrl != "mock://update" &&
+            currentInfo.versionName.isNotBlank()
+        ) {
+            settingsRepo.setDismissedUpdate(currentInfo.versionName, System.currentTimeMillis())
+            settingsRepo.setLastNotifiedUpdateVersion(currentInfo.versionName)
+            UpdateCheckWorker.cancelUpdateNotification(getApplication<LumenApplication>())
+        }
     }
 
     fun startUpdateDownload(context: Context) {
         val info = _updateInfo.value ?: return
-        if (updateDownloadJob?.isActive == true) return
         val appCtx = getApplication<LumenApplication>()
+        if (info.downloadUrl.isBlank()) {
+            val msg = appCtx.getString(R.string.update_no_compatible_apk)
+            _updateDownloadError.value = msg
+            android.widget.Toast.makeText(
+                appCtx,
+                msg,
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (updateDownloadJob?.isActive == true) return
+        updateCheckJob?.cancel()
+        updateCheckJob = null
+        isManualUpdateCheckInFlight = false
 
         updateDownloadJob = viewModelScope.launch {
             _updateDownloadError.value = null
@@ -583,7 +851,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val safeVersion = info.versionName.replace(Regex("[^A-Za-z0-9._-]"), "_")
             val destFile = File(updatesDir, "lumen_update_${safeVersion}.apk")
             try {
-                com.reiux.lumen.data.repository.UpdateRepository().downloadUpdate(info.downloadUrl, destFile).collect { p ->
+                UpdateRepository().downloadUpdate(info.downloadUrl, destFile, info.expectedSha256).collect { p ->
                     _updateDownloadProgress.value = p
                 }
                 _showUpdateSheet.value = false
@@ -594,7 +862,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 throw ce
             } catch (e: Exception) {
                 LumenLogger.e("Updater", tr = e) { "Failed to download update" }
-                _updateDownloadError.value = e.message ?: "Failed to download update"
+                _updateDownloadError.value = e.message?.takeIf { it.isNotBlank() } ?: appCtx.getString(R.string.update_download_failed_retry)
                 _updateDownloadProgress.value = -1
                 android.widget.Toast.makeText(
                     appCtx,
@@ -609,6 +877,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         LumenLogger.i("ShowcaseMode", "Screenshot Showcase mode set to: $enabled")
         if (enabled) {
             _isMockMode.value = false
+            _mockIsPaused.value = false
+            _mockForcedPunTitle.value = null
+            _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
             _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = true)
@@ -649,6 +923,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (enabled) {
             startMockSimulation()
         } else {
+            _mockIsPaused.value = false
+            _mockIsUploading.value = false
+            _mockForcedPunTitle.value = null
+            _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
         }
@@ -693,10 +974,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun startMockSimulation() {
+    private fun startMockSimulation(resetCounts: Boolean = true) {
         mockSimJob?.cancel()
+        _mockIsPaused.value = false
         _mockIsUploading.value = true
-        _mockCompletedCount.value = 0
+        if (resetCounts) {
+            _mockCompletedCount.value = 0
+        }
 
         val mockRunId = "Mock Run 1"
         LumenLogger.logRunStart(
@@ -718,6 +1002,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val simStart = System.currentTimeMillis()
 
             while (_isMockMode.value && _mockIsUploading.value) {
+                while (_mockIsPaused.value && _isMockMode.value && _mockIsUploading.value) {
+                    delay(150)
+                }
+                if (!_isMockMode.value || !_mockIsUploading.value) break
+
                 var active = _mockQueue.value.firstOrNull { it.status == UploadStatus.UPLOADING }
                 if (active == null) {
                     val next = _mockQueue.value.firstOrNull { it.status == UploadStatus.QUEUED } ?: break
@@ -727,10 +1016,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _mockCurrentUploadingItem.value = next.copy(status = UploadStatus.HASHING)
                     delay(400)
 
+                    while (_mockIsPaused.value && _isMockMode.value && _mockIsUploading.value) {
+                        delay(150)
+                    }
+                    if (!_isMockMode.value || !_mockIsUploading.value) break
+
                     // Simulate Checking
                     _mockQueue.value = _mockQueue.value.map { if (it.id == next.id) it.copy(status = UploadStatus.CHECKING) else it }
                     _mockCurrentUploadingItem.value = next.copy(status = UploadStatus.CHECKING)
                     delay(400)
+
+                    while (_mockIsPaused.value && _isMockMode.value && _mockIsUploading.value) {
+                        delay(150)
+                    }
+                    if (!_isMockMode.value || !_mockIsUploading.value) break
 
                     active = next.copy(status = UploadStatus.UPLOADING, bytesUploaded = 0L)
                     _mockQueue.value = _mockQueue.value.map { if (it.id == next.id) active else it }
@@ -743,7 +1042,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _mockUploadSpeed.value = "8.4 MB/s"
 
                 while (currentBytes < totalBytes && _mockIsUploading.value && _isMockMode.value) {
+                    while (_mockIsPaused.value && _isMockMode.value && _mockIsUploading.value) {
+                        delay(150)
+                    }
+                    if (!_mockIsUploading.value || !_isMockMode.value) break
                     delay(80)
+                    while (_mockIsPaused.value && _isMockMode.value && _mockIsUploading.value) {
+                        delay(150)
+                    }
+                    if (!_mockIsUploading.value || !_isMockMode.value) break
                     currentBytes = (currentBytes + step).coerceAtMost(totalBytes)
                     val updated = active.copy(bytesUploaded = currentBytes)
                     _mockCurrentUploadingItem.value = updated
@@ -811,6 +1118,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(200)
             }
 
+            _mockIsPaused.value = false
             _mockIsUploading.value = false
             _mockCurrentUploadingItem.value = null
             _mockUploadSpeed.value = null
@@ -907,9 +1215,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Backup Operations ---
     fun startBackup() {
+        val appCtx = getApplication<LumenApplication>()
         if (!isOnline.value) {
             LumenLogger.w("BackupUI", "Cannot start backup: No internet connection")
-            android.widget.Toast.makeText(getApplication(), "No internet connection. Connect to network to backup.", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1016,9 +1325,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val appCtx = getApplication<LumenApplication>()
+        if (_isMockMode.value) {
+            if (!isOnline.value) {
+                LumenLogger.w("BackupUI", "Cannot upload selected URIs in mock mode: No internet connection")
+                android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (uris.isEmpty()) return
+            viewModelScope.launch {
+                val simulatedItems = withContext(Dispatchers.IO) {
+                    uris.mapIndexed { index, uri ->
+                        val name = MediaFileReader.getFileNameFromUri(appCtx, uri)
+                        UploadItem(
+                            id = UUID.randomUUID().toString(),
+                            filePath = uri.toString(),
+                            fileName = name,
+                            fileSize = 6_400_000L + (index * 1_200_000L),
+                            status = UploadStatus.QUEUED
+                        )
+                    }
+                }
+                if (!_isMockMode.value) return@launch
+                LumenLogger.i("MockMode", "Enqueued ${simulatedItems.size} simulated mock upload items from picker/share")
+                _mockQueue.value = _mockQueue.value + simulatedItems
+                if (!_mockIsUploading.value) {
+                    startMockSimulation(resetCounts = false)
+                } else {
+                    _mockIsPaused.value = false
+                }
+            }
+            return
+        }
+
         if (!com.reiux.lumen.util.DeviceConditions.isInternetAvailable(appCtx)) {
             LumenLogger.w("BackupUI", "Cannot upload selected URIs: No internet connection")
-            android.widget.Toast.makeText(appCtx, "No internet connection. Connect to network to upload.", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1154,12 +1495,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         scanJob = null
         _scanState.value = ScanState.Idle
         if (_isMockMode.value) {
-            _mockIsUploading.value = false
-            mockSimJob?.cancel()
-            mockSimJob = null
+            if (_mockIsUploading.value) {
+                _mockIsPaused.value = true
+                _mockUploadSpeed.value = null
+            }
             return
         }
         uploadRepo.pauseQueue()
+    }
+
+    fun resumeBackup() {
+        val appCtx = getApplication<LumenApplication>()
+        if (!isOnline.value) {
+            LumenLogger.w("BackupUI", "Cannot resume backup: No internet connection")
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (_isMockMode.value) {
+            if (_mockIsPaused.value) {
+                _mockIsPaused.value = false
+                return
+            }
+            if (_mockIsUploading.value) return
+            val hasPending = _mockQueue.value.any {
+                it.status == UploadStatus.QUEUED ||
+                    it.status == UploadStatus.UPLOADING ||
+                    it.status == UploadStatus.HASHING ||
+                    it.status == UploadStatus.CHECKING ||
+                    it.status == UploadStatus.COMMITTING
+            }
+            if (hasPending) {
+                _mockQueue.value = _mockQueue.value.map { item ->
+                    when (item.status) {
+                        UploadStatus.HASHING, UploadStatus.CHECKING, UploadStatus.COMMITTING ->
+                            item.copy(status = UploadStatus.QUEUED, bytesUploaded = 0L, error = null)
+                        else -> item
+                    }
+                }
+                _mockIsUploading.value = true
+                startMockSimulation(resetCounts = false)
+            }
+            return
+        }
+
+        val account = selectedAccount.value ?: accounts.value.firstOrNull()
+        if (account == null) {
+            LumenLogger.w("BackupUI", "Cannot resume backup: No account available")
+            return
+        }
+
+        LumenLogger.i("BackupUI", "Resuming backup queue")
+        uploadRepo.resumeQueue(
+            account = account,
+            storageSaver = settings.value.storageSaverQuality,
+            useQuota = settings.value.useQuota
+        )
     }
 
     fun cancelBackup() {
@@ -1168,6 +1559,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         scanJob = null
         _scanState.value = ScanState.Idle
         if (_isMockMode.value) {
+            _mockIsPaused.value = false
             _mockIsUploading.value = false
             mockSimJob?.cancel()
             mockSimJob = null
@@ -1200,6 +1592,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryFailedUploads() {
+        val appCtx = getApplication<LumenApplication>()
+        if (!isOnline.value) {
+            LumenLogger.w("BackupUI", "Cannot retry failed uploads: No internet connection")
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         LumenLogger.i("BackupUI", "User clicked Retry Failed Uploads")
         if (_isMockMode.value) {
             _mockQueue.value = _mockQueue.value.map { item ->
@@ -1220,6 +1618,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (selectedAcc != null) {
             uploadRepo.startQueue(selectedAcc, settingsRepo.settings.value.storageSaverQuality, settingsRepo.settings.value.useQuota)
         }
+    }
+
+    fun retrySingleItem(itemId: String) {
+        val appCtx = getApplication<LumenApplication>()
+        if (!isOnline.value) {
+            LumenLogger.w("BackupUI", "Cannot retry item $itemId: No internet connection")
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (_isMockMode.value) {
+            val exists = _mockQueue.value.any { it.id == itemId }
+            if (!exists) return
+            LumenLogger.i("BackupUI", "Retrying mock item $itemId")
+            _mockQueue.value = _mockQueue.value.map { item ->
+                if (item.id == itemId) {
+                    item.copy(status = UploadStatus.QUEUED, error = null, bytesUploaded = 0L)
+                } else item
+            }
+            _mockIsPaused.value = false
+            if (!_mockIsUploading.value) {
+                _mockIsUploading.value = true
+                startMockSimulation(resetCounts = false)
+            }
+            return
+        }
+
+        val account = selectedAccount.value ?: accounts.value.firstOrNull()
+        if (account == null) {
+            LumenLogger.w("BackupUI", "Cannot retry item $itemId: No account available")
+            return
+        }
+
+        LumenLogger.i("BackupUI", "User retried single upload item $itemId")
+        uploadRepo.retryFailedItems(setOf(itemId))
+        uploadRepo.resumeQueue(
+            account = account,
+            storageSaver = settings.value.storageSaverQuality,
+            useQuota = settings.value.useQuota
+        )
     }
 
     // --- Folders Operations ---
@@ -1493,6 +1931,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.setIncludeSubfolders(path, accountEmail, includeSubfolders)
     }
 
+    fun setFolderDeleteAfterBackup(path: String, accountEmail: String?, enabled: Boolean) {
+        LumenLogger.i("FoldersUI", "Set deleteAfterBackup=$enabled for folder '$path' (email=$accountEmail)")
+        if (_isMockMode.value) {
+            _mockSettings.value = _mockSettings.value.copy(
+                folders = _mockSettings.value.folders.map {
+                    if (SettingsRepository.matchesFolderPath(it.path, path) && matchesAccount(it.accountEmail, accountEmail)) {
+                        it.copy(deleteAfterBackup = enabled)
+                    } else it
+                }
+            )
+            return
+        }
+        settingsRepo.setFolderDeleteAfterBackup(path, accountEmail, enabled)
+    }
+
     private fun matchesAccount(e1: String?, e2: String?): Boolean {
         if (e1.isNullOrBlank() && e2.isNullOrBlank()) return true
         if (e1.isNullOrBlank() || e2.isNullOrBlank()) return false
@@ -1593,6 +2046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         LumenLogger.i("SettingsUI", "Color preset updated to: $preset")
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(colorPreset = preset)
+            return
         }
         settingsRepo.updateColorPreset(preset)
     }
@@ -1663,9 +2117,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _scrollToAccountForNudge.value = false
     }
 
+    fun triggerMockCompletionPun() {
+        _mockForcedPunTitle.value = com.reiux.lumen.util.EasterEggsManager.getCompletionTitle(getApplication(), force = true)
+    }
+
+    fun cycleMockEmptySubtitle() {
+        _mockEmptyStateSubtitle.value = com.reiux.lumen.util.EasterEggsManager.getEmptyStateSubtitle(getApplication(), force = true)
+    }
+
+    fun triggerMockLightsOff() {
+        _mockLightsOffNonce.value++
+    }
+
+    fun triggerMockShakeFlicker() {
+        _mockShakeFlickerNonce.value++
+    }
+
     fun setHasCompletedOnboarding(completed: Boolean) {
         LumenLogger.i("Onboarding", "Onboarding state updated to: $completed")
+        if (completed && settingsRepo.getLastSeenWhatsNewVersion().isNullOrBlank()) {
+            settingsRepo.setLastSeenWhatsNewVersion(com.reiux.lumen.BuildConfig.VERSION_NAME)
+        }
         settingsRepo.updateHasCompletedOnboarding(completed)
+    }
+
+    private var isWhatsNewSheetPreview = false
+
+    fun checkPostUpdateWhatsNewSheet() {
+        if (!_showPostUpdateWhatsNewSheet.value &&
+            com.reiux.lumen.data.model.WhatsNewCatalog.shouldShowPostUpdateSheet(
+                currentAppVersion = com.reiux.lumen.BuildConfig.VERSION_NAME,
+                lastSeenVersion = settingsRepo.getLastSeenWhatsNewVersion(),
+                hasCompletedOnboarding = settings.value.hasCompletedOnboarding
+            )
+        ) {
+            isWhatsNewSheetPreview = false
+            _showPostUpdateWhatsNewSheet.value = true
+        }
+    }
+
+    fun previewPostUpdateWhatsNewSheet() {
+        isWhatsNewSheetPreview = true
+        _showPostUpdateWhatsNewSheet.value = true
+    }
+
+    fun dismissPostUpdateWhatsNewSheet() {
+        if (!isWhatsNewSheetPreview) {
+            settingsRepo.setLastSeenWhatsNewVersion(com.reiux.lumen.BuildConfig.VERSION_NAME)
+        }
+        isWhatsNewSheetPreview = false
+        _showPostUpdateWhatsNewSheet.value = false
     }
 
     fun updateForcedSeason(season: String) {
@@ -1685,11 +2186,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.setLastSeenDarkState(isDark)
     }
 
+    fun markWhatsNewItemRead(itemId: String) {
+        settingsRepo.markWhatsNewItemRead(itemId)
+    }
+
+    fun markAllWhatsNewRead() {
+        settingsRepo.markAllWhatsNewRead(com.reiux.lumen.data.model.WhatsNewCatalog.allItemIds())
+    }
+
     fun updateDeveloperMode(unlocked: Boolean) {
         LumenLogger.i("SettingsUI", "Developer mode updated to: $unlocked")
         if (!unlocked) {
             _isShowcaseMode.value = false
             _isMockMode.value = false
+            _mockIsPaused.value = false
+            _mockForcedPunTitle.value = null
+            _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
         }

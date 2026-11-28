@@ -16,6 +16,9 @@ import com.reiux.lumen.util.AuthFailureException
 import com.reiux.lumen.util.LumenLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -367,62 +370,181 @@ class GooglePhotosClient(
         file: File,
         bearerToken: String,
         opId: String? = null,
+        isPaused: (() -> Boolean)? = null,
+        tokenProvider: (suspend () -> String)? = null,
+        onInvalidateToken: (() -> Unit)? = null,
         onProgress: ((bytesSent: Long, totalBytes: Long) -> Unit)? = null
     ): CommitToken = withContext(Dispatchers.IO) {
+        val chunkSize = 512 * 1024 // 512 KiB chunk (multiple of 256 KiB for responsive mid-file pause)
         val totalBytes = file.length()
-        val countingBody = object : RequestBody() {
-            override fun contentType() = "application/octet-stream".toMediaType()
-            override fun contentLength() = totalBytes
-
-            override fun writeTo(sink: BufferedSink) {
-                FileInputStream(file).use { input ->
-                    val buffer = ByteArray(32 * 1024)
-                    var totalRead = 0L
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        sink.write(buffer, 0, read)
-                        totalRead += read
-                        onProgress?.invoke(totalRead, totalBytes)
-                    }
-                }
-            }
-        }
-
         val url = INTERACTIVE_UPLOAD_ENDPOINT.toHttpUrl()
             .newBuilder()
             .addQueryParameter("upload_id", uploadToken)
             .build()
-        val request = Request.Builder()
-            .url(url)
-            .put(countingBody)
-            .header("Authorization", "Bearer $bearerToken")
-            .header("User-Agent", PHOTOS_USER_AGENT)
-            .build()
 
-        val start = System.currentTimeMillis()
-        val respBytes = httpClient.newCall(request).execute().use { response ->
-            val bytes = readBoundedResponseBytes(response)
-            val duration = System.currentTimeMillis() - start
+        var currentBearer = bearerToken
+        var refreshedInFile = false
 
-            logNetwork(
-                method = "PUT",
-                url = INTERACTIVE_UPLOAD_ENDPOINT,
-                reqSize = totalBytes,
-                code = response.code,
-                respSize = bytes.size.toLong(),
-                durationMs = duration,
-                opId = opId,
-                errBody = if (!response.isSuccessful) bytes.decodeToString() else null
-            )
-
-            if (!response.isSuccessful) {
-                handleResponseError(response, bytes, "UploadChunk")
+        if (totalBytes == 0L) {
+            while (isPaused?.invoke() == true) {
+                currentCoroutineContext().ensureActive()
+                delay(150)
             }
-            bytes
+
+            var respBytes: ByteArray
+            while (true) {
+                val request = Request.Builder()
+                    .url(url)
+                    .put(ByteArray(0).toRequestBody("application/octet-stream".toMediaType()))
+                    .header("Authorization", "Bearer $currentBearer")
+                    .header("User-Agent", PHOTOS_USER_AGENT)
+                    .header("X-Goog-Upload-Protocol", "resumable")
+                    .header("X-Goog-Upload-Command", "upload, finalize")
+                    .header("X-Goog-Upload-Offset", "0")
+                    .build()
+
+                val start = System.currentTimeMillis()
+                val attemptResult = httpClient.newCall(request).execute().use { response ->
+                    val bytes = readBoundedResponseBytes(response)
+                    val duration = System.currentTimeMillis() - start
+
+                    logNetwork(
+                        method = "PUT",
+                        url = INTERACTIVE_UPLOAD_ENDPOINT,
+                        reqSize = 0L,
+                        code = response.code,
+                        respSize = bytes.size.toLong(),
+                        durationMs = duration,
+                        opId = opId,
+                        errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+                    )
+
+                    if (response.code == 401 && tokenProvider != null && !refreshedInFile) {
+                        null
+                    } else {
+                        if (!response.isSuccessful) {
+                            handleResponseError(response, bytes, "UploadChunk")
+                        }
+                        bytes
+                    }
+                }
+
+                if (attemptResult == null) {
+                    onInvalidateToken?.invoke()
+                    currentBearer = tokenProvider!!()
+                    refreshedInFile = true
+                    continue
+                }
+                respBytes = attemptResult
+                break
+            }
+
+            onProgress?.invoke(0L, 0L)
+            if (respBytes.isEmpty()) throw IOException("Empty Scotty finalize response")
+            return@withContext CommitToken.parseFrom(respBytes)
         }
 
-        if (respBytes.isEmpty()) throw IOException("Empty Scotty finalize response")
-        CommitToken.parseFrom(respBytes)
+        FileInputStream(file).use { input ->
+            var currentOffset = 0L
+            while (currentOffset < totalBytes) {
+                currentCoroutineContext().ensureActive()
+
+                while (isPaused?.invoke() == true) {
+                    currentCoroutineContext().ensureActive()
+                    delay(150)
+                }
+
+                val targetLen = minOf(chunkSize.toLong(), totalBytes - currentOffset).toInt()
+                val chunkBuffer = ByteArray(targetLen)
+                var chunkLen = 0
+                while (chunkLen < targetLen) {
+                    val read = input.read(chunkBuffer, chunkLen, targetLen - chunkLen)
+                    if (read == -1) break
+                    chunkLen += read
+                }
+                if (chunkLen < targetLen) {
+                    throw IOException("File ${file.name} modified during upload (expected $totalBytes bytes, EOF at ${currentOffset + chunkLen})")
+                }
+
+                val isLast = (currentOffset + chunkLen) >= totalBytes
+                val command = if (isLast) "upload, finalize" else "upload"
+                val chunkOffset = currentOffset
+
+                val chunkBody = object : RequestBody() {
+                    override fun contentType() = "application/octet-stream".toMediaType()
+                    override fun contentLength() = chunkLen.toLong()
+
+                    override fun writeTo(sink: BufferedSink) {
+                        val sliceSize = 32 * 1024
+                        var writtenInChunk = 0
+                        while (writtenInChunk < chunkLen) {
+                            val toWrite = minOf(sliceSize, chunkLen - writtenInChunk)
+                            sink.write(chunkBuffer, writtenInChunk, toWrite)
+                            writtenInChunk += toWrite
+                            onProgress?.invoke(chunkOffset + writtenInChunk, totalBytes)
+                        }
+                    }
+                }
+
+                var respBytes: ByteArray
+                while (true) {
+                    val request = Request.Builder()
+                        .url(url)
+                        .put(chunkBody)
+                        .header("Authorization", "Bearer $currentBearer")
+                        .header("User-Agent", PHOTOS_USER_AGENT)
+                        .header("X-Goog-Upload-Protocol", "resumable")
+                        .header("X-Goog-Upload-Command", command)
+                        .header("X-Goog-Upload-Offset", chunkOffset.toString())
+                        .build()
+
+                    val start = System.currentTimeMillis()
+                    val attemptResult = httpClient.newCall(request).execute().use { response ->
+                        val bytes = readBoundedResponseBytes(response)
+                        val duration = System.currentTimeMillis() - start
+
+                        logNetwork(
+                            method = "PUT",
+                            url = INTERACTIVE_UPLOAD_ENDPOINT,
+                            reqSize = chunkLen.toLong(),
+                            code = response.code,
+                            respSize = bytes.size.toLong(),
+                            durationMs = duration,
+                            opId = opId,
+                            errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+                        )
+
+                        if (response.code == 401 && tokenProvider != null && !refreshedInFile) {
+                            null
+                        } else {
+                            if (!response.isSuccessful) {
+                                handleResponseError(response, bytes, "UploadChunk")
+                            }
+                            bytes
+                        }
+                    }
+
+                    if (attemptResult == null) {
+                        onInvalidateToken?.invoke()
+                        currentBearer = tokenProvider!!()
+                        refreshedInFile = true
+                        continue
+                    }
+                    respBytes = attemptResult
+                    break
+                }
+
+                currentOffset += chunkLen
+                onProgress?.invoke(currentOffset, totalBytes)
+
+                if (isLast) {
+                    if (respBytes.isEmpty()) throw IOException("Empty Scotty finalize response")
+                    return@withContext CommitToken.parseFrom(respBytes)
+                }
+            }
+        }
+
+        throw IOException("Unexpected end of upload loop")
     }
 
     suspend fun commitUpload(

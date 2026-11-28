@@ -1,7 +1,10 @@
 package com.reiux.lumen.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -23,15 +26,18 @@ fun ExpressiveSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+
     val iconRotation by animateFloatAsState(
         targetValue = if (checked) 0f else -90f,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        animationSpec = spatialSpec,
         label = "switchIconRotation"
     )
 
     val iconScale by animateFloatAsState(
         targetValue = if (checked) 1f else 0.85f,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+        animationSpec = spatialSpec,
         label = "switchIconScale"
     )
 
@@ -41,14 +47,22 @@ fun ExpressiveSwitch(
         modifier = modifier,
         enabled = enabled,
         thumbContent = {
-            Icon(
-                imageVector = if (checked) Icons.Rounded.Check else Icons.Rounded.Close,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(SwitchDefaults.IconSize)
-                    .scale(iconScale)
-                    .rotate(iconRotation)
-            )
+            AnimatedContent(
+                targetState = checked,
+                transitionSpec = {
+                    fadeIn(animationSpec = effectsSpec) togetherWith fadeOut(animationSpec = effectsSpec)
+                },
+                label = "switchThumbIcon"
+            ) { isChecked ->
+                Icon(
+                    imageVector = if (isChecked) Icons.Rounded.Check else Icons.Rounded.Close,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(SwitchDefaults.IconSize)
+                        .scale(iconScale)
+                        .rotate(iconRotation)
+                )
+            }
         },
         colors = SwitchDefaults.colors(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,

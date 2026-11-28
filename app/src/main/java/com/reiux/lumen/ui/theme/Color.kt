@@ -254,7 +254,7 @@ val MatrixDark = darkColorScheme(
 
 // Seasonal Preset: Spooky (Halloween)
 val SpookyLight = lightColorScheme(
-    primary = Color(0xFFE65100),
+    primary = Color(0xFFB83D00),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD180),
     onPrimaryContainer = Color(0xFF3E1200),
@@ -266,11 +266,11 @@ val SpookyLight = lightColorScheme(
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFA5D6A7),
     onTertiaryContainer = Color(0xFF003300),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFFF3E0),
-    surfaceContainer = Color(0xFFFFE0B2),
-    surfaceContainerHigh = Color(0xFFFFCC80),
-    surfaceContainerHighest = Color(0xFFFFB74D)
+    surfaceContainerLowest = Color(0xFFFFF8F5),
+    surfaceContainerLow = Color(0xFFFFF1EB),
+    surfaceContainer = Color(0xFFFCE8DF),
+    surfaceContainerHigh = Color(0xFFF5DDD3),
+    surfaceContainerHighest = Color(0xFFEDD2C6)
 )
 
 val SpookyDark = darkColorScheme(
@@ -303,7 +303,7 @@ val XmasLight = lightColorScheme(
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFA5D6A7),
     onSecondaryContainer = Color(0xFF003300),
-    tertiary = Color(0xFFF57F17),
+    tertiary = Color(0xFF8A5000),
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFFFF9C4),
     onTertiaryContainer = Color(0xFF3E2723),
@@ -325,8 +325,8 @@ val XmasDark = darkColorScheme(
     onSecondaryContainer = Color(0xFFA5D6A7),
     tertiary = Color(0xFFFFD600),
     onTertiary = Color(0xFF3E2723),
-    tertiaryContainer = Color(0xFFF57F17),
-    onTertiaryContainer = Color(0xFFFFF9C4),
+    tertiaryContainer = Color(0xFF5D3A00),
+    onTertiaryContainer = Color(0xFFFFE082),
     surfaceContainerLowest = Color(0xFF09120B),
     surfaceContainerLow = Color(0xFF122115),
     surfaceContainer = Color(0xFF18291C),
@@ -336,7 +336,7 @@ val XmasDark = darkColorScheme(
 
 // Seasonal Preset: NewYr (New Year)
 val NewYrLight = lightColorScheme(
-    primary = Color(0xFFF57F17),
+    primary = Color(0xFF8C5000),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFF9C4),
     onPrimaryContainer = Color(0xFF3B2D00),
@@ -348,11 +348,11 @@ val NewYrLight = lightColorScheme(
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFF8BBD0),
     onTertiaryContainer = Color(0xFF4A001F),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFFFDE7),
-    surfaceContainer = Color(0xFFFFF9C4),
-    surfaceContainerHigh = Color(0xFFFFF176),
-    surfaceContainerHighest = Color(0xFFFFEE58)
+    surfaceContainerLowest = Color(0xFFFFFBF2),
+    surfaceContainerLow = Color(0xFFFAF3E3),
+    surfaceContainer = Color(0xFFF4EBD6),
+    surfaceContainerHigh = Color(0xFFECE2CA),
+    surfaceContainerHighest = Color(0xFFE4D8BE)
 )
 
 val NewYrDark = darkColorScheme(

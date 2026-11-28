@@ -2,9 +2,6 @@ package com.reiux.lumen.ui.components
 
 import android.content.res.Configuration
 import android.os.Environment
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,21 +9,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,6 +94,7 @@ fun DevDiagnosticsDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     val initialTests = remember {
         listOf(
@@ -236,9 +236,17 @@ fun DevDiagnosticsDialog(
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 360.dp, max = if (isWideLayout) 760.dp else 540.dp)
-            .padding(horizontal = 16.dp),
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp)
+        } else {
+            Modifier
+                .widthIn(min = 360.dp, max = if (isWideLayout) 760.dp else 540.dp)
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
@@ -282,7 +290,9 @@ fun DevDiagnosticsDialog(
                 ) {
                     // Left Column: Action Controls
                     Column(
-                        modifier = Modifier.weight(0.44f),
+                        modifier = Modifier
+                            .weight(0.44f)
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
@@ -346,7 +356,7 @@ fun DevDiagnosticsDialog(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(300.dp),
+                                .heightIn(min = 120.dp, max = 260.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(testResults, key = { it.id }) { test ->
@@ -360,12 +370,13 @@ fun DevDiagnosticsDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                         .padding(vertical = 4.dp)
                 ) {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(380.dp),
+                            .heightIn(min = 120.dp, max = 260.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(testResults, key = { it.id }) { test ->
@@ -425,7 +436,7 @@ fun DevDiagnosticsDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            ExpressiveTextButton(onClick = onDismiss) {
                 Text("Close")
             }
         },

@@ -8,11 +8,12 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.border
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,42 +32,41 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.ui.unit.sp
+import androidx.compose.material3.minimumInteractiveComponentSize
 import com.reiux.lumen.data.model.AlbumTargetMode
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import com.reiux.lumen.R
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import com.reiux.lumen.ui.components.AlbumPickerDropdown
 import com.reiux.lumen.data.model.BackupFolder
 import com.reiux.lumen.data.model.GoogleAccount
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -88,6 +89,7 @@ fun AddFolderDialog(
             ?: accounts.firstOrNull()
     }
     var albumChoice by rememberSaveable(stateSaver = AlbumChoiceSaver) { mutableStateOf<AlbumChoice>(AlbumChoice.None) }
+    var deleteAfterBackup by remember { mutableStateOf(false) }
 
     val presets = remember {
         listOf(
@@ -121,13 +123,23 @@ fun AddFolderDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 340.dp, max = if (isWideLayout) 700.dp else 500.dp)
-            .padding(horizontal = 16.dp),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF,
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier.fillMaxWidth().fillMaxHeight()
+        } else {
+            Modifier
+                .widthIn(
+                    min = 340.dp,
+                    max = if (isWideLayout) 700.dp else 500.dp
+                )
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Text(
                 text = stringResource(R.string.add_folder_dialog_title),
@@ -162,14 +174,13 @@ fun AddFolderDialog(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             presets.forEach { (name, presetPath) ->
-                                val haptic = rememberHapticClick {
-                                    path = presetPath
-                                    displayName = name
-                                }
                                 ExpressivePresetChip(
                                     name = name,
                                     isSelected = path == presetPath,
-                                    onClick = haptic
+                                    onClick = {
+                                        path = presetPath
+                                        displayName = name
+                                    }
                                 )
                             }
                         }
@@ -282,6 +293,13 @@ fun AddFolderDialog(
                                 onOpenAlbumManager()
                             }
                         )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        DeleteAfterBackupOptionRow(
+                            checked = deleteAfterBackup,
+                            onCheckedChange = { deleteAfterBackup = it }
+                        )
                     }
                 }
             } else {
@@ -304,14 +322,13 @@ fun AddFolderDialog(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         presets.forEach { (name, presetPath) ->
-                            val haptic = rememberHapticClick {
-                                path = presetPath
-                                displayName = name
-                            }
                             ExpressivePresetChip(
                                 name = name,
                                 isSelected = path == presetPath,
-                                onClick = haptic
+                                onClick = {
+                                    path = presetPath
+                                    displayName = name
+                                }
                             )
                         }
                     }
@@ -423,6 +440,13 @@ fun AddFolderDialog(
                             onOpenAlbumManager()
                         }
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    DeleteAfterBackupOptionRow(
+                        checked = deleteAfterBackup,
+                        onCheckedChange = { deleteAfterBackup = it }
+                    )
                 }
             }
         },
@@ -452,6 +476,7 @@ fun AddFolderDialog(
                                 displayName = name,
                                 enabled = true,
                                 includeSubfolders = false,
+                                deleteAfterBackup = deleteAfterBackup,
                                 targetAlbumMode = mode,
                                 customAlbumName = albumName,
                                 customAlbumNickname = albumNickname,
@@ -467,7 +492,7 @@ fun AddFolderDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            ExpressiveTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.btn_cancel))
             }
         },
@@ -477,25 +502,124 @@ fun AddFolderDialog(
 }
 
 @Composable
+private fun DeleteAfterBackupOptionRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val toggle: (Boolean) -> Unit = { next ->
+        try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+        onCheckedChange(next)
+    }
+    val containerColor by animateColorAsState(
+        targetValue = if (checked) {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "addDeleteAfterBackupContainer"
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = containerColor
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { toggle(!checked) }
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.DeleteOutline,
+                contentDescription = null,
+                tint = if (checked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.folder_delete_after_backup_title),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (checked) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.folder_delete_after_backup_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (checked) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            ExpressiveSwitch(
+                checked = checked,
+                onCheckedChange = toggle
+            )
+        }
+    }
+}
+
+@Composable
 private fun ExpressivePresetChip(
     name: String,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val coroutineScope = rememberCoroutineScope()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isGesturePressed by rememberExpressivePressed(interactionSource)
+    var clickPulse by remember { mutableStateOf(false) }
+    val isPressed = isGesturePressed || clickPulse
+
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        coroutineScope.launch {
+            clickPulse = true
+            delay(180L)
+            clickPulse = false
+        }
+        onClick()
+    }
+
+    val cornerRadius by animateDpAsState(
+        targetValue = when {
+            isPressed -> 8.dp
+            isSelected -> 20.dp
+            else -> 10.dp
+        },
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "presetChipCorner"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "presetChipScale"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "presetChipContainer"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "presetChipBorder"
+    )
+    val shape = RoundedCornerShape(cornerRadius)
 
     Surface(
+        onClick = hapticClick,
         modifier = Modifier
-            .clip(shape)
-            .clickable(onClick = onClick)
-            .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = shape
-            ),
+            .minimumInteractiveComponentSize()
+            .scale(scale),
         shape = shape,
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = if (isSelected) 2.dp else 0.dp
+        color = containerColor,
+        border = BorderStroke(
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = borderColor
+        ),
+        tonalElevation = if (isSelected) 2.dp else 0.dp,
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),

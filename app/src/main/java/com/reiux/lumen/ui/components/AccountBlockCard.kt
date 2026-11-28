@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
 import com.reiux.lumen.data.model.AccountBlock
 import com.reiux.lumen.data.model.AuthFailureKind
@@ -69,13 +68,16 @@ fun AccountBlockCard(
         }
     }
 
-    val countdownText = remember(remainingMillis) {
-        if (remainingMillis <= 0) "a few seconds"
-        else {
-            val totalSec = remainingMillis / 1000
-            val min = totalSec / 60
-            val sec = totalSec % 60
-            if (min > 0) "${min}m ${sec}s" else "${sec}s"
+    val countdownText = if (remainingMillis <= 0) {
+        stringResource(R.string.account_block_few_seconds)
+    } else {
+        val totalSec = remainingMillis / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        if (min > 0) {
+            stringResource(R.string.account_block_minutes_seconds, min, sec)
+        } else {
+            stringResource(R.string.account_block_seconds, sec)
         }
     }
 
@@ -121,8 +123,7 @@ fun AccountBlockCard(
             Text(
                 text = msg,
                 style = MaterialTheme.typography.bodyMedium,
-                color = iconColor,
-                lineHeight = 20.sp
+                color = iconColor
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -149,7 +150,10 @@ fun AccountBlockCard(
                 } else if (block.kind == AuthFailureKind.ACCOUNT_RESTRICTED) {
                     ExpressiveButton(
                         onClick = onRemoveAccount,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text(stringResource(R.string.breaker_restricted_button))

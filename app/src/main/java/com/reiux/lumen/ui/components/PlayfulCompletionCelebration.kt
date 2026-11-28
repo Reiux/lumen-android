@@ -1,8 +1,6 @@
 package com.reiux.lumen.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -16,8 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Check
@@ -26,9 +22,10 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -40,8 +37,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.reiux.lumen.R
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -58,32 +56,35 @@ fun PlayfulCompletionCelebration(
     customTitle: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
+    val reducedMotion = rememberReducedMotion()
 
-    val scaleAnim = remember { Animatable(0f) }
+    val scaleAnim = remember { Animatable(if (reducedMotion) 1f else 0f) }
     val particleProgress = remember { Animatable(0f) }
+    val badgeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val particleSpec = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
 
-    LaunchedEffect(completedCount) {
+    LaunchedEffect(completedCount, reducedMotion) {
         try {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         } catch (_: Exception) {}
+
+        if (reducedMotion) {
+            scaleAnim.snapTo(1f)
+            particleProgress.snapTo(0f)
+            return@LaunchedEffect
+        }
 
         scaleAnim.snapTo(0f)
         particleProgress.snapTo(0f)
 
         scaleAnim.animateTo(
             targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+            animationSpec = badgeSpec
         )
 
         particleProgress.animateTo(
             targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessVeryLow
-            )
+            animationSpec = particleSpec
         )
     }
 
@@ -92,11 +93,10 @@ fun PlayfulCompletionCelebration(
         MaterialTheme.colorScheme.secondary,
         MaterialTheme.colorScheme.tertiary,
         MaterialTheme.colorScheme.primaryContainer,
-        Color(0xFFFFB74D),
-        Color(0xFF81C784)
+        MaterialTheme.colorScheme.tertiaryContainer
     )
 
-    val particles = remember {
+    val particles = remember(particleColors) {
         List(20) { index ->
             val angle = (index * (360f / 20f)) * (Math.PI / 180.0)
             val distance = Random.nextFloat() * 65f + 55f
@@ -108,7 +108,7 @@ fun PlayfulCompletionCelebration(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
@@ -125,38 +125,41 @@ fun PlayfulCompletionCelebration(
                     .height(130.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Particle burst canvas
-                Canvas(
-                    modifier = Modifier.size(200.dp)
-                ) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val p = particleProgress.value
-                    val alpha = (1f - p * 0.75f).coerceIn(0f, 1f)
+                if (!reducedMotion) {
+                    // Particle burst canvas
+                    Canvas(
+                        modifier = Modifier.size(200.dp)
+                    ) {
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val p = particleProgress.value
+                        val alpha = (1f - p * 0.75f).coerceIn(0f, 1f)
 
-                    particles.forEach { particle ->
-                        val dist = particle.distance * p
-                        val x = center.x + (cos(particle.angle) * dist).toFloat()
-                        val y = center.y + (sin(particle.angle) * dist).toFloat()
-                        drawCircle(
-                            color = particle.color.copy(alpha = alpha),
-                            radius = particle.radius * (1.3f - p * 0.5f),
-                            center = Offset(x, y)
-                        )
+                        particles.forEach { particle ->
+                            val dist = particle.distance * p
+                            val x = center.x + (cos(particle.angle) * dist).toFloat()
+                            val y = center.y + (sin(particle.angle) * dist).toFloat()
+                            drawCircle(
+                                color = particle.color.copy(alpha = alpha),
+                                radius = particle.radius * (1.3f - p * 0.5f),
+                                center = Offset(x, y)
+                            )
+                        }
                     }
                 }
 
-                // M3E Spring Pop Check Badge
+                // M3E Spring Pop Check Badge (SoftBurst)
+                val badgeShape = MaterialShapes.SoftBurst.toShape()
                 Box(
                     modifier = Modifier
                         .scale(scaleAnim.value)
                         .size(68.dp)
-                        .clip(CircleShape)
+                        .clip(badgeShape)
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Check,
-                        contentDescription = "Complete",
+                        contentDescription = stringResource(R.string.completion_cd_complete),
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(38.dp)
                     )
@@ -166,25 +169,26 @@ fun PlayfulCompletionCelebration(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = customTitle ?: "All Backed Up!",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                text = customTitle ?: stringResource(R.string.completion_default_title),
+                style = MaterialTheme.typography.headlineSmallEmphasized,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val countText = remember(completedCount, skippedCount) {
-                when {
-                    completedCount > 0 && skippedCount > 0 ->
-                        "$completedCount newly uploaded • $skippedCount already in Google Photos"
-                    completedCount > 0 && skippedCount == 0 ->
-                        "$completedCount items backed up to Google Photos"
-                    completedCount == 0 && skippedCount > 0 ->
-                        "All $skippedCount media items are already saved in Google Photos"
-                    else ->
-                        "Your photos and videos are safe in Google Photos"
-                }
+            val countText = when {
+                completedCount > 0 && skippedCount > 0 ->
+                    stringResource(R.string.completion_summary_both, completedCount, skippedCount)
+                completedCount == 1 && skippedCount == 0 ->
+                    stringResource(R.string.completion_summary_uploaded_one)
+                completedCount > 1 && skippedCount == 0 ->
+                    stringResource(R.string.completion_summary_uploaded, completedCount)
+                completedCount == 0 && skippedCount == 1 ->
+                    stringResource(R.string.completion_summary_skipped_one)
+                completedCount == 0 && skippedCount > 1 ->
+                    stringResource(R.string.completion_summary_skipped, skippedCount)
+                else ->
+                    stringResource(R.string.completion_summary_default)
             }
             Text(
                 text = countText,
@@ -238,33 +242,38 @@ fun PlayfulParticleBurstOverlay(
     onFinished: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val reducedMotion = rememberReducedMotion()
     val particleProgress = remember { Animatable(0f) }
+    val particleSpec = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reducedMotion) {
         try {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         } catch (_: Exception) {}
 
+        if (reducedMotion) {
+            onFinished()
+            return@LaunchedEffect
+        }
+
         particleProgress.animateTo(
             targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessVeryLow
-            )
+            animationSpec = particleSpec
         )
         onFinished()
     }
+
+    if (reducedMotion) return
 
     val particleColors = listOf(
         MaterialTheme.colorScheme.primary,
         MaterialTheme.colorScheme.secondary,
         MaterialTheme.colorScheme.tertiary,
-        Color(0xFFFFB74D),
-        Color(0xFF81C784),
-        Color(0xFFE040FB)
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer
     )
 
-    val particles = remember {
+    val particles = remember(particleColors) {
         List(24) { index ->
             val angle = (index * (360f / 24f)) * (Math.PI / 180.0)
             val distance = Random.nextFloat() * 120f + 80f

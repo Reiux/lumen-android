@@ -3,19 +3,24 @@ package com.reiux.lumen.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,12 +32,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -45,7 +51,6 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderCopy
@@ -58,16 +63,14 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,16 +84,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.reiux.lumen.R
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -102,13 +105,18 @@ import com.reiux.lumen.ui.components.ExpressiveButton
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveLoadingIndicator
 import com.reiux.lumen.ui.components.ExpressiveSwitch
+import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.GoogleSignInWebViewDialog
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.TabletopSplitLayout
+import com.reiux.lumen.ui.components.animatedGroupedCardShape
+import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.requiresAllFilesPermission
-import com.reiux.lumen.ui.theme.AvailablePresets
 import com.reiux.lumen.util.DeviceConditions
 import com.reiux.lumen.util.LumenLogger
 import com.reiux.lumen.util.OemIntentHelper
@@ -123,6 +131,7 @@ fun OnboardingScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 6 })
+    val pagerScrollSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
 
     val settings by viewModel.settings.collectAsState()
     val selectedAccount by viewModel.selectedAccount.collectAsState()
@@ -139,7 +148,10 @@ fun OnboardingScreen(
 
     BackHandler(enabled = pagerState.currentPage > 0) {
         coroutineScope.launch {
-            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+            pagerState.animateScrollToPage(
+                page = pagerState.currentPage - 1,
+                animationSpec = pagerScrollSpec
+            )
         }
     }
 
@@ -158,11 +170,31 @@ fun OnboardingScreen(
                 if (returningFromAllFilesPermission) {
                     returningFromAllFilesPermission = false
                     pendingEnableFolderEncoded?.let { raw ->
-                        val parts = raw.split('\u0000', limit = 2)
+                        val parts = raw.split('\u0000', limit = 3)
                         val path = parts[0]
                         val email = parts.getOrNull(1)?.ifEmpty { null }
+                        val displayName = parts.getOrNull(2)?.ifEmpty { null }
                         if (!requiresAllFilesPermission(context, path)) {
-                            viewModel.toggleFolder(path, email, true)
+                            val exists = viewModel.settings.value.folders.any {
+                                com.reiux.lumen.data.repository.SettingsRepository.matchesFolderPath(it.path, path) &&
+                                    (it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))
+                            }
+                            if (exists) {
+                                val existingEmail = viewModel.settings.value.folders.firstOrNull {
+                                    com.reiux.lumen.data.repository.SettingsRepository.matchesFolderPath(it.path, path) &&
+                                        (it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true))
+                                }?.accountEmail
+                                viewModel.toggleFolder(path, existingEmail, true)
+                            } else {
+                                viewModel.addFolder(
+                                    com.reiux.lumen.data.model.BackupFolder(
+                                        path = path,
+                                        displayName = displayName ?: java.io.File(path).name,
+                                        enabled = true,
+                                        accountEmail = email
+                                    )
+                                )
+                            }
                         } else {
                             Toast.makeText(context, R.string.toast_all_files_permission_denied, Toast.LENGTH_SHORT).show()
                         }
@@ -321,17 +353,33 @@ fun OnboardingScreen(
             settings.folders.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
         } else {
             settings.folders
-        }
-        scoped.distinctBy { com.reiux.lumen.data.repository.SettingsRepository.normalizeFolderPath(it.path) }
+        }.distinctBy { com.reiux.lumen.data.repository.SettingsRepository.normalizeFolderPath(it.path) }
+
+        val existingPaths = scoped.map {
+            com.reiux.lumen.data.repository.SettingsRepository.normalizeFolderPath(it.path)
+        }.toSet()
+        val missingStarters = com.reiux.lumen.data.repository.SettingsRepository.defaultStarterFolders()
+            .filterNot {
+                com.reiux.lumen.data.repository.SettingsRepository.normalizeFolderPath(it.path) in existingPaths
+            }
+            .map { it.copy(accountEmail = email) }
+
+        scoped + missingStarters
     }
 
     val handleOnboardingFolderToggle: (com.reiux.lumen.data.model.BackupFolder, Boolean) -> Unit = { folder, enabled ->
         val effectiveEmail = folder.accountEmail ?: selectedAccount?.email
+        val existingMatch = settings.folders.firstOrNull {
+            com.reiux.lumen.data.repository.SettingsRepository.matchesFolderPath(it.path, folder.path) &&
+                (it.accountEmail.isNullOrBlank() || it.accountEmail.equals(effectiveEmail, ignoreCase = true))
+        }
         if (enabled && requiresAllFilesPermission(context, folder.path)) {
-            pendingEnableFolderEncoded = "${folder.path}\u0000${effectiveEmail.orEmpty()}"
+            pendingEnableFolderEncoded = "${folder.path}\u0000${effectiveEmail.orEmpty()}\u0000${folder.displayName}"
             showAllFilesDialog = true
-        } else {
-            viewModel.toggleFolder(folder.path, effectiveEmail, enabled)
+        } else if (existingMatch != null) {
+            viewModel.toggleFolder(existingMatch.path, existingMatch.accountEmail, enabled)
+        } else if (enabled) {
+            viewModel.addFolder(folder.copy(enabled = true, accountEmail = effectiveEmail))
         }
     }
 
@@ -341,110 +389,451 @@ fun OnboardingScreen(
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
             permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            permissions.add(Manifest.permission.ACCESS_MEDIA_LOCATION)
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            permissions.add(Manifest.permission.ACCESS_MEDIA_LOCATION)
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                permissions.add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            }
         }
         permissionLauncher.launch(permissions.toTypedArray())
     }
-
-    val configuration = LocalConfiguration.current
-    val isTwoPane = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface
     ) {
-        if (isTwoPane) {
-            // Split Layout (Landscape / Tablet / Wide Screen)
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // Left Pane: Step Header, Back Button, Hero Illustration, and Pager Indicator
-                Column(
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val foldPosture = LocalFoldPosture.current
+            val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
+            val isTwoPane = maxWidth >= 700.dp
+            val isTallViewport = maxHeight >= 560.dp
+
+            if (isTabletop) {
+                // Tabletop Fold Mode: Header & illustration on angled top half, interactive cards & actions below the crease
+                TabletopSplitLayout(
                     modifier = Modifier
-                        .weight(0.42f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    topContent = {
+                        // Top angled half: Back button row + centered OnboardingStepLeftHeader
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxHeight()
+                                .widthIn(max = 720.dp)
+                                .fillMaxWidth()
                         ) {
-                            if (pagerState.currentPage > 0) {
-                                ExpressiveIconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                        }
-                                    },
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = stringResource(R.string.nav_back),
-                                        tint = MaterialTheme.colorScheme.onSurface
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (pagerState.currentPage > 0) {
+                                    ExpressiveIconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(
+                                                    page = pagerState.currentPage - 1,
+                                                    animationSpec = pagerScrollSpec
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .minimumInteractiveComponentSize()
+                                            .size(40.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                            contentDescription = stringResource(R.string.nav_back),
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.size(48.dp))
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                OnboardingStepLeftHeader(page = pagerState.currentPage)
+                            }
+                        }
+                    },
+                    bottomContent = {
+                        // Bottom flat touch deck: Interactive page cards + pager dots + action button
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxHeight()
+                                .widthIn(max = 720.dp)
+                                .fillMaxWidth()
+                        ) {
+                            HorizontalPager(
+                                state = pagerState,
+                                userScrollEnabled = false,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .clipToBounds()
+                            ) { page ->
+                                when (page) {
+                                    0 -> OnboardingWelcomePage(
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    1 -> OnboardingPermissionsPage(
+                                        hasMedia = hasMediaPermission,
+                                        hasNotifications = hasNotificationPermission,
+                                        hasBackground = hasBackgroundPermission,
+                                        onRequestPermissions = requestOnboardingPermissions,
+                                        onRequestBackground = {
+                                            DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                                        },
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    2 -> OnboardingAccountPage(
+                                        selectedAccount = selectedAccount,
+                                        isAddingAccount = isAddingAccount,
+                                        hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                                        onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                                        onOpenSignIn = { showSignInWebView = true },
+                                        onOpenManual = { showManualTokenDialog = true },
+                                        onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    3 -> OnboardingFoldersPage(
+                                        folders = onboardingFolders,
+                                        onToggleFolder = handleOnboardingFolderToggle,
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    4 -> OnboardingPreferencesPage(
+                                        wifiOnly = settings.wifiOnly,
+                                        onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                                        storageSaver = settings.storageSaverQuality,
+                                        onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                                        selectedPreset = settings.colorPreset,
+                                        onUpdatePreset = { viewModel.updateColorPreset(it) },
+                                        unlockedPrismTheme = settings.unlockedPrismTheme,
+                                        unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    5 -> OnboardingCompletionPage(
+                                        isTwoPane = true,
+                                        centerVertically = false
                                     )
                                 }
-                            } else {
-                                Spacer(modifier = Modifier.size(40.dp))
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Start,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    for (pageIndex in 0 until 6) {
+                                        val isSelected = pagerState.currentPage == pageIndex
+                                        val width by animateDpAsState(
+                                            targetValue = if (isSelected) 28.dp else 8.dp,
+                                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                                            label = "indicatorWidthTabletop"
+                                        )
+                                        val color by animateColorAsState(
+                                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                                            label = "indicatorColorTabletop"
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(end = 6.dp)
+                                                .height(8.dp)
+                                                .width(width)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                        )
+                                    }
+                                }
+
+                                Box(modifier = Modifier.weight(1f)) {
+                                    OnboardingActionButton(
+                                        currentPage = pagerState.currentPage,
+                                        hasMediaPermission = hasMediaPermission,
+                                        selectedAccount = selectedAccount,
+                                        onSetAccountLater = {
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(
+                                                    page = 3,
+                                                    animationSpec = pagerScrollSpec
+                                                )
+                                            }
+                                        },
+                                        onNext = {
+                                            if (pagerState.currentPage < 5) {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        page = pagerState.currentPage + 1,
+                                                        animationSpec = pagerScrollSpec
+                                                    )
+                                                }
+                                            } else {
+                                                onFinish()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                )
+            } else if (isTwoPane) {
+                // Split Layout (Landscape / Tablet / Unfolded Foldable)
+                // Shared top bar + bottom bar ensure Left and Right panes share the exact same vertical centerline.
+                val paneGap = if (isTallViewport) 32.dp else 24.dp
+                val leftPaneWeight = if (isTallViewport) 1f else 0.42f
+                val rightPaneWeight = if (isTallViewport) 1f else 0.58f
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = 1080.dp)
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    // Shared Top Row (Back button)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (pagerState.currentPage > 0) {
+                            ExpressiveIconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(
+                                            page = pagerState.currentPage - 1,
+                                            animationSpec = pagerScrollSpec
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = stringResource(R.string.nav_back),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(48.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Shared Middle 2-Pane Row: exact same top & bottom bounds for both halves
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(paneGap)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(leftPaneWeight)
+                                .fillMaxHeight(),
+                            contentAlignment = if (isTallViewport) Alignment.CenterStart else Alignment.TopStart
+                        ) {
+                            OnboardingStepLeftHeader(page = pagerState.currentPage)
+                        }
+
+                        HorizontalPager(
+                            state = pagerState,
+                            userScrollEnabled = false,
+                            modifier = Modifier
+                                .weight(rightPaneWeight)
+                                .fillMaxHeight()
+                                .clipToBounds()
+                        ) { page ->
+                            when (page) {
+                                0 -> OnboardingWelcomePage(
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                1 -> OnboardingPermissionsPage(
+                                    hasMedia = hasMediaPermission,
+                                    hasNotifications = hasNotificationPermission,
+                                    hasBackground = hasBackgroundPermission,
+                                    onRequestPermissions = requestOnboardingPermissions,
+                                    onRequestBackground = {
+                                        DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                                    },
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                2 -> OnboardingAccountPage(
+                                    selectedAccount = selectedAccount,
+                                    isAddingAccount = isAddingAccount,
+                                    hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                                    onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                                    onOpenSignIn = { showSignInWebView = true },
+                                    onOpenManual = { showManualTokenDialog = true },
+                                    onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                3 -> OnboardingFoldersPage(
+                                    folders = onboardingFolders,
+                                    onToggleFolder = handleOnboardingFolderToggle,
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                4 -> OnboardingPreferencesPage(
+                                    wifiOnly = settings.wifiOnly,
+                                    onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                                    storageSaver = settings.storageSaverQuality,
+                                    onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                                    selectedPreset = settings.colorPreset,
+                                    onUpdatePreset = { viewModel.updateColorPreset(it) },
+                                    unlockedPrismTheme = settings.unlockedPrismTheme,
+                                    unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                5 -> OnboardingCompletionPage(
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Shared Bottom Row: Pager Indicator (left) aligned vertically with CTA Button (right)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(paneGap),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(leftPaneWeight),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            for (pageIndex in 0 until 6) {
+                                val isSelected = pagerState.currentPage == pageIndex
+                                val width by animateDpAsState(
+                                    targetValue = if (isSelected) 28.dp else 8.dp,
+                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                                    label = "indicatorWidth"
+                                )
+                                val color by animateColorAsState(
+                                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                                    label = "indicatorColor"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .height(8.dp)
+                                        .width(width)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        OnboardingStepLeftHeader(page = pagerState.currentPage)
-                    }
-
-                    // M3E Expressive Spring Pager Indicator
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.Start,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        for (pageIndex in 0 until 6) {
-                            val isSelected = pagerState.currentPage == pageIndex
-                            val width by animateDpAsState(
-                                targetValue = if (isSelected) 28.dp else 8.dp,
-                                animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
-                                label = "indicatorWidth"
-                            )
-                            val color by animateColorAsState(
-                                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f),
-                                label = "indicatorColor"
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .padding(end = 6.dp)
-                                    .height(8.dp)
-                                    .width(width)
-                                    .clip(CircleShape)
-                                    .background(color)
+                        Box(modifier = Modifier.weight(rightPaneWeight)) {
+                            OnboardingActionButton(
+                                currentPage = pagerState.currentPage,
+                                hasMediaPermission = hasMediaPermission,
+                                selectedAccount = selectedAccount,
+                                onSetAccountLater = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(
+                                            page = 3,
+                                            animationSpec = pagerScrollSpec
+                                        )
+                                    }
+                                },
+                                onNext = {
+                                    if (pagerState.currentPage < 5) {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(
+                                                page = pagerState.currentPage + 1,
+                                                animationSpec = pagerScrollSpec
+                                            )
+                                        }
+                                    } else {
+                                        onFinish()
+                                    }
+                                }
                             )
                         }
                     }
                 }
-
-                // Right Pane: Content Page & Action Button
+            } else {
+                // Single-Column Layout (Portrait / Compact & Unfolded Foldables)
                 Column(
                     modifier = Modifier
-                        .weight(0.58f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.SpaceBetween
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = 600.dp)
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        if (pagerState.currentPage > 0) {
+                            ExpressiveIconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(
+                                            page = pagerState.currentPage - 1,
+                                            animationSpec = pagerScrollSpec
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = stringResource(R.string.nav_back),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(44.dp))
+                        }
+                    }
+
                     HorizontalPager(
                         state = pagerState,
                         userScrollEnabled = false,
@@ -453,7 +842,7 @@ fun OnboardingScreen(
                             .fillMaxWidth()
                     ) { page ->
                         when (page) {
-                            0 -> OnboardingWelcomePage(isTwoPane = true)
+                            0 -> OnboardingWelcomePage(isTwoPane = false)
                             1 -> OnboardingPermissionsPage(
                                 hasMedia = hasMediaPermission,
                                 hasNotifications = hasNotificationPermission,
@@ -462,7 +851,7 @@ fun OnboardingScreen(
                                 onRequestBackground = {
                                     DeviceConditions.requestIgnoreBatteryOptimizations(context)
                                 },
-                                isTwoPane = true
+                                isTwoPane = false
                             )
                             2 -> OnboardingAccountPage(
                                 selectedAccount = selectedAccount,
@@ -472,12 +861,12 @@ fun OnboardingScreen(
                                 onOpenSignIn = { showSignInWebView = true },
                                 onOpenManual = { showManualTokenDialog = true },
                                 onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
-                                isTwoPane = true
+                                isTwoPane = false
                             )
                             3 -> OnboardingFoldersPage(
                                 folders = onboardingFolders,
                                 onToggleFolder = handleOnboardingFolderToggle,
-                                isTwoPane = true
+                                isTwoPane = false
                             )
                             4 -> OnboardingPreferencesPage(
                                 wifiOnly = settings.wifiOnly,
@@ -488,30 +877,65 @@ fun OnboardingScreen(
                                 onUpdatePreset = { viewModel.updateColorPreset(it) },
                                 unlockedPrismTheme = settings.unlockedPrismTheme,
                                 unlockedMatrixTheme = settings.unlockedMatrixTheme,
-                                isTwoPane = true
+                                isTwoPane = false
                             )
-                            5 -> OnboardingCompletionPage(isTwoPane = true)
+                            5 -> OnboardingCompletionPage(isTwoPane = false)
                         }
                     }
 
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 12.dp)
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Row(
+                            modifier = Modifier.padding(bottom = 20.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            for (pageIndex in 0 until 6) {
+                                val isSelected = pagerState.currentPage == pageIndex
+                                val width by animateDpAsState(
+                                    targetValue = if (isSelected) 28.dp else 8.dp,
+                                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                                    label = "indicatorWidth"
+                                )
+                                val color by animateColorAsState(
+                                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                                    label = "indicatorColor"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp)
+                                        .height(8.dp)
+                                        .width(width)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                )
+                            }
+                        }
+
                         OnboardingActionButton(
                             currentPage = pagerState.currentPage,
                             hasMediaPermission = hasMediaPermission,
                             selectedAccount = selectedAccount,
                             onSetAccountLater = {
                                 coroutineScope.launch {
-                                    pagerState.animateScrollToPage(3)
+                                    pagerState.animateScrollToPage(
+                                        page = 3,
+                                        animationSpec = pagerScrollSpec
+                                    )
                                 }
                             },
                             onNext = {
                                 if (pagerState.currentPage < 5) {
                                     coroutineScope.launch {
-                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                        pagerState.animateScrollToPage(
+                                            page = pagerState.currentPage + 1,
+                                            animationSpec = pagerScrollSpec
+                                        )
                                     }
                                 } else {
                                     onFinish()
@@ -519,145 +943,6 @@ fun OnboardingScreen(
                             }
                         )
                     }
-                }
-            }
-        } else {
-            // Single-Column Layout (Portrait)
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    if (pagerState.currentPage > 0) {
-                        ExpressiveIconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                }
-                            },
-                            modifier = Modifier.size(44.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = stringResource(R.string.nav_back),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.size(44.dp))
-                    }
-                }
-
-                HorizontalPager(
-                    state = pagerState,
-                    userScrollEnabled = false,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                ) { page ->
-                    when (page) {
-                        0 -> OnboardingWelcomePage(isTwoPane = false)
-                        1 -> OnboardingPermissionsPage(
-                            hasMedia = hasMediaPermission,
-                            hasNotifications = hasNotificationPermission,
-                            hasBackground = hasBackgroundPermission,
-                            onRequestPermissions = requestOnboardingPermissions,
-                            onRequestBackground = {
-                                DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                            },
-                            isTwoPane = false
-                        )
-                        2 -> OnboardingAccountPage(
-                            selectedAccount = selectedAccount,
-                            isAddingAccount = isAddingAccount,
-                            hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
-                            onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
-                            onOpenSignIn = { showSignInWebView = true },
-                            onOpenManual = { showManualTokenDialog = true },
-                            onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
-                            isTwoPane = false
-                        )
-                        3 -> OnboardingFoldersPage(
-                            folders = onboardingFolders,
-                            onToggleFolder = handleOnboardingFolderToggle,
-                            isTwoPane = false
-                        )
-                        4 -> OnboardingPreferencesPage(
-                            wifiOnly = settings.wifiOnly,
-                            onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
-                            storageSaver = settings.storageSaverQuality,
-                            onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
-                            selectedPreset = settings.colorPreset,
-                            onUpdatePreset = { viewModel.updateColorPreset(it) },
-                            unlockedPrismTheme = settings.unlockedPrismTheme,
-                            unlockedMatrixTheme = settings.unlockedMatrixTheme,
-                            isTwoPane = false
-                        )
-                        5 -> OnboardingCompletionPage(isTwoPane = false)
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        modifier = Modifier.padding(bottom = 20.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        for (pageIndex in 0 until 6) {
-                            val isSelected = pagerState.currentPage == pageIndex
-                            val width by animateDpAsState(
-                                targetValue = if (isSelected) 28.dp else 8.dp,
-                                animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
-                                label = "indicatorWidth"
-                            )
-                            val color by animateColorAsState(
-                                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                animationSpec = spring(dampingRatio = 1.0f, stiffness = 1600f),
-                                label = "indicatorColor"
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 4.dp)
-                                    .height(8.dp)
-                                    .width(width)
-                                    .clip(CircleShape)
-                                    .background(color)
-                            )
-                        }
-                    }
-
-                    OnboardingActionButton(
-                        currentPage = pagerState.currentPage,
-                        hasMediaPermission = hasMediaPermission,
-                        selectedAccount = selectedAccount,
-                        onSetAccountLater = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(3)
-                            }
-                        },
-                        onNext = {
-                            if (pagerState.currentPage < 5) {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                }
-                            } else {
-                                onFinish()
-                            }
-                        }
-                    )
                 }
             }
         }
@@ -672,252 +957,292 @@ private fun OnboardingActionButton(
     onSetAccountLater: () -> Unit,
     onNext: () -> Unit
 ) {
-    when {
-        currentPage == 1 && !hasMediaPermission -> {
-            // Button hidden until permissions granted
-        }
-        currentPage == 2 && selectedAccount == null -> {
-            ExpressiveTonalButton(
-                onClick = onSetAccountLater,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.onboarding_btn_set_account_later),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+    val buttonState = when {
+        currentPage == 1 && !hasMediaPermission -> "hidden"
+        currentPage == 2 && selectedAccount == null -> "later"
+        currentPage == 0 -> "start"
+        currentPage == 5 -> "finish"
+        else -> "continue"
+    }
+    val fastEffects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val fastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    AnimatedContent(
+        targetState = buttonState,
+        transitionSpec = {
+            (fadeIn(animationSpec = fastEffects) +
+                scaleIn(initialScale = 0.96f, animationSpec = fastSpatial)) togetherWith
+                fadeOut(animationSpec = fastEffects)
+        },
+        label = "onboardingActionButton"
+    ) { state ->
+        when (state) {
+            "hidden" -> {
+                Box(modifier = Modifier.fillMaxWidth())
             }
-        }
-        else -> {
-            ExpressiveButton(
-                onClick = onNext,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) {
-                Text(
-                    text = when (currentPage) {
-                        0 -> stringResource(R.string.onboarding_btn_get_started)
-                        5 -> stringResource(R.string.onboarding_btn_finish)
-                        else -> stringResource(R.string.btn_continue)
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+            "later" -> {
+                ExpressiveTonalButton(
+                    onClick = onSetAccountLater,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.onboarding_btn_set_account_later),
+                        style = MaterialTheme.typography.titleMediumEmphasized
+                    )
+                }
+            }
+            else -> {
+                ExpressiveButton(
+                    onClick = onNext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(
+                        text = when (state) {
+                            "start" -> stringResource(R.string.onboarding_btn_get_started)
+                            "finish" -> stringResource(R.string.onboarding_btn_finish)
+                            else -> stringResource(R.string.btn_continue)
+                        },
+                        style = MaterialTheme.typography.titleMediumEmphasized
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
+private fun AnimatedWelcomeLumenIcon(size: Dp) {
+    val scale = remember { Animatable(0.75f) }
+    val rotation = remember { Animatable(-24f) }
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    LaunchedEffect(Unit) {
+        launch { scale.animateTo(1f, animationSpec = spatialSpec) }
+        launch { rotation.animateTo(0f, animationSpec = spatialSpec) }
+    }
+    com.reiux.lumen.ui.components.DynamicLumenIcon(
+        size = size,
+        rotationAngle = rotation.value,
+        scaleFactor = scale.value
+    )
+}
+
+@Composable
 private fun OnboardingStepLeftHeader(page: Int) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(end = 8.dp)
-    ) {
-        when (page) {
-            0 -> {
-                com.reiux.lumen.ui.components.DynamicLumenIcon(size = 68.dp)
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_welcome_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_welcome_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.Top
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            (fadeIn(animationSpec = effectsSpec) +
+                scaleIn(initialScale = 0.94f, animationSpec = spatialSpec)) togetherWith
+                fadeOut(animationSpec = effectsSpec)
+        },
+        label = "onboardingLeftHeader"
+    ) { targetPage ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(end = 8.dp)
+        ) {
+            when (targetPage) {
+                0 -> {
+                    AnimatedWelcomeLumenIcon(size = 68.dp)
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_welcome_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_welcome_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Surface(
+                        shape = groupedCardShape(GroupPosition.Single),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Security,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.onboarding_privacy_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(R.string.onboarding_privacy_desc_short),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 16.sp
-                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.onboarding_privacy_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stringResource(R.string.onboarding_privacy_desc_short),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
-            }
-            1 -> {
-                Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Security,
-                            contentDescription = null,
-                            modifier = Modifier.size(38.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                1 -> {
+                    Surface(
+                        modifier = Modifier.size(76.dp),
+                        shape = MaterialShapes.SoftBurst.toShape(),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Security,
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_permissions_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_permissions_setup_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_permissions_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_permissions_setup_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            2 -> {
-                Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(38.dp),
-                            tint = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                2 -> {
+                    Surface(
+                        modifier = Modifier.size(76.dp),
+                        shape = MaterialShapes.Cookie9Sided.toShape(),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_account_google_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_account_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_account_google_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_account_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            3 -> {
-                Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Folder,
-                            contentDescription = null,
-                            modifier = Modifier.size(38.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                3 -> {
+                    Surface(
+                        modifier = Modifier.size(76.dp),
+                        shape = MaterialShapes.Clover8Leaf.toShape(),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.folders_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.folders_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.folders_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.folders_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            4 -> {
-                Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(38.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                4 -> {
+                    Surface(
+                        modifier = Modifier.size(76.dp),
+                        shape = MaterialShapes.Flower.toShape(),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_prefs_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_prefs_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_prefs_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_prefs_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            5 -> {
-                Surface(
-                    modifier = Modifier.size(80.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(44.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                5 -> {
+                    Surface(
+                        modifier = Modifier.size(80.dp),
+                        shape = MaterialShapes.Sunny.toShape(),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(44.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_done_title),
+                        style = MaterialTheme.typography.headlineMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_done_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_done_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.onboarding_done_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -927,25 +1252,28 @@ private fun OnboardingStepLeftHeader(page: Int) {
 // Page 0: Welcome to Lumen
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
+private fun OnboardingWelcomePage(
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            com.reiux.lumen.ui.components.DynamicLumenIcon(size = 84.dp)
+            AnimatedWelcomeLumenIcon(size = 84.dp)
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = stringResource(R.string.onboarding_welcome_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -961,7 +1289,7 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(20.dp))
 
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = groupedCardShape(GroupPosition.Single),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -987,8 +1315,7 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
                         Text(
                             text = stringResource(R.string.onboarding_privacy_desc),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -997,27 +1324,29 @@ private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        FeatureHighlightCard(
-            icon = Icons.Rounded.PhotoLibrary,
-            title = stringResource(R.string.onboarding_feat_unlimited_title),
-            description = stringResource(R.string.onboarding_feat_unlimited_desc)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FeatureHighlightCard(
-            icon = Icons.Rounded.Security,
-            title = stringResource(R.string.onboarding_feat_direct_title),
-            description = stringResource(R.string.onboarding_feat_direct_desc)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FeatureHighlightCard(
-            icon = Icons.Rounded.Sync,
-            title = stringResource(R.string.onboarding_feat_background_title),
-            description = stringResource(R.string.onboarding_feat_background_desc)
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            FeatureHighlightCard(
+                icon = Icons.Rounded.PhotoLibrary,
+                title = stringResource(R.string.onboarding_feat_unlimited_title),
+                description = stringResource(R.string.onboarding_feat_unlimited_desc),
+                position = GroupPosition.Top
+            )
+            FeatureHighlightCard(
+                icon = Icons.Rounded.Security,
+                title = stringResource(R.string.onboarding_feat_direct_title),
+                description = stringResource(R.string.onboarding_feat_direct_desc),
+                position = GroupPosition.Middle
+            )
+            FeatureHighlightCard(
+                icon = Icons.Rounded.Sync,
+                title = stringResource(R.string.onboarding_feat_background_title),
+                description = stringResource(R.string.onboarding_feat_background_desc),
+                position = GroupPosition.Bottom
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
     }
@@ -1033,7 +1362,8 @@ private fun OnboardingPermissionsPage(
     hasBackground: Boolean,
     onRequestPermissions: () -> Unit,
     onRequestBackground: () -> Unit,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     val context = LocalContext.current
     Column(
@@ -1041,6 +1371,7 @@ private fun OnboardingPermissionsPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1048,7 +1379,7 @@ private fun OnboardingPermissionsPage(
 
             Surface(
                 modifier = Modifier.size(88.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialShapes.SoftBurst.toShape(),
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1065,8 +1396,7 @@ private fun OnboardingPermissionsPage(
 
             Text(
                 text = stringResource(R.string.onboarding_permissions_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -1082,33 +1412,35 @@ private fun OnboardingPermissionsPage(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        PermissionItemCard(
-            icon = Icons.Rounded.PhotoLibrary,
-            title = stringResource(R.string.onboarding_perm_media_title),
-            description = stringResource(R.string.device_folders_permission_desc),
-            isGranted = hasMedia,
-            onRequest = onRequestPermissions
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        PermissionItemCard(
-            icon = Icons.Rounded.Notifications,
-            title = stringResource(R.string.onboarding_perm_notifs_title),
-            description = stringResource(R.string.pref_upload_notifs_desc),
-            isGranted = hasNotifications,
-            onRequest = onRequestPermissions
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        PermissionItemCard(
-            icon = Icons.Rounded.BatteryChargingFull,
-            title = stringResource(R.string.pref_background_activity_title),
-            description = stringResource(R.string.pref_background_activity_desc),
-            isGranted = hasBackground,
-            onRequest = onRequestBackground
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            PermissionItemCard(
+                icon = Icons.Rounded.PhotoLibrary,
+                title = stringResource(R.string.onboarding_perm_media_title),
+                description = stringResource(R.string.device_folders_permission_desc),
+                isGranted = hasMedia,
+                onRequest = onRequestPermissions,
+                position = GroupPosition.Top
+            )
+            PermissionItemCard(
+                icon = Icons.Rounded.Notifications,
+                title = stringResource(R.string.onboarding_perm_notifs_title),
+                description = stringResource(R.string.pref_upload_notifs_desc),
+                isGranted = hasNotifications,
+                onRequest = onRequestPermissions,
+                position = GroupPosition.Middle
+            )
+            PermissionItemCard(
+                icon = Icons.Rounded.BatteryChargingFull,
+                title = stringResource(R.string.pref_background_activity_title),
+                description = stringResource(R.string.pref_background_activity_desc),
+                isGranted = hasBackground,
+                onRequest = onRequestBackground,
+                position = GroupPosition.Bottom
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1118,7 +1450,7 @@ private fun OnboardingPermissionsPage(
         var showOemDialog by rememberSaveable { mutableStateOf(false) }
 
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = groupedCardShape(GroupPosition.Single),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -1171,12 +1503,15 @@ private fun OnboardingPermissionsPage(
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
-                TextButton(
+                ExpressiveTextButton(
                     onClick = { showOemDialog = true },
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text(stringResource(R.string.onboarding_btn_view_brand_guide), fontSize = 12.sp)
+                    Text(
+                        text = stringResource(R.string.onboarding_btn_view_brand_guide),
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }
@@ -1201,7 +1536,8 @@ private fun OnboardingAccountPage(
     onOpenSignIn: () -> Unit,
     onOpenManual: () -> Unit,
     onOpenSwitchOrAddAccount: () -> Unit = onOpenSignIn,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     var localAcknowledged by rememberSaveable(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
@@ -1210,6 +1546,7 @@ private fun OnboardingAccountPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1217,7 +1554,7 @@ private fun OnboardingAccountPage(
 
             Surface(
                 modifier = Modifier.size(88.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialShapes.Cookie9Sided.toShape(),
                 color = MaterialTheme.colorScheme.tertiaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1234,8 +1571,7 @@ private fun OnboardingAccountPage(
 
             Text(
                 text = stringResource(R.string.onboarding_account_google_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -1264,7 +1600,7 @@ private fun OnboardingAccountPage(
         if (selectedAccount != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = groupedCardShape(GroupPosition.Single),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Row(
@@ -1320,7 +1656,7 @@ private fun OnboardingAccountPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            TextButton(onClick = onOpenSwitchOrAddAccount) {
+            ExpressiveTextButton(onClick = onOpenSwitchOrAddAccount) {
                 Text(stringResource(R.string.onboarding_switch_or_add_account))
             }
         } else {
@@ -1341,7 +1677,7 @@ private fun OnboardingAccountPage(
                     Icon(Icons.Rounded.AccountCircle, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                 }
-                Text(stringResource(R.string.btn_sign_in_google), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.btn_sign_in_google), style = MaterialTheme.typography.titleMediumEmphasized)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1368,13 +1704,16 @@ private fun OnboardingAccountPage(
 private fun OnboardingFoldersPage(
     folders: List<com.reiux.lumen.data.model.BackupFolder>,
     onToggleFolder: (com.reiux.lumen.data.model.BackupFolder, Boolean) -> Unit,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
+    val haptic = LocalHapticFeedback.current
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1382,7 +1721,7 @@ private fun OnboardingFoldersPage(
 
             Surface(
                 modifier = Modifier.size(88.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialShapes.Clover8Leaf.toShape(),
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1399,8 +1738,7 @@ private fun OnboardingFoldersPage(
 
             Text(
                 text = stringResource(R.string.folders_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -1416,19 +1754,30 @@ private fun OnboardingFoldersPage(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        Surface(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                folders.forEach { folder ->
+            folders.forEachIndexed { index, folder ->
+                val position = groupPositionOf(index, folders.size)
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by rememberExpressivePressed(interactionSource)
+                val shape = animatedGroupedCardShape(position = position, pressed = isPressed)
+                val toggleFolderWithHaptic: (Boolean) -> Unit = { next ->
+                    try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                    onToggleFolder(folder, next)
+                }
+                Surface(
+                    onClick = { toggleFolderWithHaptic(!folder.enabled) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    interactionSource = interactionSource
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { onToggleFolder(folder, !folder.enabled) }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -1467,7 +1816,7 @@ private fun OnboardingFoldersPage(
 
                         ExpressiveSwitch(
                             checked = folder.enabled,
-                            onCheckedChange = { onToggleFolder(folder, it) }
+                            onCheckedChange = toggleFolderWithHaptic
                         )
                     }
                 }
@@ -1500,7 +1849,8 @@ private fun OnboardingPreferencesPage(
     onUpdatePreset: (String) -> Unit,
     unlockedPrismTheme: Boolean = false,
     unlockedMatrixTheme: Boolean = false,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     val presetsToDisplay = remember(unlockedPrismTheme, unlockedMatrixTheme) {
         com.reiux.lumen.ui.theme.getAvailablePresets(unlockedPrismTheme, unlockedMatrixTheme)
@@ -1510,6 +1860,7 @@ private fun OnboardingPreferencesPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1517,7 +1868,7 @@ private fun OnboardingPreferencesPage(
 
             Surface(
                 modifier = Modifier.size(88.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialShapes.Flower.toShape(),
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1534,8 +1885,7 @@ private fun OnboardingPreferencesPage(
 
             Text(
                 text = stringResource(R.string.onboarding_prefs_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -1552,20 +1902,27 @@ private fun OnboardingPreferencesPage(
         }
 
         val onboardingHaptic = LocalHapticFeedback.current
-        Surface(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val toggleWifi: (Boolean) -> Unit = { next ->
-                    try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
-                    onUpdateWifiOnly(next)
-                }
+            val wifiInteractionSource = remember { MutableInteractionSource() }
+            val isWifiPressed by rememberExpressivePressed(wifiInteractionSource)
+            val wifiShape = animatedGroupedCardShape(position = GroupPosition.Top, pressed = isWifiPressed)
+            val toggleWifi: (Boolean) -> Unit = { next ->
+                try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                onUpdateWifiOnly(next)
+            }
+            Surface(
+                onClick = { toggleWifi(!wifiOnly) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = wifiShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                interactionSource = wifiInteractionSource
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { toggleWifi(!wifiOnly) }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1594,15 +1951,25 @@ private fun OnboardingPreferencesPage(
                         onCheckedChange = toggleWifi
                     )
                 }
+            }
 
-                val toggleStorageSaver: (Boolean) -> Unit = { next ->
-                    try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
-                    onUpdateStorageSaver(next)
-                }
+            val storageInteractionSource = remember { MutableInteractionSource() }
+            val isStoragePressed by rememberExpressivePressed(storageInteractionSource)
+            val storageShape = animatedGroupedCardShape(position = GroupPosition.Bottom, pressed = isStoragePressed)
+            val toggleStorageSaver: (Boolean) -> Unit = { next ->
+                try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
+                onUpdateStorageSaver(next)
+            }
+            Surface(
+                onClick = { toggleStorageSaver(!storageSaver) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = storageShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                interactionSource = storageInteractionSource
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { toggleStorageSaver(!storageSaver) }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1639,7 +2006,7 @@ private fun OnboardingPreferencesPage(
         // Theme selection
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = groupedCardShape(GroupPosition.Single),
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -1681,12 +2048,16 @@ private fun OnboardingPreferencesPage(
 // Page 5: All Set / Ready to Go
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
+private fun OnboardingCompletionPage(
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1694,7 +2065,7 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
 
             Surface(
                 modifier = Modifier.size(96.dp),
-                shape = RoundedCornerShape(32.dp),
+                shape = MaterialShapes.Sunny.toShape(),
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1711,8 +2082,7 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
 
             Text(
                 text = stringResource(R.string.onboarding_done_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMediumEmphasized,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -1728,27 +2098,29 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
             Spacer(modifier = Modifier.height(28.dp))
         }
 
-        FeatureHighlightCard(
-            icon = Icons.Rounded.PhotoLibrary,
-            title = stringResource(R.string.onboarding_done_feat_quality_title),
-            description = stringResource(R.string.onboarding_done_feat_quality_desc)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FeatureHighlightCard(
-            icon = Icons.Rounded.FolderCopy,
-            title = stringResource(R.string.onboarding_done_feat_auto_title),
-            description = stringResource(R.string.onboarding_done_feat_auto_desc)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FeatureHighlightCard(
-            icon = Icons.Rounded.Security,
-            title = stringResource(R.string.onboarding_done_feat_direct_title),
-            description = stringResource(R.string.onboarding_done_feat_direct_desc)
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            FeatureHighlightCard(
+                icon = Icons.Rounded.PhotoLibrary,
+                title = stringResource(R.string.onboarding_done_feat_quality_title),
+                description = stringResource(R.string.onboarding_done_feat_quality_desc),
+                position = GroupPosition.Top
+            )
+            FeatureHighlightCard(
+                icon = Icons.Rounded.FolderCopy,
+                title = stringResource(R.string.onboarding_done_feat_auto_title),
+                description = stringResource(R.string.onboarding_done_feat_auto_desc),
+                position = GroupPosition.Middle
+            )
+            FeatureHighlightCard(
+                icon = Icons.Rounded.Security,
+                title = stringResource(R.string.onboarding_done_feat_direct_title),
+                description = stringResource(R.string.onboarding_done_feat_direct_desc),
+                position = GroupPosition.Bottom
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -1761,11 +2133,12 @@ private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
 private fun FeatureHighlightCard(
     icon: ImageVector,
     title: String,
-    description: String
+    description: String,
+    position: GroupPosition = GroupPosition.Single
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = groupedCardShape(position),
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(
@@ -1800,8 +2173,7 @@ private fun FeatureHighlightCard(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 18.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1814,11 +2186,12 @@ private fun PermissionItemCard(
     title: String,
     description: String,
     isGranted: Boolean,
-    onRequest: () -> Unit
+    onRequest: () -> Unit,
+    position: GroupPosition = GroupPosition.Single
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = groupedCardShape(position),
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(
@@ -1888,7 +2261,10 @@ private fun PermissionItemCard(
                     onClick = onRequest,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text(stringResource(R.string.btn_allow), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.btn_allow),
+                        style = MaterialTheme.typography.labelLargeEmphasized
+                    )
                 }
             }
         }

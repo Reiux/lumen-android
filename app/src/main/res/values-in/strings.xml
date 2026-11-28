@@ -64,8 +64,8 @@
     <string name="seasonal_greeting_christmas">Selamat Hari Natal dari Lumen!</string>
     <string name="seasonal_greeting_new_year">Selamat Tahun Baru dari Lumen!</string>
     <string name="secure_storage_unavailable_warning">Penyimpanan aman tidak tersedia di perangkat ini. Anda harus masuk kembali setiap kali membuka Lumen.</string>
-    <string name="pick_files_button">Pilih dari File</string>
-    <string name="pick_photos_button">Pilih Foto &amp; Video</string>
+    <string name="pick_files_button">Pilih File</string>
+    <string name="pick_photos_button">Pilih Media</string>
     <!-- Navigation Tabs -->
     <string name="nav_backup">Cadangan</string>
     <string name="nav_folders">Folder</string>
@@ -135,17 +135,17 @@
     <string name="settings_section_appearance">Tampilan &amp; Tema</string>
     <string name="settings_section_about">Tentang &amp; Pembaruan</string>
     <string name="pref_storage_saver_title">Kualitas Penghemat Penyimpanan</string>
-    <string name="pref_storage_saver_desc">Kompresi foto untuk menghemat ruang penyimpanan dengan tetap mempertahankan kualitas visual yang baik.</string>
+    <string name="pref_storage_saver_desc">Kompresi foto untuk menghemat ruang penyimpanan dengan tetap mempertahankan kualitas visual yang baik</string>
     <string name="pref_wifi_only_title">Cadangkan hanya melalui Wi-Fi</string>
-    <string name="pref_wifi_only_desc">Hindari penggunaan kuota data seluler untuk mengunggah.</string>
+    <string name="pref_wifi_only_desc">Hindari penggunaan kuota data seluler untuk mengunggah</string>
     <string name="pref_charging_only_title">Cadangkan hanya saat mengisi daya</string>
-    <string name="pref_charging_only_desc">Hemat baterai dengan mencadangkan hanya saat terhubung ke pengisi daya.</string>
+    <string name="pref_charging_only_desc">Hemat baterai dengan mencadangkan hanya saat terhubung ke pengisi daya</string>
     <string name="pref_battery_opt_title">Optimalisasi Baterai</string>
     <string name="pref_battery_opt_exempt">Dikecualikan (Disarankan)</string>
-    <string name="pref_battery_opt_desc">Izinkan Lumen menjalankan pencadangan di latar belakang tanpa dimatikan oleh sistem Android.</string>
+    <string name="pref_battery_opt_desc">Izinkan Lumen menjalankan pencadangan di latar belakang tanpa dimatikan oleh sistem Android</string>
     <string name="pref_theme_title">Tema Warna</string>
     <string name="pref_blur_effects_title">Efek Blur &amp; Transparansi</string>
-    <string name="pref_blur_effects_desc">Aktifkan efek blur latar belakang pada perangkat yang mendukung.</string>
+    <string name="pref_blur_effects_desc">Aktifkan efek blur latar belakang pada perangkat yang mendukung</string>
     <string name="pref_version_title">Versi</string>
     <string name="pref_licenses_title">Lisensi Sumber Terbuka</string>
     <string name="pref_diagnostics_title">Diagnostik Pengembang</string>
@@ -218,7 +218,7 @@
     <string name="pref_auto_backup_title">Cadangkan foto dan video baru</string>
     <string name="pref_auto_backup_desc">Cadangkan file baru secara otomatis di folder yang aktif</string>
     <string name="pref_upload_threads_title">Thread Pengunggahan Paralel</string>
-    <string name="pref_upload_threads_desc">Unggah beberapa foto sekaligus.</string>
+    <string name="pref_upload_threads_desc">Unggah beberapa foto sekaligus</string>
     <string name="pref_oem_guide_title">Penyiapan Latar Belakang Produsen</string>
     <string name="pref_oem_guide_desc">Panduan untuk MIUI, HyperOS, One UI, dan ColorOS</string>
     <string name="dialog_delete_after_backup_title">Hapus foto asli dari perangkat?</string>
@@ -399,6 +399,8 @@
     <string name="update_dialog_default_notes">Perbaikan bug dan peningkatan performa.</string>
     <string name="update_downloading_progress">Mengunduh pembaruan…</string>
     <string name="update_up_to_date">Lumen sudah versi terbaru</string>
+    <string name="update_check_failed">Gagal memeriksa pembaruan. Periksa koneksi Anda dan coba lagi.</string>
+    <string name="update_no_compatible_apk">Tidak ada APK yang kompatibel di rilis terbaru.</string>
 
     <string name="manual_upload_to_google_photos">Unggah ke Google Foto</string>
     <string name="manual_upload_to_google_photos_account">Unggah ke Google Foto • %1$s</string>
@@ -627,4 +629,72 @@
     <string name="accounts_upload_active_switch_msg">Anda tidak dapat mengganti akun saat pengunggahan sedang berjalan.\n\nFile sedang dikirim secara aktif ke %1$s.\n\nHarap tunggu hingga kloter pengunggahan selesai atau batalkan pencadangan terlebih dahulu.</string>
     <string name="accounts_upload_active_remove_msg">Anda tidak dapat menghapus akun saat pengunggahan sedang berjalan.\n\nFile sedang dikirim secara aktif ke %1$s.\n\nHarap tunggu hingga kloter pengunggahan selesai atau batalkan pencadangan terlebih dahulu.</string>
     <string name="dialog_edit_display_name_hint">mis. Pribadi atau Kantor</string>
+
+    <!-- Pause/Resume, Notification Actions & Per-Item Retry -->
+    <string name="backup_paused_title">Pencadangan Dijeda</string>
+    <string name="backup_paused_subtitle">%1$d item tersisa di antrean</string>
+    <string name="notif_action_pause">Jeda</string>
+    <string name="notif_action_cancel">Batal</string>
+    <string name="notif_backup_chip">Cadangan</string>
+    <string name="queue_item_tap_to_retry">Ketuk untuk coba lagi</string>
+    <string name="queue_item_retrying">Mencoba ulang %1$s…</string>
+
+    <!-- Per-Folder Delete After Backup -->
+    <string name="folder_delete_after_backup_title">Hapus setelah dicadangkan</string>
+    <string name="folder_delete_after_backup_desc">Hapus file lokal dari folder ini setelah diunggah</string>
+    <string name="folder_delete_after_backup_badge">Hapus otomatis</string>
+    <string name="settings_delete_after_backup_global_hint">Berlaku untuk semua folder aktif, atau atur per folder di tab Folder</string>
+
+    <!-- Quick Settings Tile & App Shortcuts -->
+    <string name="qs_tile_sync_label">Sinkron Lumen</string>
+    <string name="qs_tile_syncing">Menyinkron…</string>
+    <string name="qs_tile_idle">Ketuk untuk sinkron</string>
+    <string name="qs_tile_no_account">Belum ada akun</string>
+    <string name="shortcut_sync_short">Sinkron Folder</string>
+    <string name="shortcut_sync_long">Sinkronkan Folder Cadangan</string>
+    <string name="shortcut_pick_short">Pilih Media</string>
+    <string name="shortcut_pick_long">Pilih Foto &amp; Video</string>
+
+    <!-- Extracted Remaining Strings -->
+    <string name="completion_default_title">Semua Sudah Dicadangkan!</string>
+    <string name="completion_cd_complete">Selesai</string>
+    <string name="completion_summary_both">%1$d diunggah, %2$d sudah ada di Google Foto</string>
+    <string name="completion_summary_uploaded_one">1 item diunggah ke Google Foto</string>
+    <string name="completion_summary_uploaded">%1$d item diunggah ke Google Foto</string>
+    <string name="completion_summary_skipped_one">Sudah ada di Google Foto</string>
+    <string name="completion_summary_skipped">Semua %1$d item sudah ada di Google Foto</string>
+    <string name="completion_summary_default">Semuanya sudah terbaru di Google Foto</string>
+    <string name="empty_state_default_subtitle">Pilih foto &amp; video atau ketuk Sinkronkan Folder untuk memulai</string>
+    <string name="condition_waiting_wifi">Menunggu Wi-Fi</string>
+    <string name="condition_waiting_charger">Menunggu pengisi daya</string>
+    <string name="backup_offline_toast">Anda sedang offline. Hubungkan ke internet untuk mencadangkan.</string>
+    <string name="backup_eta_seconds">~%1$dd tersisa</string>
+    <string name="backup_eta_minutes">~%1$dm %2$dd tersisa</string>
+    <string name="backup_eta_hours">~%1$dj %2$dm tersisa</string>
+    <string name="backup_sign_in_prompt">Masuk ke %1$s untuk memulihkan akses dan melanjutkan unggahan.</string>
+    <string name="backup_target_album_fallback">album tujuan</string>
+    <string name="account_block_few_seconds">beberapa detik</string>
+    <string name="account_block_minutes_seconds">%1$dm %2$dd</string>
+    <string name="account_block_seconds">%1$dd</string>
+    <string name="about_prism_badge">Penguasa Cahaya</string>
+    <string name="about_matrix_title">PENGAMBILALIHAN SISTEM</string>
+    <string name="about_matrix_body">Tidak ada sendok. Hanya foto mentah.\n\nAnda telah membuka tema Matrix di Setelan.</string>
+    <string name="about_matrix_ack">Mengerti</string>
+    <string name="cd_change_avatar">Ubah foto profil</string>
+    <string name="cd_remove_account">Hapus akun</string>
+    <string name="update_download_failed_retry">Unduhan gagal. Ketuk Perbarui Sekarang untuk mencoba lagi.</string>
+
+    <!-- What's New -->
+    <string name="whats_new_title">Yang Baru</string>
+    <string name="whats_new_subtitle">Lihat fitur dan peningkatan terbaru</string>
+    <string name="whats_new_mark_all_read">Tandai semua dibaca</string>
+    <string name="whats_new_view_github">Lihat catatan rilis lengkap di GitHub</string>
+    <string name="whats_new_badge_new">Baru</string>
+    <string name="whats_new_close">Mengerti</string>
+    <string name="whats_new_sheet_title">Yang Baru di %1$s</string>
+    <string name="whats_new_sheet_subtitle">Ini yang baru di pembaruan ini</string>
+    <string name="whats_new_see_all">Lihat semua riwayat</string>
+    <string name="dev_preview_whats_new_title">Pratinjau Lembar Yang Baru</string>
+    <string name="dev_preview_whats_new_desc">Uji pop-up sorotan setelah pembaruan</string>
+    <string name="action_more_options">Opsi lainnya</string>
 </resources>

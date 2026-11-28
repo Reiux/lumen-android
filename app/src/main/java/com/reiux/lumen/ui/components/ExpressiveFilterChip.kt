@@ -1,11 +1,11 @@
 package com.reiux.lumen.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SelectableChipColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +31,7 @@ fun ExpressiveFilterChip(
 ) {
     val cornerRadius by animateDpAsState(
         targetValue = if (selected) 20.dp else 8.dp,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "expressiveFilterChipCorner"
     )
     val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove, onClick)

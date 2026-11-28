@@ -10,6 +10,10 @@ import android.os.Build
 import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,9 +27,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -33,9 +39,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Clear
@@ -48,26 +52,20 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -80,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -96,7 +95,6 @@ import com.reiux.lumen.util.LogEntry
 import com.reiux.lumen.util.LogKind
 import com.reiux.lumen.util.LogLevel
 import com.reiux.lumen.util.LumenLogger
-import com.reiux.lumen.util.UiSnapshotDumper
 import com.reiux.lumen.util.UploadOutcome
 import kotlinx.coroutines.launch
 import java.io.File
@@ -129,6 +127,9 @@ fun LogViewerDialog(
     // Share / Report dialog
     var showShareReportDialog by remember { mutableStateOf(false) }
 
+    val isCompactHeight = LocalConfiguration.current.screenHeightDp < 480
+    val foldPosture = LocalFoldPosture.current
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -139,19 +140,31 @@ fun LogViewerDialog(
         )
     ) {
         PredictiveBackDialogContainer(onDismiss = onDismiss) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth(0.96f)
-                    .fillMaxHeight(0.92f),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
+                Surface(
+                    modifier = if (foldPosture.isTabletop) {
+                        Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .padding(horizontal = 12.dp)
+                    } else {
+                        Modifier
+                            .widthIn(max = 880.dp)
+                            .fillMaxWidth(0.96f)
+                            .fillMaxHeight(if (isCompactHeight) 0.96f else 0.92f)
+                    },
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(if (isCompactHeight) 12.dp else 16.dp)
+                    ) {
                 // --- Top Header ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -183,14 +196,20 @@ fun LogViewerDialog(
                     }
 
                     Row {
-                        IconButton(onClick = { showShareReportDialog = true }) {
+                        ExpressiveIconButton(
+                            onClick = { showShareReportDialog = true },
+                            colors = IconButtonDefaults.iconButtonColors()
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.Share,
                                 contentDescription = "Share Report",
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
-                        IconButton(onClick = onDismiss) {
+                        ExpressiveIconButton(
+                            onClick = onDismiss,
+                            colors = IconButtonDefaults.iconButtonColors()
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Close",
@@ -200,7 +219,7 @@ fun LogViewerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(if (isCompactHeight) 4.dp else 8.dp))
 
                 // Crash Banner if app crashed last time
                 if (crashLogFile != null) {
@@ -236,7 +255,7 @@ fun LogViewerDialog(
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                             }
-                            TextButton(onClick = { showCrashReportDialog = true }) {
+                            ExpressiveTextButton(onClick = { showCrashReportDialog = true }) {
                                 Text("View Crash Report", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
                         }
@@ -248,7 +267,7 @@ fun LogViewerDialog(
                     allLogs.count { it.level == LogLevel.WARN || it.level == LogLevel.ERROR || it.kind == LogKind.BLOCKED }
                 }
 
-                TabRow(
+                PrimaryTabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.primary
@@ -289,17 +308,18 @@ fun LogViewerDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(if (isCompactHeight) 4.dp else 10.dp))
 
                 when (selectedTab) {
                     0 -> ActivityTabContent(context, selectedAccount, settings, allLogs)
                     1 -> ProblemsTabContent(context, allLogs)
                     2 -> RawLogsTabContent(context, allLogs, droppedEvents)
                 }
+                    }
+                }
             }
         }
     }
-}
 
     if (showCrashReportDialog && crashLogFile != null) {
         val crashText = cachedCrashText ?: ""
@@ -449,6 +469,7 @@ private fun BackupDiagnosticCheckCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -475,7 +496,13 @@ private fun BackupDiagnosticCheckCard(
                 )
             }
 
-            AnimatedVisibility(visible = expanded || !allPass) {
+            AnimatedVisibility(
+                visible = expanded || !allPass,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Column(
                     modifier = Modifier.padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -512,7 +539,7 @@ private fun DiagnosticCheckRow(
             Icon(
                 imageVector = if (passed) Icons.Rounded.Check else Icons.Rounded.Close,
                 contentDescription = null,
-                tint = if (passed) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                tint = if (passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -524,7 +551,7 @@ private fun DiagnosticCheckRow(
             }
         }
         if (!passed && onFixAction != null) {
-            TextButton(
+            ExpressiveTextButton(
                 onClick = onFixAction,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
             ) {
@@ -555,6 +582,7 @@ private fun BackupRunCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -595,7 +623,13 @@ private fun BackupRunCard(
                 }
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Column(
                     modifier = Modifier.padding(top = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -614,10 +648,10 @@ private fun FileResultRow(entry: LogEntry) {
     var rawExpanded by remember { mutableStateOf(false) }
 
     val (icon, tint) = when (entry.outcome) {
-        UploadOutcome.UPLOADED -> Pair(Icons.Rounded.CheckCircle, Color(0xFF2E7D32))
-        UploadOutcome.SKIPPED_DUPLICATE -> Pair(Icons.Rounded.Info, Color(0xFF1976D2))
+        UploadOutcome.UPLOADED -> Pair(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.primary)
+        UploadOutcome.SKIPPED_DUPLICATE -> Pair(Icons.Rounded.Info, MaterialTheme.colorScheme.secondary)
         UploadOutcome.FAILED -> Pair(Icons.Rounded.Error, MaterialTheme.colorScheme.error)
-        UploadOutcome.NONE -> Pair(Icons.Rounded.Info, Color(0xFF757575))
+        UploadOutcome.NONE -> Pair(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     Surface(
@@ -663,7 +697,13 @@ private fun FileResultRow(entry: LogEntry) {
                 }
             }
 
-            AnimatedVisibility(visible = rawExpanded) {
+            AnimatedVisibility(
+                visible = rawExpanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Text(
                     text = "Trace:\n${entry.fullFormattedText}",
                     fontFamily = FontFamily.Monospace,
@@ -769,7 +809,13 @@ private fun ProblemRow(entry: LogEntry) {
                 )
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Text(
                     text = "Technical Detail:\n${entry.fullFormattedText}",
                     fontFamily = FontFamily.Monospace,
@@ -822,6 +868,9 @@ private fun RawLogsTabContent(
         }
     }
 
+    val isCompactHeight = LocalConfiguration.current.screenHeightDp < 480
+    val verticalGap = if (isCompactHeight) 4.dp else 6.dp
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -836,7 +885,11 @@ private fun RawLogsTabContent(
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                        ExpressiveIconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.minimumInteractiveComponentSize(),
+                            colors = IconButtonDefaults.iconButtonColors()
+                        ) {
                             Icon(Icons.Rounded.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
                         }
                     }
@@ -853,7 +906,11 @@ private fun RawLogsTabContent(
                 placeholder = { Text("Filter op#...", fontSize = 12.sp) },
                 trailingIcon = {
                     if (opIdFilter.isNotEmpty()) {
-                        IconButton(onClick = { opIdFilter = "" }, modifier = Modifier.size(24.dp)) {
+                        ExpressiveIconButton(
+                            onClick = { opIdFilter = "" },
+                            modifier = Modifier.minimumInteractiveComponentSize(),
+                            colors = IconButtonDefaults.iconButtonColors()
+                        ) {
                             Icon(Icons.Rounded.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
                         }
                     }
@@ -864,77 +921,143 @@ private fun RawLogsTabContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(verticalGap))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val popularTags = listOf("EasterEgg", "Sensors", "UploadEngine", "Watcher", "Network", "UI", "Storage")
-            ExpressiveFilterChip(
-                selected = searchQuery.isEmpty() && opIdFilter.isEmpty(),
-                onClick = { searchQuery = ""; opIdFilter = "" },
-                label = { Text("ALL LOGS", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-            )
-            popularTags.forEach { tag ->
-                val isSel = searchQuery.equals(tag, ignoreCase = true)
+        val popularTags = listOf("EasterEgg", "Sensors", "UploadEngine", "Watcher", "Network", "UI", "Storage")
+        if (isCompactHeight) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ExpressiveTextButton(
+                    onClick = {
+                        if (!isPaused) {
+                            pausedSnapshot = allLogs
+                            isPaused = true
+                        } else {
+                            isPaused = false
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isPaused) "Resume" else "Pause", fontSize = 11.sp)
+                }
+
+                ExpressiveTextButton(
+                    onClick = {
+                        val text = filteredLogs.joinToString("\n") { it.fullFormattedText }
+                        copySensitiveClipboardText(context, "Lumen Logs", text)
+                        Toast.makeText(context, "Copied ${filteredLogs.size} lines to clipboard", Toast.LENGTH_SHORT).show()
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy", fontSize = 11.sp)
+                }
+
+                ExpressiveTextButton(
+                    onClick = { LumenLogger.clearLogs(context) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Clear", fontSize = 11.sp)
+                }
+
                 ExpressiveFilterChip(
-                    selected = isSel,
-                    onClick = { searchQuery = if (isSel) "" else tag },
-                    label = { Text(tag, fontSize = 10.sp) }
+                    selected = searchQuery.isEmpty() && opIdFilter.isEmpty(),
+                    onClick = { searchQuery = ""; opIdFilter = "" },
+                    label = { Text("ALL LOGS", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                 )
+                popularTags.forEach { tag ->
+                    val isSel = searchQuery.equals(tag, ignoreCase = true)
+                    ExpressiveFilterChip(
+                        selected = isSel,
+                        onClick = { searchQuery = if (isSel) "" else tag },
+                        label = { Text(tag, fontSize = 10.sp) }
+                    )
+                }
             }
-        }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ExpressiveFilterChip(
+                    selected = searchQuery.isEmpty() && opIdFilter.isEmpty(),
+                    onClick = { searchQuery = ""; opIdFilter = "" },
+                    label = { Text("ALL LOGS", fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                )
+                popularTags.forEach { tag ->
+                    val isSel = searchQuery.equals(tag, ignoreCase = true)
+                    ExpressiveFilterChip(
+                        selected = isSel,
+                        onClick = { searchQuery = if (isSel) "" else tag },
+                        label = { Text(tag, fontSize = 10.sp) }
+                    )
+                }
+            }
 
-        Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(verticalGap))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            TextButton(
-                onClick = {
-                    if (!isPaused) {
-                        pausedSnapshot = allLogs
-                        isPaused = true
-                    } else {
-                        isPaused = false
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ExpressiveTextButton(
+                    onClick = {
+                        if (!isPaused) {
+                            pausedSnapshot = allLogs
+                            isPaused = true
+                        } else {
+                            isPaused = false
+                        }
                     }
+                ) {
+                    Icon(
+                        imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isPaused) "Resume" else "Pause", fontSize = 11.sp)
                 }
-            ) {
-                Icon(
-                    imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(if (isPaused) "Resume" else "Pause", fontSize = 11.sp)
-            }
 
-            TextButton(
-                onClick = {
-                    val text = filteredLogs.joinToString("\n") { it.fullFormattedText }
-                    copySensitiveClipboardText(context, "Lumen Logs", text)
-                    Toast.makeText(context, "Copied ${filteredLogs.size} lines to clipboard", Toast.LENGTH_SHORT).show()
+                ExpressiveTextButton(
+                    onClick = {
+                        val text = filteredLogs.joinToString("\n") { it.fullFormattedText }
+                        copySensitiveClipboardText(context, "Lumen Logs", text)
+                        Toast.makeText(context, "Copied ${filteredLogs.size} lines to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy", fontSize = 11.sp)
                 }
-            ) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Copy", fontSize = 11.sp)
-            }
 
-            TextButton(onClick = { LumenLogger.clearLogs(context) }) {
-                Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Clear", fontSize = 11.sp)
+                ExpressiveTextButton(onClick = { LumenLogger.clearLogs(context) }) {
+                    Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Clear", fontSize = 11.sp)
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(verticalGap))
 
         Card(
             modifier = Modifier
@@ -967,10 +1090,10 @@ private fun LogRow(
 
     val levelColor = when (entry.level) {
         LogLevel.ERROR -> MaterialTheme.colorScheme.error
-        LogLevel.WARN -> Color(0xFFE65100)
-        LogLevel.INFO -> Color(0xFF2E7D32)
-        LogLevel.DEBUG -> Color(0xFF1976D2)
-        LogLevel.VERBOSE -> Color(0xFF757575)
+        LogLevel.WARN -> MaterialTheme.colorScheme.tertiary
+        LogLevel.INFO -> MaterialTheme.colorScheme.primary
+        LogLevel.DEBUG -> MaterialTheme.colorScheme.secondary
+        LogLevel.VERBOSE -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Column(
@@ -1043,7 +1166,12 @@ private fun ShareReportDialog(
         val lastRunSummary = allLogs.lastOrNull { it.kind == LogKind.RUN_SUMMARY }
         if (lastRunSummary != null) {
             sb.appendLine("#### Last Run Summary")
-            sb.appendLine(lastRunSummary.message)
+            val safeSummary = if (hideFileNames) {
+                LumenLogger.redactFileNamesAndPaths(LumenLogger.redact(lastRunSummary.message))
+            } else {
+                LumenLogger.redact(lastRunSummary.message)
+            }
+            sb.appendLine(safeSummary)
             sb.appendLine()
         }
 

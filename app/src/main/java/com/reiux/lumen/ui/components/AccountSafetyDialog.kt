@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,13 +50,22 @@ fun AccountSafetyDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 320.dp, max = if (isWideLayout) 640.dp else 440.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp)
+        } else {
+            Modifier
+                .widthIn(min = 320.dp, max = if (isWideLayout) 640.dp else 440.dp)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
