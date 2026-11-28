@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -199,6 +201,13 @@ fun AlbumDestinationBottomSheet(
         else savedAlbums.filter { it.accountEmail.isNullOrBlank() || it.accountEmail.equals(email, ignoreCase = true) }
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val tabletopHeightMod = if (foldPosture.isTabletop) {
+        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+    } else {
+        Modifier
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -210,6 +219,7 @@ fun AlbumDestinationBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(tabletopHeightMod)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             Text(
@@ -223,7 +233,9 @@ fun AlbumDestinationBottomSheet(
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
             ) {
                 // Option 1: No album
                 item {
@@ -303,6 +315,8 @@ fun AlbumDestinationBottomSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 showAddAlbumSheet = true
                             }

@@ -122,6 +122,36 @@ class SecurityAuditRun2FixesTest {
         assertTrue(MainActivity.filterAndCapShareUris(input, selfAuthority, maxItems = 0).isEmpty())
     }
 
+    @Test
+    fun shareUris_blocksAuthorityWithUserInfoOrSpoofedSelfAuthority() {
+        val selfAuthority = "com.reiux.lumen.dev.fileprovider"
+        val valid = TestUri("content://media/external/images/media/1", "content", "media", "/external/images/media/1")
+        val spoofedSelf = TestUri(
+            "content://attacker@com.reiux.lumen.dev.fileprovider/logs/lumen.log",
+            "content",
+            "attacker@com.reiux.lumen.dev.fileprovider",
+            "/logs/lumen.log"
+        )
+        val spoofedSelfUpper = TestUri(
+            "content://user:pass@COM.REIUX.LUMEN.DEV.FILEPROVIDER/logs/lumen.log",
+            "content",
+            "user:pass@COM.REIUX.LUMEN.DEV.FILEPROVIDER",
+            "/logs/lumen.log"
+        )
+        val userInfoOther = TestUri(
+            "content://attacker@media/external/images/media/999",
+            "content",
+            "attacker@media",
+            "/external/images/media/999"
+        )
+
+        val result = MainActivity.filterAndCapShareUris(
+            uris = listOf(spoofedSelf, spoofedSelfUpper, userInfoOther, valid),
+            selfAuthority = selfAuthority
+        )
+        assertEquals(listOf(valid), result)
+    }
+
     // -------------------------------------------------------------------------
     // Lead 2: Post-backup deletion scope enforcement
     // -------------------------------------------------------------------------
@@ -295,6 +325,111 @@ class SecurityAuditRun2FixesTest {
                 stagingDirCanonicalPrefix = stagingPrefix
             )
         )
+    }
+
+    @Test
+    fun postBackupDeletion_rejectsUnassignedFoldersForRealAccountsAndRejectsSymlinks() {
+        val sandbox = tempFolder.newFolder("post_backup_delete_sandbox")
+        val deletingDir = File(sandbox, "deleting").apply { mkdirs() }
+        val nonDeletingDir = File(sandbox, "non_deleting").apply { mkdirs() }
+        val realDeletingFile = File(deletingDir, "camera_real.jpg").apply { writeBytes(ByteArray(32)) }
+        val realNonDeletingFile = File(nonDeletingDir, "keep_real.jpg").apply { writeBytes(ByteArray(32)) }
+
+        val stagingPrefix = File(sandbox, "staging").absolutePath
+        val item = UploadItem(
+            id = "u_acc",
+            filePath = realDeletingFile.absolutePath,
+            fileName = realDeletingFile.name,
+            fileSize = 32L,
+            accountEmail = "a@example.com",
+            originalFilePath = realDeletingFile.absolutePath,
+            allowDeleteAfterBackup = true
+        )
+
+        // 1. Unassigned folder (accountEmail = null) with deleteAfterBackup = true must be rejected for a real account item
+        val unassignedDeletingFolder = BackupFolder(
+            path = deletingDir.absolutePath,
+            displayName = "Deleting",
+            enabled = true,
+            accountEmail = null,
+            deleteAfterBackup = true
+        )
+        assertFalse(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = item,
+                targetPath = realDeletingFile.absolutePath,
+                configuredFolders = listOf(unassignedDeletingFolder),
+                deleteAfterBackupSetting = true,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+
+        // Assigning the folder to the item's account allows deletion of the regular non-symlink file
+        val assignedDeletingFolder = unassignedDeletingFolder.copy(accountEmail = "a@example.com")
+        val nonDeletingFolder = BackupFolder(
+            path = nonDeletingDir.absolutePath,
+            displayName = "NonDeleting",
+            enabled = true,
+            accountEmail = "a@example.com",
+            deleteAfterBackup = false
+        )
+        val configuredFolders = listOf(assignedDeletingFolder, nonDeletingFolder)
+        assertTrue(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = item,
+                targetPath = realDeletingFile.absolutePath,
+                configuredFolders = configuredFolders,
+                deleteAfterBackupSetting = false,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+
+        // 2. Real symbolic links must be rejected regardless of folder direction
+        val symlinkFromNonDeletingIntoDeleting = File(nonDeletingDir, "link_into_deleting.jpg")
+        val symlinkFromDeletingIntoNonDeleting = File(deletingDir, "link_to_non_deleting.jpg")
+        val symlinksSupported = try {
+            Files.createSymbolicLink(symlinkFromNonDeletingIntoDeleting.toPath(), realDeletingFile.toPath())
+            Files.createSymbolicLink(symlinkFromDeletingIntoNonDeleting.toPath(), realNonDeletingFile.toPath())
+            true
+        } catch (_: Exception) {
+            false
+        }
+        assumeTrue("Filesystem must support symbolic links", symlinksSupported)
+
+        assertFalse(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = item.copy(
+                    filePath = symlinkFromNonDeletingIntoDeleting.absolutePath,
+                    fileName = symlinkFromNonDeletingIntoDeleting.name,
+                    originalFilePath = symlinkFromNonDeletingIntoDeleting.absolutePath
+                ),
+                targetPath = symlinkFromNonDeletingIntoDeleting.absolutePath,
+                configuredFolders = configuredFolders,
+                deleteAfterBackupSetting = true,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+        assertFalse(
+            UploadRepository.isEligibleForPostBackupDeletion(
+                item = item.copy(
+                    filePath = symlinkFromDeletingIntoNonDeleting.absolutePath,
+                    fileName = symlinkFromDeletingIntoNonDeleting.name,
+                    originalFilePath = symlinkFromDeletingIntoNonDeleting.absolutePath
+                ),
+                targetPath = symlinkFromDeletingIntoNonDeleting.absolutePath,
+                configuredFolders = configuredFolders,
+                deleteAfterBackupSetting = true,
+                stagingDirCanonicalPrefix = stagingPrefix
+            )
+        )
+    }
+
+    @Test
+    fun settingsRepository_normalizeFolderPath_normalizesPrimaryStorageAliasesIdentically() {
+        val expected = SettingsRepository.normalizeFolderPath("/sdcard/DCIM/Camera")
+        assertEquals(expected, SettingsRepository.normalizeFolderPath("/SDCARD/DCIM/Camera"))
+        assertEquals(expected, SettingsRepository.normalizeFolderPath("/storage/emulated/0/DCIM/Camera"))
+        assertEquals(expected, SettingsRepository.normalizeFolderPath("/storage/self/primary/DCIM/Camera"))
     }
 
     // -------------------------------------------------------------------------
@@ -758,6 +893,20 @@ class SecurityAuditRun2FixesTest {
         assertTrue(visibleLines.first().contains("My Secret.mp4"))
         assertFalse(visibleLines.first().contains("[file_hidden]"))
         assertFalse(visibleLines.first().contains("user@example.com"))
+    }
+
+    @Test
+    fun lumenLogger_redactMasksAndroidIdCustomNameAndCustomNickname() {
+        val raw = "Sync state androidId=deadbeef1234 customName='Family Trip' customNickname='Private'"
+        val redacted = LumenLogger.redact(raw)
+
+        assertFalse(redacted.contains("deadbeef1234"))
+        assertFalse(redacted.contains("Family Trip"))
+        assertFalse(redacted.contains("Private"))
+        assertTrue(redacted.contains("androidId="))
+        assertTrue(redacted.contains("customName="))
+        assertTrue(redacted.contains("customNickname="))
+        assertTrue(redacted.contains("[REDACTED]"))
     }
 
     // -------------------------------------------------------------------------

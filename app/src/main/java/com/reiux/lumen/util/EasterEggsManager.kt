@@ -154,7 +154,7 @@ object EasterEggsManager {
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         val repo = resolveSettingsRepo(context)
 
-        if (targetSeason != Season.NONE) {
+        if (!force && targetSeason != Season.NONE) {
             repo.unlockSeasonalTheme(targetSeason.name)
         }
 

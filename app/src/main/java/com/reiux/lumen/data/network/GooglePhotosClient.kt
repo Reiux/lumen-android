@@ -371,6 +371,8 @@ class GooglePhotosClient(
         bearerToken: String,
         opId: String? = null,
         isPaused: (() -> Boolean)? = null,
+        tokenProvider: (suspend () -> String)? = null,
+        onInvalidateToken: (() -> Unit)? = null,
         onProgress: ((bytesSent: Long, totalBytes: Long) -> Unit)? = null
     ): CommitToken = withContext(Dispatchers.IO) {
         val chunkSize = 512 * 1024 // 512 KiB chunk (multiple of 256 KiB for responsive mid-file pause)
@@ -380,42 +382,61 @@ class GooglePhotosClient(
             .addQueryParameter("upload_id", uploadToken)
             .build()
 
+        var currentBearer = bearerToken
+        var refreshedInFile = false
+
         if (totalBytes == 0L) {
             while (isPaused?.invoke() == true) {
                 currentCoroutineContext().ensureActive()
                 delay(150)
             }
 
-            val request = Request.Builder()
-                .url(url)
-                .put(ByteArray(0).toRequestBody("application/octet-stream".toMediaType()))
-                .header("Authorization", "Bearer $bearerToken")
-                .header("User-Agent", PHOTOS_USER_AGENT)
-                .header("X-Goog-Upload-Protocol", "resumable")
-                .header("X-Goog-Upload-Command", "upload, finalize")
-                .header("X-Goog-Upload-Offset", "0")
-                .build()
+            var respBytes: ByteArray
+            while (true) {
+                val request = Request.Builder()
+                    .url(url)
+                    .put(ByteArray(0).toRequestBody("application/octet-stream".toMediaType()))
+                    .header("Authorization", "Bearer $currentBearer")
+                    .header("User-Agent", PHOTOS_USER_AGENT)
+                    .header("X-Goog-Upload-Protocol", "resumable")
+                    .header("X-Goog-Upload-Command", "upload, finalize")
+                    .header("X-Goog-Upload-Offset", "0")
+                    .build()
 
-            val start = System.currentTimeMillis()
-            val respBytes = httpClient.newCall(request).execute().use { response ->
-                val bytes = readBoundedResponseBytes(response)
-                val duration = System.currentTimeMillis() - start
+                val start = System.currentTimeMillis()
+                val attemptResult = httpClient.newCall(request).execute().use { response ->
+                    val bytes = readBoundedResponseBytes(response)
+                    val duration = System.currentTimeMillis() - start
 
-                logNetwork(
-                    method = "PUT",
-                    url = INTERACTIVE_UPLOAD_ENDPOINT,
-                    reqSize = 0L,
-                    code = response.code,
-                    respSize = bytes.size.toLong(),
-                    durationMs = duration,
-                    opId = opId,
-                    errBody = if (!response.isSuccessful) bytes.decodeToString() else null
-                )
+                    logNetwork(
+                        method = "PUT",
+                        url = INTERACTIVE_UPLOAD_ENDPOINT,
+                        reqSize = 0L,
+                        code = response.code,
+                        respSize = bytes.size.toLong(),
+                        durationMs = duration,
+                        opId = opId,
+                        errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+                    )
 
-                if (!response.isSuccessful) {
-                    handleResponseError(response, bytes, "UploadChunk")
+                    if (response.code == 401 && tokenProvider != null && !refreshedInFile) {
+                        null
+                    } else {
+                        if (!response.isSuccessful) {
+                            handleResponseError(response, bytes, "UploadChunk")
+                        }
+                        bytes
+                    }
                 }
-                bytes
+
+                if (attemptResult == null) {
+                    onInvalidateToken?.invoke()
+                    currentBearer = tokenProvider!!()
+                    refreshedInFile = true
+                    continue
+                }
+                respBytes = attemptResult
+                break
             }
 
             onProgress?.invoke(0L, 0L)
@@ -441,8 +462,8 @@ class GooglePhotosClient(
                     if (read == -1) break
                     chunkLen += read
                 }
-                if (chunkLen == 0) {
-                    throw IOException("Unexpected EOF reading ${file.name} at offset $currentOffset/$totalBytes")
+                if (chunkLen < targetLen) {
+                    throw IOException("File ${file.name} modified during upload (expected $totalBytes bytes, EOF at ${currentOffset + chunkLen})")
                 }
 
                 val isLast = (currentOffset + chunkLen) >= totalBytes
@@ -465,36 +486,52 @@ class GooglePhotosClient(
                     }
                 }
 
-                val request = Request.Builder()
-                    .url(url)
-                    .put(chunkBody)
-                    .header("Authorization", "Bearer $bearerToken")
-                    .header("User-Agent", PHOTOS_USER_AGENT)
-                    .header("X-Goog-Upload-Protocol", "resumable")
-                    .header("X-Goog-Upload-Command", command)
-                    .header("X-Goog-Upload-Offset", chunkOffset.toString())
-                    .build()
+                var respBytes: ByteArray
+                while (true) {
+                    val request = Request.Builder()
+                        .url(url)
+                        .put(chunkBody)
+                        .header("Authorization", "Bearer $currentBearer")
+                        .header("User-Agent", PHOTOS_USER_AGENT)
+                        .header("X-Goog-Upload-Protocol", "resumable")
+                        .header("X-Goog-Upload-Command", command)
+                        .header("X-Goog-Upload-Offset", chunkOffset.toString())
+                        .build()
 
-                val start = System.currentTimeMillis()
-                val respBytes = httpClient.newCall(request).execute().use { response ->
-                    val bytes = readBoundedResponseBytes(response)
-                    val duration = System.currentTimeMillis() - start
+                    val start = System.currentTimeMillis()
+                    val attemptResult = httpClient.newCall(request).execute().use { response ->
+                        val bytes = readBoundedResponseBytes(response)
+                        val duration = System.currentTimeMillis() - start
 
-                    logNetwork(
-                        method = "PUT",
-                        url = INTERACTIVE_UPLOAD_ENDPOINT,
-                        reqSize = chunkLen.toLong(),
-                        code = response.code,
-                        respSize = bytes.size.toLong(),
-                        durationMs = duration,
-                        opId = opId,
-                        errBody = if (!response.isSuccessful) bytes.decodeToString() else null
-                    )
+                        logNetwork(
+                            method = "PUT",
+                            url = INTERACTIVE_UPLOAD_ENDPOINT,
+                            reqSize = chunkLen.toLong(),
+                            code = response.code,
+                            respSize = bytes.size.toLong(),
+                            durationMs = duration,
+                            opId = opId,
+                            errBody = if (!response.isSuccessful) bytes.decodeToString() else null
+                        )
 
-                    if (!response.isSuccessful) {
-                        handleResponseError(response, bytes, "UploadChunk")
+                        if (response.code == 401 && tokenProvider != null && !refreshedInFile) {
+                            null
+                        } else {
+                            if (!response.isSuccessful) {
+                                handleResponseError(response, bytes, "UploadChunk")
+                            }
+                            bytes
+                        }
                     }
-                    bytes
+
+                    if (attemptResult == null) {
+                        onInvalidateToken?.invoke()
+                        currentBearer = tokenProvider!!()
+                        refreshedInFile = true
+                        continue
+                    }
+                    respBytes = attemptResult
+                    break
                 }
 
                 currentOffset += chunkLen

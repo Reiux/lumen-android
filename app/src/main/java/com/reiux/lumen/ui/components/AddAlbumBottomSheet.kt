@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -114,6 +116,14 @@ fun AddAlbumBottomSheet(
         isValidKeyOrUrl && nicknameInput.isNotBlank() && !isDuplicateKey && !isDuplicateNickname
     }
 
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val tabletopHeightMod = if (foldPosture.isTabletop) {
+        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+    } else {
+        Modifier
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -124,6 +134,7 @@ fun AddAlbumBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(tabletopHeightMod)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -373,6 +384,7 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
     val steps = listOf(
         stringResource(R.string.album_help_step_1),
         stringResource(R.string.album_help_step_2),
@@ -383,9 +395,17 @@ fun FindAlbumLinkHelpDialog(onDismiss: () -> Unit) {
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 320.dp, max = if (isWideLayout) 540.dp else 440.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp)
+        } else {
+            Modifier
+                .widthIn(min = 320.dp, max = if (isWideLayout) 540.dp else 440.dp)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        },
         shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {

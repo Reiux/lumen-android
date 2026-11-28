@@ -244,7 +244,7 @@ object MediaFileReader {
             try { tempFile?.delete() } catch (_: Exception) {}
             try { uniqueStagingDir.deleteRecursively() } catch (_: Exception) {}
             if (t is CancellationException) throw t
-            try { Log.w(TAG, "Failed staging bounded stream for $fileName: ${t.message}") } catch (_: Throwable) {}
+            try { LumenLogger.w(TAG) { "Failed staging bounded stream for '$fileName': ${t.message}" } } catch (_: Throwable) {}
             null
         } finally {
             activeStagingDirs.remove(dirKey)
@@ -520,13 +520,26 @@ object MediaFileReader {
 
     fun hasMediaLocationPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            return true
-        }
         return ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_MEDIA_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    internal fun isBlockedAuthority(context: Context, authority: String?): Boolean {
+        val clean = authority?.trim()?.lowercase().orEmpty()
+        if (clean.isEmpty()) return true
+        if (clean.contains('@')) return true
+        return clean == "${context.packageName}.fileprovider".lowercase()
+    }
+
+    internal fun isLocalPhotoPickerPath(path: String?): Boolean {
+        val p = path?.lowercase() ?: return false
+        if (!p.contains("picker")) return false
+        // Local Android Photo Picker URIs use /picker/<user>/com.android.providers.media.local/media/<id>
+        // or /picker/<user>/com.android.providers.media.photopicker/media/<id> or /picker_get_content/<user>/com.android.providers.media.local/media/<id>.
+        // Reject cloud/third-party picker provider segments (e.g. com.google.android.apps.photos.cloudpicker).
+        return p.contains("com.android.providers.media.")
     }
 
     internal fun isDirectMediaStoreContentUri(scheme: String?, authority: String?, path: String?): Boolean {
@@ -557,7 +570,7 @@ object MediaFileReader {
                 }
                 uri.scheme.equals("content", ignoreCase = true) &&
                     uri.authority.equals(MediaStore.AUTHORITY, ignoreCase = true) &&
-                    uri.path?.contains("picker", ignoreCase = true) == true -> {
+                    isLocalPhotoPickerPath(uri.path) -> {
                     val details = resolveRealNameFromPickerUriDetails(context, uri)
                     val pickerSize = details?.pickerSize
                     val targetId = uri.lastPathSegment?.toLongOrNull()
@@ -713,7 +726,7 @@ object MediaFileReader {
     )
 
     fun resolveRealNameFromPickerUriDetails(context: Context, uri: Uri): PickerUriDetails? {
-        if (uri.authority != "media" || uri.path?.contains("picker") != true) {
+        if (!uri.authority.equals(MediaStore.AUTHORITY, ignoreCase = true) || !isLocalPhotoPickerPath(uri.path)) {
             return null
         }
 
@@ -739,6 +752,7 @@ object MediaFileReader {
 
         var msName: String? = null
         var msSize: Long? = null
+        var foundRow = false
 
         try {
             context.contentResolver.query(
@@ -749,6 +763,7 @@ object MediaFileReader {
                 null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
+                    foundRow = true
                     val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                     val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
                     if (nameIdx >= 0) msName = cursor.getString(nameIdx)
@@ -758,7 +773,7 @@ object MediaFileReader {
         } catch (_: SecurityException) {
         } catch (_: Exception) {}
 
-        if (msName.isNullOrBlank()) {
+        if (!foundRow) {
             try {
                 context.contentResolver.query(
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
@@ -768,6 +783,7 @@ object MediaFileReader {
                     null
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) {
+                        foundRow = true
                         val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
                         if (nameIdx >= 0) msName = cursor.getString(nameIdx)
@@ -835,10 +851,10 @@ object MediaFileReader {
         }
         if (scheme != "content") return null
 
-        val authority = uri.authority?.lowercase() ?: return null
-        if (authority == "${context.packageName}.fileprovider".lowercase()) {
+        if (isBlockedAuthority(context, uri.authority)) {
             return null
         }
+        val authority = uri.authority?.trim()?.lowercase() ?: return null
 
         // Strictly restrict MediaStore _ID / _data resolution to system MediaStore / MediaDocumentsProvider.
         // Arbitrary content:// authorities (e.g. downloads, messaging apps) ending in numeric IDs must NEVER
@@ -849,9 +865,12 @@ object MediaFileReader {
             return null
         }
 
-        val isPickerUri = isMediaStoreAuthority && uri.path?.contains("picker") == true
+        val isPickerUri = isMediaStoreAuthority && uri.path?.contains("picker", ignoreCase = true) == true
         var requiredPickerSize: Long? = null
         if (isPickerUri) {
+            if (!isLocalPhotoPickerPath(uri.path)) {
+                return null
+            }
             // Cloud-backed Photo Picker URIs may have synthetic IDs that collide with local MediaStore _IDs;
             // require an exact byte-size match against the picker descriptor before trusting a local path.
             val details = resolveRealNameFromPickerUriDetails(context, uri)
@@ -972,7 +991,7 @@ object MediaFileReader {
             } catch (_: Exception) {}
 
             // Check if this is a picker URI and attempt to resolve real MediaStore name
-            if (uri.authority == "media" && uri.path?.contains("picker") == true) {
+            if (uri.authority.equals(MediaStore.AUTHORITY, ignoreCase = true) && isLocalPhotoPickerPath(uri.path)) {
                 val pickerResolved = resolveRealNameFromPickerUriDetails(context, uri)
                 if (pickerResolved != null) {
                     val msName = pickerResolved.mediaStoreName
@@ -1072,18 +1091,32 @@ object MediaFileReader {
         } catch (_: Exception) {}
 
         val parentDir = file.parentFile
-        val parentRelPath = parentDir?.let {
-            val pCanon = try { it.canonicalPath } catch (_: Exception) { it.absolutePath }
-            pCanon.substringAfter("/sdcard/").substringAfter("/storage/emulated/0/").trim('/')
+        val parentCanon = parentDir?.let {
+            try { it.canonicalPath } catch (_: Exception) { it.absolutePath }
+        }
+        val expectedVolume = FolderWatcherManager.resolveExpectedMediaStoreVolume(filePath)
+            ?: FolderWatcherManager.resolveExpectedMediaStoreVolume(canonical)
+        val parentRelPath = parentCanon?.let {
+            FolderWatcherManager.extractRelativeFolderPath(it)
         }
         val bucketName = parentDir?.name
 
         val (nameSelection, nameArgs) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !parentRelPath.isNullOrEmpty()) {
-            "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND (${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR ${MediaStore.MediaColumns.RELATIVE_PATH} = ?))$pendingFilter" to
-                arrayOf(name, "$parentRelPath/", parentRelPath)
+            if (expectedVolume != null) {
+                "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND (${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR ${MediaStore.MediaColumns.RELATIVE_PATH} = ?) AND ${MediaStore.MediaColumns.VOLUME_NAME} = ?)$pendingFilter" to
+                    arrayOf(name, "$parentRelPath/", parentRelPath, expectedVolume)
+            } else {
+                "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND (${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR ${MediaStore.MediaColumns.RELATIVE_PATH} = ?))$pendingFilter" to
+                    arrayOf(name, "$parentRelPath/", parentRelPath)
+            }
         } else if (!bucketName.isNullOrEmpty()) {
-            "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND ${MediaStore.MediaColumns.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE)$pendingFilter" to
-                arrayOf(name, bucketName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && expectedVolume != null) {
+                "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND ${MediaStore.MediaColumns.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE AND ${MediaStore.MediaColumns.VOLUME_NAME} = ?)$pendingFilter" to
+                    arrayOf(name, bucketName, expectedVolume)
+            } else {
+                "(${MediaStore.MediaColumns.DISPLAY_NAME} = ? COLLATE NOCASE AND ${MediaStore.MediaColumns.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE)$pendingFilter" to
+                    arrayOf(name, bucketName)
+            }
         } else {
             return null
         }
@@ -1230,6 +1263,30 @@ object MediaFileReader {
         }
     }
 
+    @JvmOverloads
+    fun cleanupStaleStagingOnStartup(
+        context: Context,
+        olderThanMillis: Long = System.currentTimeMillis() - 60L * 60L * 1000L
+    ) {
+        synchronized(stagingLock) {
+            try {
+                val stagingRoot = File(context.cacheDir, "staging")
+                if (!stagingRoot.exists() || !stagingRoot.isDirectory) return
+                val entries = stagingRoot.listFiles() ?: return
+                val activeSnapshot = activeStagingDirs.toSet()
+                for (entry in entries) {
+                    try {
+                        val canon = entry.canonicalPath
+                        val canonTrimmed = canonicalTrimmed(entry)
+                        if (canon in activeSnapshot || canonTrimmed in activeSnapshot) continue
+                        if (entry.lastModified() >= olderThanMillis) continue
+                        entry.deleteRecursively()
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun cleanupStagedFile(context: Context, file: File) {
         val stagingDir = File(context.cacheDir, "staging")
         val stagingCanon = canonicalTrimmed(stagingDir)
@@ -1304,8 +1361,7 @@ object MediaFileReader {
         minFreeReserveBytes: Long = MIN_FREE_SPACE_RESERVE_BYTES
     ): File? {
         val scheme = uri.scheme?.lowercase()
-        val authority = uri.authority?.lowercase()
-        if (scheme != "content" || authority.isNullOrBlank() || authority == "${context.packageName}.fileprovider".lowercase()) {
+        if (scheme != "content" || isBlockedAuthority(context, uri.authority)) {
             Log.w(TAG, "Refusing to stage untrusted URI: $uri")
             return null
         }

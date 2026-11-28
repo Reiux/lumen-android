@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Check
@@ -57,16 +56,23 @@ fun PlayfulCompletionCelebration(
     customTitle: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
+    val reducedMotion = rememberReducedMotion()
 
-    val scaleAnim = remember { Animatable(0f) }
+    val scaleAnim = remember { Animatable(if (reducedMotion) 1f else 0f) }
     val particleProgress = remember { Animatable(0f) }
     val badgeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val particleSpec = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
 
-    LaunchedEffect(completedCount) {
+    LaunchedEffect(completedCount, reducedMotion) {
         try {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         } catch (_: Exception) {}
+
+        if (reducedMotion) {
+            scaleAnim.snapTo(1f)
+            particleProgress.snapTo(0f)
+            return@LaunchedEffect
+        }
 
         scaleAnim.snapTo(0f)
         particleProgress.snapTo(0f)
@@ -87,11 +93,10 @@ fun PlayfulCompletionCelebration(
         MaterialTheme.colorScheme.secondary,
         MaterialTheme.colorScheme.tertiary,
         MaterialTheme.colorScheme.primaryContainer,
-        Color(0xFFFFB74D),
-        Color(0xFF81C784)
+        MaterialTheme.colorScheme.tertiaryContainer
     )
 
-    val particles = remember {
+    val particles = remember(particleColors) {
         List(20) { index ->
             val angle = (index * (360f / 20f)) * (Math.PI / 180.0)
             val distance = Random.nextFloat() * 65f + 55f
@@ -103,7 +108,7 @@ fun PlayfulCompletionCelebration(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
@@ -120,23 +125,25 @@ fun PlayfulCompletionCelebration(
                     .height(130.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Particle burst canvas
-                Canvas(
-                    modifier = Modifier.size(200.dp)
-                ) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val p = particleProgress.value
-                    val alpha = (1f - p * 0.75f).coerceIn(0f, 1f)
+                if (!reducedMotion) {
+                    // Particle burst canvas
+                    Canvas(
+                        modifier = Modifier.size(200.dp)
+                    ) {
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val p = particleProgress.value
+                        val alpha = (1f - p * 0.75f).coerceIn(0f, 1f)
 
-                    particles.forEach { particle ->
-                        val dist = particle.distance * p
-                        val x = center.x + (cos(particle.angle) * dist).toFloat()
-                        val y = center.y + (sin(particle.angle) * dist).toFloat()
-                        drawCircle(
-                            color = particle.color.copy(alpha = alpha),
-                            radius = particle.radius * (1.3f - p * 0.5f),
-                            center = Offset(x, y)
-                        )
+                        particles.forEach { particle ->
+                            val dist = particle.distance * p
+                            val x = center.x + (cos(particle.angle) * dist).toFloat()
+                            val y = center.y + (sin(particle.angle) * dist).toFloat()
+                            drawCircle(
+                                color = particle.color.copy(alpha = alpha),
+                                radius = particle.radius * (1.3f - p * 0.5f),
+                                center = Offset(x, y)
+                            )
+                        }
                     }
                 }
 
@@ -235,13 +242,19 @@ fun PlayfulParticleBurstOverlay(
     onFinished: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val reducedMotion = rememberReducedMotion()
     val particleProgress = remember { Animatable(0f) }
     val particleSpec = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reducedMotion) {
         try {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         } catch (_: Exception) {}
+
+        if (reducedMotion) {
+            onFinished()
+            return@LaunchedEffect
+        }
 
         particleProgress.animateTo(
             targetValue = 1f,
@@ -250,16 +263,17 @@ fun PlayfulParticleBurstOverlay(
         onFinished()
     }
 
+    if (reducedMotion) return
+
     val particleColors = listOf(
         MaterialTheme.colorScheme.primary,
         MaterialTheme.colorScheme.secondary,
         MaterialTheme.colorScheme.tertiary,
-        Color(0xFFFFB74D),
-        Color(0xFF81C784),
-        Color(0xFFE040FB)
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer
     )
 
-    val particles = remember {
+    val particles = remember(particleColors) {
         List(24) { index ->
             val angle = (index * (360f / 24f)) * (Math.PI / 180.0)
             val distance = Random.nextFloat() * 120f + 80f

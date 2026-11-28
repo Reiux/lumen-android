@@ -10,6 +10,10 @@ import android.os.Build
 import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -60,6 +65,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -122,6 +128,7 @@ fun LogViewerDialog(
     var showShareReportDialog by remember { mutableStateOf(false) }
 
     val isCompactHeight = LocalConfiguration.current.screenHeightDp < 480
+    val foldPosture = LocalFoldPosture.current
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -138,10 +145,17 @@ fun LogViewerDialog(
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
-                    modifier = Modifier
-                        .widthIn(max = 880.dp)
-                        .fillMaxWidth(0.96f)
-                        .fillMaxHeight(if (isCompactHeight) 0.96f else 0.92f),
+                    modifier = if (foldPosture.isTabletop) {
+                        Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .padding(horizontal = 12.dp)
+                    } else {
+                        Modifier
+                            .widthIn(max = 880.dp)
+                            .fillMaxWidth(0.96f)
+                            .fillMaxHeight(if (isCompactHeight) 0.96f else 0.92f)
+                    },
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp
@@ -455,6 +469,7 @@ private fun BackupDiagnosticCheckCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -481,7 +496,13 @@ private fun BackupDiagnosticCheckCard(
                 )
             }
 
-            AnimatedVisibility(visible = expanded || !allPass) {
+            AnimatedVisibility(
+                visible = expanded || !allPass,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Column(
                     modifier = Modifier.padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -518,7 +539,7 @@ private fun DiagnosticCheckRow(
             Icon(
                 imageVector = if (passed) Icons.Rounded.Check else Icons.Rounded.Close,
                 contentDescription = null,
-                tint = if (passed) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                tint = if (passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -561,6 +582,7 @@ private fun BackupRunCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -601,7 +623,13 @@ private fun BackupRunCard(
                 }
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Column(
                     modifier = Modifier.padding(top = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -620,10 +648,10 @@ private fun FileResultRow(entry: LogEntry) {
     var rawExpanded by remember { mutableStateOf(false) }
 
     val (icon, tint) = when (entry.outcome) {
-        UploadOutcome.UPLOADED -> Pair(Icons.Rounded.CheckCircle, Color(0xFF2E7D32))
-        UploadOutcome.SKIPPED_DUPLICATE -> Pair(Icons.Rounded.Info, Color(0xFF1976D2))
+        UploadOutcome.UPLOADED -> Pair(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.primary)
+        UploadOutcome.SKIPPED_DUPLICATE -> Pair(Icons.Rounded.Info, MaterialTheme.colorScheme.secondary)
         UploadOutcome.FAILED -> Pair(Icons.Rounded.Error, MaterialTheme.colorScheme.error)
-        UploadOutcome.NONE -> Pair(Icons.Rounded.Info, Color(0xFF757575))
+        UploadOutcome.NONE -> Pair(Icons.Rounded.Info, MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     Surface(
@@ -669,7 +697,13 @@ private fun FileResultRow(entry: LogEntry) {
                 }
             }
 
-            AnimatedVisibility(visible = rawExpanded) {
+            AnimatedVisibility(
+                visible = rawExpanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Text(
                     text = "Trace:\n${entry.fullFormattedText}",
                     fontFamily = FontFamily.Monospace,
@@ -775,7 +809,13 @@ private fun ProblemRow(entry: LogEntry) {
                 )
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
                 Text(
                     text = "Technical Detail:\n${entry.fullFormattedText}",
                     fontFamily = FontFamily.Monospace,
@@ -847,7 +887,7 @@ private fun RawLogsTabContent(
                     if (searchQuery.isNotEmpty()) {
                         ExpressiveIconButton(
                             onClick = { searchQuery = "" },
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.minimumInteractiveComponentSize(),
                             colors = IconButtonDefaults.iconButtonColors()
                         ) {
                             Icon(Icons.Rounded.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
@@ -868,7 +908,7 @@ private fun RawLogsTabContent(
                     if (opIdFilter.isNotEmpty()) {
                         ExpressiveIconButton(
                             onClick = { opIdFilter = "" },
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.minimumInteractiveComponentSize(),
                             colors = IconButtonDefaults.iconButtonColors()
                         ) {
                             Icon(Icons.Rounded.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
@@ -1050,10 +1090,10 @@ private fun LogRow(
 
     val levelColor = when (entry.level) {
         LogLevel.ERROR -> MaterialTheme.colorScheme.error
-        LogLevel.WARN -> Color(0xFFE65100)
-        LogLevel.INFO -> Color(0xFF2E7D32)
-        LogLevel.DEBUG -> Color(0xFF1976D2)
-        LogLevel.VERBOSE -> Color(0xFF757575)
+        LogLevel.WARN -> MaterialTheme.colorScheme.tertiary
+        LogLevel.INFO -> MaterialTheme.colorScheme.primary
+        LogLevel.DEBUG -> MaterialTheme.colorScheme.secondary
+        LogLevel.VERBOSE -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Column(
@@ -1126,7 +1166,12 @@ private fun ShareReportDialog(
         val lastRunSummary = allLogs.lastOrNull { it.kind == LogKind.RUN_SUMMARY }
         if (lastRunSummary != null) {
             sb.appendLine("#### Last Run Summary")
-            sb.appendLine(lastRunSummary.message)
+            val safeSummary = if (hideFileNames) {
+                LumenLogger.redactFileNamesAndPaths(LumenLogger.redact(lastRunSummary.message))
+            } else {
+                LumenLogger.redact(lastRunSummary.message)
+            }
+            sb.appendLine(safeSummary)
             sb.appendLine()
         }
 

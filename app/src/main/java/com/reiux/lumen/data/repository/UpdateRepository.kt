@@ -138,7 +138,7 @@ class UpdateRepository(
             throw SecurityException("Untrusted or insecure download URL: $url")
         }
 
-        val expectedSha256 = if (!expectedSha256Override.isNullOrBlank()) {
+        val expectedSha256 = if (expectedSha256Override != null) {
             val trimmed = expectedSha256Override.trim()
             if (!isValidSha256Hex(trimmed)) {
                 throw SecurityException("Invalid expected SHA-256 digest")
@@ -157,6 +157,7 @@ class UpdateRepository(
         var currentUrl: HttpUrl = url.toHttpUrlOrNull()
             ?: throw SecurityException("Malformed download URL: $url")
         var redirectCount = 0
+        var touchedDest = false
 
         try {
             while (true) {
@@ -188,10 +189,10 @@ class UpdateRepository(
                         }
                         val sha256Digest = MessageDigest.getInstance("SHA-256")
 
+                        var bytesCopied = 0L
                         body.byteStream().use { input ->
                             FileOutputStream(tempFile).use { output ->
                                 val buffer = ByteArray(8 * 1024)
-                                var bytesCopied = 0L
                                 var read: Int
                                 var lastProgress = 0
 
@@ -214,6 +215,10 @@ class UpdateRepository(
                             }
                         }
 
+                        if (bytesCopied <= 0L) {
+                            throw IOException("Downloaded update APK is empty")
+                        }
+
                         if (!expectedSha256.isNullOrBlank()) {
                             val actualSha256 = sha256Digest.digest().joinToString("") { "%02x".format(it) }
                             if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
@@ -233,8 +238,9 @@ class UpdateRepository(
             }
 
             if (destFile.exists() && !destFile.delete()) {
-                LumenLogger.w("Updater") { "Could not delete existing update destination before move" }
+                throw IOException("Could not replace existing update APK")
             }
+            touchedDest = true
             if (!tempFile.renameTo(destFile)) {
                 tempFile.inputStream().use { input ->
                     FileOutputStream(destFile).use { output ->
@@ -243,11 +249,17 @@ class UpdateRepository(
                 }
                 tempFile.delete()
             }
+            touchedDest = false
             emit(100)
         } catch (t: Throwable) {
             try {
                 if (tempFile.exists()) tempFile.delete()
             } catch (_: Exception) {}
+            if (touchedDest) {
+                try {
+                    if (destFile.exists()) destFile.delete()
+                } catch (_: Exception) {}
+            }
             throw t
         }
     }.flowOn(Dispatchers.IO)

@@ -59,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -89,7 +90,9 @@ import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.animatedGroupedCardShape
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
@@ -300,22 +303,334 @@ fun SettingsScreen(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val foldPosture = LocalFoldPosture.current
         val isWideLayout = maxWidth >= 640.dp
+        val isTallViewport = maxHeight >= 560.dp
 
-        if (isWideLayout) {
+        if (foldPosture.isTabletop && maxHeight >= 520.dp) {
+            val isWideTabletop = maxWidth >= 640.dp
+            val accentPaletteCard: @Composable () -> Unit = {
+                val columns = if (isWideTabletop) 3 else 2
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = groupedCardShape(GroupPosition.Single),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = stringResource(R.string.settings_accent_palette),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_accent_palette_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            presetsToDisplay.chunked(columns).forEach { rowPresets ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    rowPresets.forEach { preset ->
+                                        val isSelected = settings.colorPreset.equals(preset.name, ignoreCase = true)
+                                        PalettePresetCard(
+                                            preset = preset,
+                                            isSelected = isSelected,
+                                            onClick = { onUpdateColorPreset(preset.name) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(columns - rowPresets.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            TabletopSplitLayout(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                topContent = {
+                    if (isWideTabletop) {
+                        val topLeftScrollState = rememberScrollState()
+                        val topRightScrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .widthIn(max = 960.dp)
+                                .fillMaxSize()
+                                .padding(top = 6.dp, bottom = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = stringResource(R.string.settings_title),
+                                    style = MaterialTheme.typography.headlineMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = stringResource(R.string.settings_subtitle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1.08f)
+                                        .fillMaxHeight()
+                                        .verticalScroll(topLeftScrollState),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_theme_palette),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+
+                                    accentPaletteCard()
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+
+                                Column(
+                                    modifier = Modifier
+                                        .weight(0.92f)
+                                        .fillMaxHeight()
+                                        .verticalScroll(topRightScrollState),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_updates_title),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+
+                                    UpdatesGroup(
+                                        autoCheckUpdates = settings.autoCheckUpdates,
+                                        onCheckedChange = onUpdateAutoCheckUpdates
+                                    )
+
+                                    AboutEntryCard(
+                                        appVersionName = com.reiux.lumen.BuildConfig.VERSION_NAME,
+                                        hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                        onClick = onNavigateToAbout
+                                    )
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                            }
+                        }
+                    } else {
+                        val topScrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 680.dp)
+                                .fillMaxSize()
+                                .verticalScroll(topScrollState),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_title),
+                                    style = MaterialTheme.typography.headlineMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = stringResource(R.string.settings_subtitle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Text(
+                                text = stringResource(R.string.settings_theme_palette),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            accentPaletteCard()
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                },
+                bottomContent = {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .widthIn(max = if (isWideTabletop) 960.dp else 680.dp)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)
+                    ) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.settings_network_speed_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        item {
+                            NetworkAndSpeedCard(
+                                settings = settings,
+                                isBatteryOptimizedExempt = isBatteryOptimizedExempt,
+                                context = context,
+                                onUpdateAutoBackup = onUpdateAutoBackup,
+                                onUpdateWifiOnly = onUpdateWifiOnly,
+                                onUpdateChargingOnly = onUpdateChargingOnly,
+                                onUpdateUploadThreads = onUpdateUploadThreads,
+                                onShowOemGuide = { showOemGuideDialog = true }
+                            )
+                        }
+
+                        item {
+                            Text(
+                                text = stringResource(R.string.settings_storage_quality_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        item {
+                            StorageAndQualityCard(
+                                settings = settings,
+                                onStorageSaverToggle = handleStorageSaverToggle,
+                                onUseQuotaToggle = handleUseQuotaToggle,
+                                onUpdateNotifications = onUpdateNotifications,
+                                onUpdateAutoSyncAlbums = onUpdateAutoSyncAlbums,
+                                onOpenAccountSafety = { showAccountSafetyDialog = true }
+                            )
+                        }
+
+                        item {
+                            Text(
+                                text = stringResource(R.string.settings_storage_cleanup_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        item {
+                            StorageCleanupGroup(
+                                deleteAfterBackup = settings.deleteAfterBackup,
+                                onCheckedChange = { next ->
+                                    if (next) {
+                                        showConfirmDeleteAfterBackupDialog = true
+                                    } else {
+                                        onUpdateDeleteAfterBackup(false)
+                                    }
+                                }
+                            )
+                        }
+
+                        if (settings.developerModeUnlocked) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.settings_dev_tools),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            item {
+                                DevToolsGroup(
+                                    settings = settings,
+                                    isShowcaseMode = isShowcaseMode,
+                                    isMockMode = isMockMode,
+                                    onUpdateEnableBlurEffects = onUpdateEnableBlurEffects,
+                                    onToggleShowcaseMode = onToggleShowcaseMode,
+                                    onToggleMockMode = onToggleMockMode,
+                                    onOpenDevDiagnostics = onOpenDevDiagnostics,
+                                    onReplayOnboarding = onReplayOnboarding,
+                                    onToggleDeveloperMode = onToggleDeveloperMode
+                                )
+                            }
+                        }
+
+                        if (!isWideTabletop) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.settings_updates_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            item {
+                                UpdatesGroup(
+                                    autoCheckUpdates = settings.autoCheckUpdates,
+                                    onCheckedChange = onUpdateAutoCheckUpdates
+                                )
+                            }
+
+                            item {
+                                Text(
+                                    text = stringResource(R.string.settings_about_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            item {
+                                AboutEntryCard(
+                                    appVersionName = com.reiux.lumen.BuildConfig.VERSION_NAME,
+                                    hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                    onClick = onNavigateToAbout
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        } else if (isWideLayout) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .wrapContentWidth(Alignment.CenterHorizontally)
                     .widthIn(max = 1080.dp)
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 28.dp else 16.dp)
             ) {
                 // Left Pane: Theme Accent Palette & Developer Tools
                 val leftScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
-                        .weight(0.48f)
+                        .weight(if (isTallViewport) 1f else 0.48f)
                         .fillMaxHeight()
                         .verticalScroll(leftScrollState),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -408,7 +723,7 @@ fun SettingsScreen(
                 val rightScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
-                        .weight(0.52f)
+                        .weight(if (isTallViewport) 1f else 0.52f)
                         .fillMaxHeight()
                         .verticalScroll(rightScrollState),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -707,7 +1022,8 @@ fun SettingsScreen(
 fun PalettePresetCard(
     preset: ColorPreset,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val coroutineScope = rememberCoroutineScope()
@@ -775,8 +1091,9 @@ fun PalettePresetCard(
     val shape = RoundedCornerShape(cornerRadius)
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .scale(pressScale)
+            .minimumInteractiveComponentSize()
             .clip(shape)
             .clickable(
                 interactionSource = interactionSource,
@@ -828,6 +1145,7 @@ fun PalettePresetCard(
 
             Text(
                 text = preset.name,
+                modifier = Modifier.weight(1f, fill = false),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 color = labelColor,

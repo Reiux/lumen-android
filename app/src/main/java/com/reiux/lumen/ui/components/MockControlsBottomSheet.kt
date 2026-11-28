@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +109,13 @@ fun MockControlsBottomSheet(
     val motionScheme = MaterialTheme.motionScheme
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf("Backup", "Safety", "Prompts", "Fun")
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val tabletopHeightMod = if (foldPosture.isTabletop) {
+        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+    } else {
+        Modifier
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -118,6 +127,7 @@ fun MockControlsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(tabletopHeightMod)
                 .padding(horizontal = 20.dp)
                 .padding(top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)

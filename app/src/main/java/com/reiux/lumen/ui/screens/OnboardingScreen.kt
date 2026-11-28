@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -68,6 +69,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -82,6 +84,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.reiux.lumen.R
@@ -106,9 +109,13 @@ import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.GoogleSignInWebViewDialog
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
 import com.reiux.lumen.ui.components.OemBackgroundGuideDialog
+import com.reiux.lumen.ui.components.TabletopSplitLayout
+import com.reiux.lumen.ui.components.animatedGroupedCardShape
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.requiresAllFilesPermission
 import com.reiux.lumen.util.DeviceConditions
 import com.reiux.lumen.util.LumenLogger
@@ -403,27 +410,27 @@ fun OnboardingScreen(
         color = MaterialTheme.colorScheme.surface
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val foldPosture = LocalFoldPosture.current
+            val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
             val isTwoPane = maxWidth >= 700.dp
+            val isTallViewport = maxHeight >= 560.dp
 
-            if (isTwoPane) {
-                // Split Layout (Landscape / Tablet / Wide Screen)
-                Row(
+            if (isTabletop) {
+                // Tabletop Fold Mode: Header & illustration on angled top half, interactive cards & actions below the crease
+                TabletopSplitLayout(
                     modifier = Modifier
                         .fillMaxSize()
                         .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .wrapContentWidth(Alignment.CenterHorizontally)
-                        .widthIn(max = 1080.dp)
                         .padding(horizontal = 24.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    // Left Pane: Step Header, Back Button, Hero Illustration, and Pager Indicator
-                    Column(
-                        modifier = Modifier
-                            .weight(0.42f)
-                            .fillMaxHeight(),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                    topContent = {
+                        // Top angled half: Back button row + centered OnboardingStepLeftHeader
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxHeight()
+                                .widthIn(max = 720.dp)
+                                .fillMaxWidth()
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -438,7 +445,9 @@ fun OnboardingScreen(
                                                 )
                                             }
                                         },
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier
+                                            .minimumInteractiveComponentSize()
+                                            .size(40.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -447,20 +456,288 @@ fun OnboardingScreen(
                                         )
                                     }
                                 } else {
-                                    Spacer(modifier = Modifier.size(40.dp))
+                                    Spacer(modifier = Modifier.size(48.dp))
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                OnboardingStepLeftHeader(page = pagerState.currentPage)
+                            }
+                        }
+                    },
+                    bottomContent = {
+                        // Bottom flat touch deck: Interactive page cards + pager dots + action button
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxHeight()
+                                .widthIn(max = 720.dp)
+                                .fillMaxWidth()
+                        ) {
+                            HorizontalPager(
+                                state = pagerState,
+                                userScrollEnabled = false,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .clipToBounds()
+                            ) { page ->
+                                when (page) {
+                                    0 -> OnboardingWelcomePage(
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    1 -> OnboardingPermissionsPage(
+                                        hasMedia = hasMediaPermission,
+                                        hasNotifications = hasNotificationPermission,
+                                        hasBackground = hasBackgroundPermission,
+                                        onRequestPermissions = requestOnboardingPermissions,
+                                        onRequestBackground = {
+                                            DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                                        },
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    2 -> OnboardingAccountPage(
+                                        selectedAccount = selectedAccount,
+                                        isAddingAccount = isAddingAccount,
+                                        hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                                        onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                                        onOpenSignIn = { showSignInWebView = true },
+                                        onOpenManual = { showManualTokenDialog = true },
+                                        onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    3 -> OnboardingFoldersPage(
+                                        folders = onboardingFolders,
+                                        onToggleFolder = handleOnboardingFolderToggle,
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    4 -> OnboardingPreferencesPage(
+                                        wifiOnly = settings.wifiOnly,
+                                        onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                                        storageSaver = settings.storageSaverQuality,
+                                        onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                                        selectedPreset = settings.colorPreset,
+                                        onUpdatePreset = { viewModel.updateColorPreset(it) },
+                                        unlockedPrismTheme = settings.unlockedPrismTheme,
+                                        unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
+                                    5 -> OnboardingCompletionPage(
+                                        isTwoPane = true,
+                                        centerVertically = false
+                                    )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Start,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    for (pageIndex in 0 until 6) {
+                                        val isSelected = pagerState.currentPage == pageIndex
+                                        val width by animateDpAsState(
+                                            targetValue = if (isSelected) 28.dp else 8.dp,
+                                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                                            label = "indicatorWidthTabletop"
+                                        )
+                                        val color by animateColorAsState(
+                                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                                            label = "indicatorColorTabletop"
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(end = 6.dp)
+                                                .height(8.dp)
+                                                .width(width)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                        )
+                                    }
+                                }
+
+                                Box(modifier = Modifier.weight(1f)) {
+                                    OnboardingActionButton(
+                                        currentPage = pagerState.currentPage,
+                                        hasMediaPermission = hasMediaPermission,
+                                        selectedAccount = selectedAccount,
+                                        onSetAccountLater = {
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(
+                                                    page = 3,
+                                                    animationSpec = pagerScrollSpec
+                                                )
+                                            }
+                                        },
+                                        onNext = {
+                                            if (pagerState.currentPage < 5) {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        page = pagerState.currentPage + 1,
+                                                        animationSpec = pagerScrollSpec
+                                                    )
+                                                }
+                                            } else {
+                                                onFinish()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                )
+            } else if (isTwoPane) {
+                // Split Layout (Landscape / Tablet / Unfolded Foldable)
+                // Shared top bar + bottom bar ensure Left and Right panes share the exact same vertical centerline.
+                val paneGap = if (isTallViewport) 32.dp else 24.dp
+                val leftPaneWeight = if (isTallViewport) 1f else 0.42f
+                val rightPaneWeight = if (isTallViewport) 1f else 0.58f
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .widthIn(max = 1080.dp)
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    // Shared Top Row (Back button)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (pagerState.currentPage > 0) {
+                            ExpressiveIconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(
+                                            page = pagerState.currentPage - 1,
+                                            animationSpec = pagerScrollSpec
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = stringResource(R.string.nav_back),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(48.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Shared Middle 2-Pane Row: exact same top & bottom bounds for both halves
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(paneGap)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(leftPaneWeight)
+                                .fillMaxHeight(),
+                            contentAlignment = if (isTallViewport) Alignment.CenterStart else Alignment.TopStart
+                        ) {
                             OnboardingStepLeftHeader(page = pagerState.currentPage)
                         }
 
-                        // M3E Expressive Spring Pager Indicator
-                        Row(
+                        HorizontalPager(
+                            state = pagerState,
+                            userScrollEnabled = false,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
+                                .weight(rightPaneWeight)
+                                .fillMaxHeight()
+                                .clipToBounds()
+                        ) { page ->
+                            when (page) {
+                                0 -> OnboardingWelcomePage(
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                1 -> OnboardingPermissionsPage(
+                                    hasMedia = hasMediaPermission,
+                                    hasNotifications = hasNotificationPermission,
+                                    hasBackground = hasBackgroundPermission,
+                                    onRequestPermissions = requestOnboardingPermissions,
+                                    onRequestBackground = {
+                                        DeviceConditions.requestIgnoreBatteryOptimizations(context)
+                                    },
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                2 -> OnboardingAccountPage(
+                                    selectedAccount = selectedAccount,
+                                    isAddingAccount = isAddingAccount,
+                                    hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
+                                    onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
+                                    onOpenSignIn = { showSignInWebView = true },
+                                    onOpenManual = { showManualTokenDialog = true },
+                                    onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                3 -> OnboardingFoldersPage(
+                                    folders = onboardingFolders,
+                                    onToggleFolder = handleOnboardingFolderToggle,
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                4 -> OnboardingPreferencesPage(
+                                    wifiOnly = settings.wifiOnly,
+                                    onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
+                                    storageSaver = settings.storageSaverQuality,
+                                    onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
+                                    selectedPreset = settings.colorPreset,
+                                    onUpdatePreset = { viewModel.updateColorPreset(it) },
+                                    unlockedPrismTheme = settings.unlockedPrismTheme,
+                                    unlockedMatrixTheme = settings.unlockedMatrixTheme,
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                                5 -> OnboardingCompletionPage(
+                                    isTwoPane = true,
+                                    centerVertically = isTallViewport
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Shared Bottom Row: Pager Indicator (left) aligned vertically with CTA Button (right)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(paneGap),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(leftPaneWeight),
                             horizontalArrangement = Arrangement.Start,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -486,69 +763,8 @@ fun OnboardingScreen(
                                 )
                             }
                         }
-                    }
 
-                    // Right Pane: Content Page & Action Button
-                    Column(
-                        modifier = Modifier
-                            .weight(0.58f)
-                            .fillMaxHeight(),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            userScrollEnabled = false,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) { page ->
-                            when (page) {
-                                0 -> OnboardingWelcomePage(isTwoPane = true)
-                                1 -> OnboardingPermissionsPage(
-                                    hasMedia = hasMediaPermission,
-                                    hasNotifications = hasNotificationPermission,
-                                    hasBackground = hasBackgroundPermission,
-                                    onRequestPermissions = requestOnboardingPermissions,
-                                    onRequestBackground = {
-                                        DeviceConditions.requestIgnoreBatteryOptimizations(context)
-                                    },
-                                    isTwoPane = true
-                                )
-                                2 -> OnboardingAccountPage(
-                                    selectedAccount = selectedAccount,
-                                    isAddingAccount = isAddingAccount,
-                                    hasAcknowledgedAccountRisk = settings.hasAcknowledgedAccountRisk,
-                                    onAcknowledgeRisk = { viewModel.acknowledgeAccountRisk() },
-                                    onOpenSignIn = { showSignInWebView = true },
-                                    onOpenManual = { showManualTokenDialog = true },
-                                    onOpenSwitchOrAddAccount = { showAddAccountDialog = true },
-                                    isTwoPane = true
-                                )
-                                3 -> OnboardingFoldersPage(
-                                    folders = onboardingFolders,
-                                    onToggleFolder = handleOnboardingFolderToggle,
-                                    isTwoPane = true
-                                )
-                                4 -> OnboardingPreferencesPage(
-                                    wifiOnly = settings.wifiOnly,
-                                    onUpdateWifiOnly = { viewModel.updateWifiOnly(it) },
-                                    storageSaver = settings.storageSaverQuality,
-                                    onUpdateStorageSaver = { viewModel.updateStorageSaver(it) },
-                                    selectedPreset = settings.colorPreset,
-                                    onUpdatePreset = { viewModel.updateColorPreset(it) },
-                                    unlockedPrismTheme = settings.unlockedPrismTheme,
-                                    unlockedMatrixTheme = settings.unlockedMatrixTheme,
-                                    isTwoPane = true
-                                )
-                                5 -> OnboardingCompletionPage(isTwoPane = true)
-                            }
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp)
-                        ) {
+                        Box(modifier = Modifier.weight(rightPaneWeight)) {
                             OnboardingActionButton(
                                 currentPage = pagerState.currentPage,
                                 hasMediaPermission = hasMediaPermission,
@@ -603,7 +819,9 @@ fun OnboardingScreen(
                                         )
                                     }
                                 },
-                                modifier = Modifier.size(44.dp)
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(44.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -1034,12 +1252,16 @@ private fun OnboardingStepLeftHeader(page: Int) {
 // Page 0: Welcome to Lumen
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingWelcomePage(isTwoPane: Boolean = false) {
+private fun OnboardingWelcomePage(
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1140,7 +1362,8 @@ private fun OnboardingPermissionsPage(
     hasBackground: Boolean,
     onRequestPermissions: () -> Unit,
     onRequestBackground: () -> Unit,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     val context = LocalContext.current
     Column(
@@ -1148,6 +1371,7 @@ private fun OnboardingPermissionsPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1312,7 +1536,8 @@ private fun OnboardingAccountPage(
     onOpenSignIn: () -> Unit,
     onOpenManual: () -> Unit,
     onOpenSwitchOrAddAccount: () -> Unit = onOpenSignIn,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     var localAcknowledged by rememberSaveable(hasAcknowledgedAccountRisk) { mutableStateOf(hasAcknowledgedAccountRisk) }
 
@@ -1321,6 +1546,7 @@ private fun OnboardingAccountPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1478,7 +1704,8 @@ private fun OnboardingAccountPage(
 private fun OnboardingFoldersPage(
     folders: List<com.reiux.lumen.data.model.BackupFolder>,
     onToggleFolder: (com.reiux.lumen.data.model.BackupFolder, Boolean) -> Unit,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     val haptic = LocalHapticFeedback.current
     Column(
@@ -1486,6 +1713,7 @@ private fun OnboardingFoldersPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1532,6 +1760,9 @@ private fun OnboardingFoldersPage(
         ) {
             folders.forEachIndexed { index, folder ->
                 val position = groupPositionOf(index, folders.size)
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by rememberExpressivePressed(interactionSource)
+                val shape = animatedGroupedCardShape(position = position, pressed = isPressed)
                 val toggleFolderWithHaptic: (Boolean) -> Unit = { next ->
                     try { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                     onToggleFolder(folder, next)
@@ -1539,8 +1770,9 @@ private fun OnboardingFoldersPage(
                 Surface(
                     onClick = { toggleFolderWithHaptic(!folder.enabled) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = groupedCardShape(position),
-                    color = MaterialTheme.colorScheme.surfaceContainer
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    interactionSource = interactionSource
                 ) {
                     Row(
                         modifier = Modifier
@@ -1617,7 +1849,8 @@ private fun OnboardingPreferencesPage(
     onUpdatePreset: (String) -> Unit,
     unlockedPrismTheme: Boolean = false,
     unlockedMatrixTheme: Boolean = false,
-    isTwoPane: Boolean = false
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
 ) {
     val presetsToDisplay = remember(unlockedPrismTheme, unlockedMatrixTheme) {
         com.reiux.lumen.ui.theme.getAvailablePresets(unlockedPrismTheme, unlockedMatrixTheme)
@@ -1627,6 +1860,7 @@ private fun OnboardingPreferencesPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {
@@ -1672,6 +1906,9 @@ private fun OnboardingPreferencesPage(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
+            val wifiInteractionSource = remember { MutableInteractionSource() }
+            val isWifiPressed by rememberExpressivePressed(wifiInteractionSource)
+            val wifiShape = animatedGroupedCardShape(position = GroupPosition.Top, pressed = isWifiPressed)
             val toggleWifi: (Boolean) -> Unit = { next ->
                 try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                 onUpdateWifiOnly(next)
@@ -1679,8 +1916,9 @@ private fun OnboardingPreferencesPage(
             Surface(
                 onClick = { toggleWifi(!wifiOnly) },
                 modifier = Modifier.fillMaxWidth(),
-                shape = groupedCardShape(GroupPosition.Top),
-                color = MaterialTheme.colorScheme.surfaceContainer
+                shape = wifiShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                interactionSource = wifiInteractionSource
             ) {
                 Row(
                     modifier = Modifier
@@ -1715,6 +1953,9 @@ private fun OnboardingPreferencesPage(
                 }
             }
 
+            val storageInteractionSource = remember { MutableInteractionSource() }
+            val isStoragePressed by rememberExpressivePressed(storageInteractionSource)
+            val storageShape = animatedGroupedCardShape(position = GroupPosition.Bottom, pressed = isStoragePressed)
             val toggleStorageSaver: (Boolean) -> Unit = { next ->
                 try { onboardingHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } catch (_: Exception) {}
                 onUpdateStorageSaver(next)
@@ -1722,8 +1963,9 @@ private fun OnboardingPreferencesPage(
             Surface(
                 onClick = { toggleStorageSaver(!storageSaver) },
                 modifier = Modifier.fillMaxWidth(),
-                shape = groupedCardShape(GroupPosition.Bottom),
-                color = MaterialTheme.colorScheme.surfaceContainer
+                shape = storageShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                interactionSource = storageInteractionSource
             ) {
                 Row(
                     modifier = Modifier
@@ -1806,12 +2048,16 @@ private fun OnboardingPreferencesPage(
 // Page 5: All Set / Ready to Go
 // ---------------------------------------------------------------------------
 @Composable
-private fun OnboardingCompletionPage(isTwoPane: Boolean = false) {
+private fun OnboardingCompletionPage(
+    isTwoPane: Boolean = false,
+    centerVertically: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = if (isTwoPane) 0.dp else 24.dp),
+        verticalArrangement = if (centerVertically) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isTwoPane) {

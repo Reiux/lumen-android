@@ -34,10 +34,13 @@ class MediaContentJobService : JobService() {
             return false
         }
 
-        watchJob?.cancel()
+        val previousJob = watchJob
         wasStoppedBySystem = false
         isJobRunning = true
-        val scanJob = app.checkAndEnqueueRecentMedia(fromBoot = false, clearBootFlag = true)
+        val scanJob = app.checkAndEnqueueRecentMedia(
+            fromBoot = false,
+            clearBootFlag = !app.startedFromBootBroadcast || !app.uploadRepository.isUploading.value
+        )
 
         // Hold the JobService execution lease until the MediaStore scan finishes and any resulting
         // background upload completes so the OS doesn't freeze the process prematurely.
@@ -48,7 +51,7 @@ class MediaContentJobService : JobService() {
             try {
                 scanJob.join()
                 delay(300L)
-                while (isActive && app.uploadRepository.isUploading.value) {
+                while (isActive && app.uploadRepository.isUploading.value && !app.uploadRepository.isPaused.value) {
                     delay(1000L)
                 }
             } finally {
@@ -67,6 +70,7 @@ class MediaContentJobService : JobService() {
             }
         }
         watchJob = launchedJob
+        previousJob?.cancel()
         launchedJob.start()
         return true
     }

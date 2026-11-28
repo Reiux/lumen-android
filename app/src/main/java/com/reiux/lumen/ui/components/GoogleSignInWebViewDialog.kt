@@ -14,38 +14,47 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,7 +70,6 @@ import java.util.Locale
 
 private const val EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun GoogleSignInWebViewDialog(
@@ -73,15 +81,18 @@ fun GoogleSignInWebViewDialog(
     var loadError by remember { mutableStateOf<String?>(null) }
     var captured by remember { mutableStateOf(false) }
     var isDisposed by remember { mutableStateOf(false) }
+    var sessionInitialized by rememberSaveable { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     val destroyedViews = remember { Collections.newSetFromMap(IdentityHashMap<WebView, Boolean>()) }
     val currentOnTokenCaptured by rememberUpdatedState(onTokenCaptured)
 
     fun clearSessionStorage() {
         try {
-            CookieManager.getInstance().apply {
-                removeAllCookies(null)
-                flush()
+            val cm = CookieManager.getInstance()
+            cm.removeAllCookies {
+                try {
+                    cm.flush()
+                } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
         try {
@@ -89,8 +100,12 @@ fun GoogleSignInWebViewDialog(
         } catch (_: Exception) {}
     }
 
-    fun cleanupWebView(target: WebView?) {
+    val handleExplicitDismiss: () -> Unit = {
         clearSessionStorage()
+        onDismiss()
+    }
+
+    fun cleanupWebView(target: WebView?) {
         if (target != null && destroyedViews.add(target)) {
             try {
                 target.stopLoading()
@@ -116,9 +131,12 @@ fun GoogleSignInWebViewDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
+    val density = LocalDensity.current
+    var containerTopInWindowPx by remember { mutableFloatStateOf(0f) }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = handleExplicitDismiss,
         properties = DialogProperties(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
@@ -126,22 +144,13 @@ fun GoogleSignInWebViewDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        PredictiveBackDialogContainer(onDismiss = onDismiss) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .safeDrawingPadding()
-                    .padding(
-                        horizontal = if (isWideLayout) 32.dp else 16.dp,
-                        vertical = if (isWideLayout) 24.dp else 18.dp
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
+        PredictiveBackDialogContainer(
+            onDismiss = handleExplicitDismiss,
+            constrainToTabletop = false
+        ) {
+            val dialogSurface: @Composable (Modifier) -> Unit = { surfaceSizeModifier ->
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = if (isWideLayout) 760.dp else 500.dp)
-                        .fillMaxHeight(if (isWideLayout) 0.92f else 0.94f)
+                    modifier = surfaceSizeModifier
                         .clip(RoundedCornerShape(28.dp))
                         .border(
                             width = 1.dp,
@@ -151,27 +160,29 @@ fun GoogleSignInWebViewDialog(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    text = stringResource(R.string.google_signin_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            },
-                            navigationIcon = {
-                                ExpressiveIconButton(
-                                    onClick = onDismiss,
-                                    colors = IconButtonDefaults.iconButtonColors()
-                                ) {
-                                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close))
-                                }
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                            ),
-                            windowInsets = WindowInsets(0, 0, 0, 0)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = 16.dp,
+                                    vertical = if (foldPosture.isTabletop) 8.dp else 14.dp
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ExpressiveIconButton(
+                                onClick = handleExplicitDismiss,
+                                colors = IconButtonDefaults.iconButtonColors()
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.btn_close))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.google_signin_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
 
                         if (disclaimerText != null) {
                             Surface(
@@ -277,8 +288,9 @@ fun GoogleSignInWebViewDialog(
 
                                                     // Check URL parameters first (strictly from accounts.google.com)
                                                     if (currentUrl != null && (currentUrl.contains("oauth_token=") || currentUrl.contains("Token="))) {
-                                                        val parsedHost = try { Uri.parse(currentUrl).host?.lowercase(Locale.ROOT) } catch (_: Exception) { null }
-                                                        if (parsedHost == "accounts.google.com") {
+                                                        val parsedUri = try { Uri.parse(currentUrl) } catch (_: Exception) { null }
+                                                        val parsedHost = parsedUri?.host?.lowercase(Locale.ROOT)
+                                                        if (parsedUri?.scheme.equals("https", ignoreCase = true) && parsedHost == "accounts.google.com") {
                                                             val queryToken = extractFromUrl(currentUrl)
                                                             if (!queryToken.isNullOrEmpty()) {
                                                                 captured = true
@@ -300,17 +312,22 @@ fun GoogleSignInWebViewDialog(
                                                 }
                                             }
 
-                                            try {
-                                                WebStorage.getInstance().deleteAllData()
-                                            } catch (_: Exception) {}
-
-                                            cookieManager.removeAllCookies {
+                                            if (!sessionInitialized) {
+                                                sessionInitialized = true
                                                 try {
-                                                    cookieManager.flush()
+                                                    WebStorage.getInstance().deleteAllData()
                                                 } catch (_: Exception) {}
-                                                if (!isDisposed && !destroyedViews.contains(this)) {
-                                                    loadUrl(EMBEDDED_SETUP_URL)
+
+                                                cookieManager.removeAllCookies {
+                                                    try {
+                                                        cookieManager.flush()
+                                                    } catch (_: Exception) {}
+                                                    if (!isDisposed && !destroyedViews.contains(this)) {
+                                                        loadUrl(EMBEDDED_SETUP_URL)
+                                                    }
                                                 }
+                                            } else {
+                                                loadUrl(EMBEDDED_SETUP_URL)
                                             }
                                         }
                                     },
@@ -412,6 +429,51 @@ fun GoogleSignInWebViewDialog(
                             }
                         }
                     }
+                }
+            }
+
+            if (foldPosture.isTabletop) {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+                        )
+                        .padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                        .onGloballyPositioned { coords ->
+                            containerTopInWindowPx = coords.positionInWindow().y
+                        },
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    val containerTopDp = with(density) { containerTopInWindowPx.toDp() }
+                    val tabletopSurfaceHeight = foldPosture.tabletopTopPaneHeight(
+                        containerTopInWindowDp = containerTopDp,
+                        maxAvailableHeightDp = maxHeight,
+                        bottomMarginDp = 8.dp
+                    )
+                    dialogSurface(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(tabletopSurfaceHeight)
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding()
+                        .padding(
+                            horizontal = if (isWideLayout) 32.dp else 16.dp,
+                            vertical = if (isWideLayout) 24.dp else 18.dp
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    dialogSurface(
+                        Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = if (isWideLayout) 760.dp else 500.dp)
+                            .fillMaxHeight(if (isWideLayout) 0.92f else 0.94f)
+                    )
                 }
             }
         }

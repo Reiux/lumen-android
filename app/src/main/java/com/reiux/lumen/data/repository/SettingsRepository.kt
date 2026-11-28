@@ -923,12 +923,14 @@ class SettingsRepository(
             !UpdateRepository.isAllowedInitialDownloadUrl(info.downloadUrl) ||
             (cleanSha256 != null && !UpdateRepository.isValidSha256Hex(cleanSha256))
         ) {
+            prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
             return
         }
         val obj = JSONObject()
         obj.put("versionName", info.versionName.trim())
         obj.put("releaseNotes", info.releaseNotes)
         obj.put("downloadUrl", info.downloadUrl.trim())
+        obj.put("savedAtMillis", System.currentTimeMillis())
         if (cleanSha256 != null) {
             obj.put("expectedSha256", cleanSha256.lowercase(java.util.Locale.US))
         }
@@ -940,6 +942,16 @@ class SettingsRepository(
         if (raw.isNullOrBlank()) return null
         return try {
             val obj = JSONObject(raw)
+            if (obj.has("savedAtMillis") && !obj.isNull("savedAtMillis")) {
+                val savedAtMillis = obj.optLong("savedAtMillis", -1L)
+                val now = System.currentTimeMillis()
+                val maxAgeMillis = 12L * 60 * 60 * 1000
+                val maxFutureSkewMillis = 5L * 60 * 1000
+                if (savedAtMillis <= 0L || now - savedAtMillis > maxAgeMillis || savedAtMillis - now > maxFutureSkewMillis) {
+                    prefs.edit().remove(KEY_PENDING_UPDATE_INFO_JSON).apply()
+                    return null
+                }
+            }
             val versionName = obj.optNullableString("versionName")?.trim().orEmpty()
             val releaseNotes = obj.optNullableString("releaseNotes").orEmpty()
             val downloadUrl = obj.optNullableString("downloadUrl")?.trim().orEmpty()
@@ -1155,12 +1167,14 @@ class SettingsRepository(
 
     companion object {
         fun normalizeFolderPath(path: String): String {
-            return path.trim()
-                .replace('\\', '/')
-                .removePrefix("/storage/emulated/0/")
-                .removePrefix("/sdcard/")
+            val normalized = com.reiux.lumen.util.FolderWatcherManager.normalizeStoragePath(path)
+            return when {
+                normalized == "/storage/emulated/0" -> ""
+                normalized.startsWith("/storage/emulated/0/") -> normalized.removePrefix("/storage/emulated/0/")
+                else -> normalized
+            }
                 .trimEnd('/')
-                .lowercase()
+                .lowercase(java.util.Locale.ROOT)
         }
 
         fun matchesFolderPath(path1: String, path2: String): Boolean {

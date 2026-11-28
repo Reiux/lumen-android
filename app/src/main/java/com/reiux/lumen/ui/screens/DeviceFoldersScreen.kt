@@ -12,8 +12,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -125,6 +123,8 @@ import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.ExpressiveWavyIndeterminateProgress
 import com.reiux.lumen.ui.components.FolderMediaTypeChip
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
 import com.reiux.lumen.ui.components.NullableBackupFolderSaver
@@ -565,20 +565,80 @@ fun DeviceFoldersScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            val foldPosture = LocalFoldPosture.current
+            val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
             val isWideLayout = maxWidth >= 700.dp
+            val isTallViewport = maxHeight >= 560.dp
 
-            if (isWideLayout) {
+            if (isTabletop) {
+                val tabletopControlsScrollState = rememberScrollState()
+                TabletopSplitLayout(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    topContent = {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .verticalScroll(tabletopControlsScrollState)
+                                .padding(vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                        ) {
+                            DeviceFoldersControls(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = { searchQuery = it },
+                                accounts = accounts,
+                                selectedAccount = targetAccount,
+                                onSelectAccount = { targetAccountEmail = it.email },
+                                sortMode = sortMode,
+                                onSelectSort = { sortModeName = it.name },
+                                enabledCount = enabledCount,
+                                totalCount = discoveredFolders.size
+                            )
+                        }
+                    },
+                    bottomContent = {
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .align(Alignment.TopCenter)
+                        ) {
+                            DeviceFoldersListContent(
+                                folders = searchedFolders,
+                                isDiscovering = isDiscovering,
+                                searchQuery = searchQuery,
+                                sortMode = sortMode,
+                                selectedAccountEmail = targetEmail,
+                                findMatchForEmail = rememberedFindMatchForEmail,
+                                remoteAlbums = remoteAlbums,
+                                isWideLayout = false,
+                                onClearSearch = { searchQuery = "" },
+                                onToggle = handleFolderToggle,
+                                onPickAlbum = { folder, pageEmail ->
+                                    albumPickerAccountEmail = pageEmail ?: targetEmail
+                                    albumPickerTargetPath = folder.path
+                                }
+                            )
+                        }
+                    }
+                )
+            } else if (isWideLayout) {
+                val leftWeight = if (isTallViewport) 0.44f else 0.38f
+                val rightWeight = if (isTallViewport) 0.56f else 0.62f
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
                         .wrapContentWidth(Alignment.CenterHorizontally)
                         .widthIn(max = 1080.dp)
                         .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 28.dp else 16.dp)
                 ) {
                     Column(
                         modifier = Modifier
-                            .weight(0.38f)
+                            .weight(leftWeight)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -599,7 +659,7 @@ fun DeviceFoldersScreen(
 
                     Box(
                         modifier = Modifier
-                            .weight(0.62f)
+                            .weight(rightWeight)
                             .fillMaxHeight()
                     ) {
                         DeviceFoldersListContent(
@@ -610,6 +670,7 @@ fun DeviceFoldersScreen(
                             selectedAccountEmail = targetEmail,
                             findMatchForEmail = rememberedFindMatchForEmail,
                             remoteAlbums = remoteAlbums,
+                            isWideLayout = true,
                             onClearSearch = { searchQuery = "" },
                             onToggle = handleFolderToggle,
                             onPickAlbum = { folder, pageEmail ->
@@ -649,6 +710,7 @@ fun DeviceFoldersScreen(
                             selectedAccountEmail = targetEmail,
                             findMatchForEmail = rememberedFindMatchForEmail,
                             remoteAlbums = remoteAlbums,
+                            isWideLayout = false,
                             onClearSearch = { searchQuery = "" },
                             onToggle = handleFolderToggle,
                             onPickAlbum = { folder, pageEmail ->
@@ -807,6 +869,7 @@ private fun DeviceFoldersListContent(
     selectedAccountEmail: String?,
     findMatchForEmail: (LocalMediaFolder, String?) -> BackupFolder?,
     remoteAlbums: List<GoogleAlbum>,
+    isWideLayout: Boolean = false,
     onClearSearch: () -> Unit,
     onToggle: (LocalMediaFolder, Boolean, String?) -> Unit,
     onPickAlbum: (LocalMediaFolder, String?) -> Unit
@@ -830,8 +893,10 @@ private fun DeviceFoldersListContent(
 
     if (folders.isEmpty()) {
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = if (isWideLayout) 12.dp else 0.dp),
+            contentAlignment = if (isWideLayout) Alignment.TopCenter else Alignment.Center
         ) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
@@ -906,14 +971,15 @@ private fun DeviceFoldersListContent(
             )
         }
 
+        val motionScheme = MaterialTheme.motionScheme
         AnimatedContent(
             targetState = accountKey,
             transitionSpec = {
-                (fadeIn(animationSpec = tween(durationMillis = 220)) + slideInVertically(
-                    animationSpec = spring(dampingRatio = 0.85f, stiffness = 500f),
+                (fadeIn(animationSpec = motionScheme.fastEffectsSpec()) + slideInVertically(
+                    animationSpec = motionScheme.defaultSpatialSpec(),
                     initialOffsetY = { it / 28 }
                 )).togetherWith(
-                    fadeOut(animationSpec = tween(durationMillis = 130))
+                    fadeOut(animationSpec = motionScheme.fastEffectsSpec())
                 )
             },
             modifier = Modifier
@@ -950,7 +1016,7 @@ private fun DeviceFoldersListContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             itemsIndexed(
@@ -986,7 +1052,7 @@ private fun DeviceFolderCardItem(
     val isEnabled = configured?.enabled == true
     val cardColor by animateColorAsState(
         targetValue = if (isEnabled) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
-        animationSpec = spring(dampingRatio = 1f, stiffness = 800f),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "deviceFolderCardColor"
     )
     val shortPath = remember(folder.path) { MediaFileReader.toShortDisplayPath(folder.path) }
@@ -1099,22 +1165,22 @@ private fun DeviceFolderCardItem(
                         hasAlbum -> 18.dp
                         else -> 10.dp
                     },
-                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 750f),
+                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                     label = "deviceFolderAlbumChipCorner"
                 )
                 val chipScale by animateFloatAsState(
                     targetValue = if (isChipPressed) 0.96f else 1f,
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 800f),
+                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                     label = "deviceFolderAlbumChipScale"
                 )
                 val chipContainerColor by animateColorAsState(
                     targetValue = if (hasAlbum) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = 700f),
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     label = "deviceFolderAlbumChipBg"
                 )
                 val chipContentColor by animateColorAsState(
                     targetValue = if (hasAlbum) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = 700f),
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     label = "deviceFolderAlbumChipContent"
                 )
                 val chipShape = RoundedCornerShape(chipCorner)

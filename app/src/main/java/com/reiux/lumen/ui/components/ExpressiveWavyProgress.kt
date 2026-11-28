@@ -33,7 +33,7 @@ fun ExpressiveWavyLinearProgress(
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "wavyProgress"
     )
     val strokePx = with(LocalDensity.current) { strokeWidth.toPx() }
@@ -88,7 +88,7 @@ fun ExpressiveCircularWavyProgress(
     if (progress != null) {
         val animatedProgress by animateFloatAsState(
             targetValue = progress.coerceIn(0f, 1f),
-            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
             label = "circularWavyProgress"
         )
         CircularWavyProgressIndicator(

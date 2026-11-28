@@ -151,4 +151,40 @@ class MediaFileReaderOriginalUriTest {
             )
         )
     }
+
+    @Test
+    fun isLocalPhotoPickerPath_acceptsLocalPickerProviders() {
+        assertTrue(
+            MediaFileReader.isLocalPhotoPickerPath(
+                "/picker/0/com.android.providers.media.local/media/123"
+            )
+        )
+        assertTrue(
+            MediaFileReader.isLocalPhotoPickerPath(
+                "/picker/0/com.android.providers.media.photopicker/media/123"
+            )
+        )
+    }
+
+    @Test
+    fun isLocalPhotoPickerPath_rejectsCloudPickerArbitraryPathsAndNull() {
+        assertFalse(
+            MediaFileReader.isLocalPhotoPickerPath(
+                "/picker/0/com.google.android.apps.photos.cloudpicker/media/123"
+            )
+        )
+        assertFalse(
+            MediaFileReader.isLocalPhotoPickerPath(
+                "/external/images/media/123"
+            )
+        )
+        assertFalse(
+            MediaFileReader.isLocalPhotoPickerPath(
+                "/storage/emulated/0/DCIM/Camera/IMG_20261127_000001.jpg"
+            )
+        )
+        assertFalse(MediaFileReader.isLocalPhotoPickerPath(""))
+        assertFalse(MediaFileReader.isLocalPhotoPickerPath("   "))
+        assertFalse(MediaFileReader.isLocalPhotoPickerPath(null))
+    }
 }

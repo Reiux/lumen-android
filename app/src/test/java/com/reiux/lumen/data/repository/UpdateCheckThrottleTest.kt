@@ -25,6 +25,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 class UpdateCheckThrottleTest {
@@ -515,5 +516,73 @@ class UpdateCheckThrottleTest {
         assertTrue(UpdateRepository.isNewerVersion("1.3.3-dev.5c831ca.20261125", "1.3.4"))
         assertFalse(UpdateRepository.isNewerVersion("1.3.3-nightly.20261125.5c831ca", "1.3.3"))
         assertTrue(UpdateRepository.isNewerVersion("1.3.3-nightly.20261125.5c831ca", "1.4.0"))
+    }
+
+    @Test
+    fun testUpdateRepository_blankExpectedSha256Override_failsClosed() {
+        val repo = UpdateRepository(OkHttpClient.Builder().build())
+        val url = "https://github.com/Reiux/lumen-android/releases/download/v1.4.0/lumen-release.apk"
+        for (blankOverride in listOf("", "   ")) {
+            val dest = File(tempFolder.newFolder(), "lumen.apk")
+            try {
+                runBlocking {
+                    repo.downloadUpdate(
+                        url = url,
+                        destFile = dest,
+                        expectedSha256Override = blankOverride
+                    ).collect()
+                }
+                fail("Expected SecurityException for blank expectedSha256Override")
+            } catch (_: SecurityException) {
+                assertFalse(dest.exists())
+                assertFalse(File(dest.parentFile, "${dest.name}.part").exists())
+            }
+        }
+    }
+
+    @Test
+    fun testUpdateRepository_zeroByteApkResponse_throwsIOException() {
+        val emptySha256 = MessageDigest.getInstance("SHA-256")
+            .digest(ByteArray(0))
+            .joinToString("") { "%02x".format(it) }
+        val zeroByteClient = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(ByteArray(0).toResponseBody("application/vnd.android.package-archive".toMediaType()))
+                    .build()
+            })
+            .build()
+        val repo = UpdateRepository(zeroByteClient)
+        val dest = File(tempFolder.newFolder("upd_zero_bytes"), "lumen.apk")
+        try {
+            runBlocking {
+                repo.downloadUpdate(
+                    url = "https://github.com/Reiux/lumen-android/releases/download/v1.4.0/lumen-release.apk",
+                    destFile = dest,
+                    expectedSha256Override = emptySha256
+                ).collect()
+            }
+            fail("Expected IOException for 0-byte APK response")
+        } catch (_: IOException) {
+            assertFalse(dest.exists())
+            assertFalse(File(dest.parentFile, "${dest.name}.part").exists())
+        }
+    }
+
+    @Test
+    fun testSettingsRepository_pendingUpdateInfo_expiredSavedAtMillisReturnsNullAndCleansUp() {
+        val expiredSavedAtMillis = System.currentTimeMillis() - (13 * 60 * 60 * 1000L)
+        val validSha = "d".repeat(64)
+        fakePrefs.putDirect(
+            "pending_update_info_json",
+            """{"versionName":"1.4.0","releaseNotes":"notes","downloadUrl":"https://github.com/Reiux/lumen-android/releases/download/v1.4.0/lumen-release.apk","expectedSha256":"$validSha","savedAtMillis":$expiredSavedAtMillis}"""
+        )
+
+        assertNull(settingsRepository.getPendingUpdateInfo())
+        assertFalse(fakePrefs.contains("pending_update_info_json"))
     }
 }

@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,7 +74,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
 import coil.compose.AsyncImage
 import com.reiux.lumen.data.model.GoogleAccount
@@ -85,8 +85,10 @@ import com.reiux.lumen.ui.components.ExpressiveDialogCallout
 import com.reiux.lumen.ui.components.ExpressiveDialogTone
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.groupPositionOf
-import com.reiux.lumen.ui.components.groupedCardShape
+import com.reiux.lumen.ui.components.animatedGroupedCardShape
 import com.reiux.lumen.ui.components.rememberExpressivePressed
 import com.reiux.lumen.ui.components.rememberHapticClick
 import kotlinx.coroutines.delay
@@ -227,8 +229,8 @@ fun AccountsScreen(
         EditDisplayNameDialog(
             initialName = accountToRename.displayName ?: "",
             onDismiss = { accountToRenameEmail = null },
-            onSave = {
-                onUpdateDisplayName(accountToRename.email, it)
+            onSave = { newName ->
+                onUpdateDisplayName(accountToRename.email, newName)
                 accountToRenameEmail = null
             }
         )
@@ -270,8 +272,7 @@ fun AccountsScreen(
                 Text(
                     text = stringResource(R.string.remove_account_device_warning),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 18.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -283,22 +284,136 @@ fun AccountsScreen(
     val otherAccounts = accounts.filterNot { it.email == selectedAccount?.email }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val foldPosture = LocalFoldPosture.current
         val isWideLayout = maxWidth >= 640.dp
+        val isTallViewport = maxHeight >= 560.dp
 
-        if (isWideLayout) {
+        if (foldPosture.isTabletop && maxHeight >= 520.dp) {
+            TabletopSplitLayout(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                topContent = {
+                    val topScrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .widthIn(max = 960.dp)
+                            .fillMaxSize()
+                            .verticalScroll(topScrollState)
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = stringResource(R.string.accounts_title),
+                                style = MaterialTheme.typography.headlineMediumEmphasized,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.accounts_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (selectedAccount != null) {
+                            ActiveAccountHeroCard(
+                                selectedAccount = selectedAccount,
+                                onPickAvatar = {
+                                    targetAvatarAccountEmail = selectedAccount.email
+                                    avatarPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                onRename = { accountToRenameEmail = selectedAccount.email },
+                                onRemove = { handleRemoveAccount(selectedAccount) },
+                                onTriggerCapsule = { showTimeCapsule = true }
+                            )
+                        } else {
+                            NoAccountEmptyCard()
+                        }
+                    }
+                },
+                bottomContent = {
+                    if (otherAccounts.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .widthIn(max = 960.dp)
+                                .fillMaxSize()
+                                .padding(bottom = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ExpressiveButton(
+                                onClick = { showAddDialog = true },
+                                modifier = Modifier
+                                    .widthIn(max = 420.dp)
+                                    .fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.accounts_btn_add))
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            state = portraitLazyListState,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 960.dp)
+                                .fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.accounts_other_title, otherAccounts.size),
+                                    style = MaterialTheme.typography.titleMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(bottom = 5.dp)
+                                )
+                            }
+                            itemsIndexed(
+                                items = otherAccounts,
+                                key = { _, account -> account.email }
+                            ) { index, account ->
+                                OtherAccountRowItem(
+                                    account = account,
+                                    position = groupPositionOf(index, otherAccounts.size),
+                                    onSelectAccount = handleSelectAccount,
+                                    onRemove = { handleRemoveAccount(account) }
+                                )
+                            }
+                            item {
+                                Spacer(modifier = Modifier.height(13.dp))
+                                ExpressiveButton(
+                                    onClick = { showAddDialog = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(stringResource(R.string.accounts_btn_add))
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        } else if (isWideLayout) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .wrapContentWidth(Alignment.CenterHorizontally)
                     .widthIn(max = 1080.dp)
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 28.dp else 16.dp)
             ) {
                 // Left Pane: Active Account & Add Action
                 val leftScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
-                        .weight(0.48f)
+                        .weight(if (isTallViewport) 1f else 0.48f)
                         .fillMaxHeight()
                         .verticalScroll(leftScrollState),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -352,7 +467,7 @@ fun AccountsScreen(
                 // Right Pane: Other Connected Accounts List
                 Column(
                     modifier = Modifier
-                        .weight(0.52f)
+                        .weight(if (isTallViewport) 1f else 0.52f)
                         .fillMaxHeight()
                 ) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -636,8 +751,9 @@ private fun ActiveAccountHeroCard(
                     Surface(
                         onClick = badgeHapticClick,
                         modifier = Modifier
-                            .size(28.dp)
                             .align(Alignment.BottomEnd)
+                            .minimumInteractiveComponentSize()
+                            .size(28.dp)
                             .scale(badgeScale),
                         shape = RoundedCornerShape(badgeCorner),
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -689,7 +805,9 @@ private fun ActiveAccountHeroCard(
 
                 ExpressiveIconButton(
                     onClick = onRemove,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
@@ -738,10 +856,19 @@ private fun OtherAccountRowItem(
     onSelectAccount: (email: String) -> Unit,
     onRemove: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by rememberExpressivePressed(interactionSource)
+    val shape = animatedGroupedCardShape(position = position, pressed = isPressed)
+    val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
+        onSelectAccount(account.email)
+    }
+
     Surface(
+        onClick = hapticClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = groupedCardShape(position),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier
@@ -810,7 +937,9 @@ private fun OtherAccountRowItem(
 
             ExpressiveIconButton(
                 onClick = onRemove,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .size(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,

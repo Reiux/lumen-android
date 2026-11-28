@@ -1,5 +1,6 @@
 package com.reiux.lumen.ui.components
 
+import android.provider.Settings
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -21,8 +22,10 @@ import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -36,9 +39,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/**
+ * Returns true when system animator duration scale is set to 0 (reduced motion enabled).
+ */
+@Composable
+fun rememberReducedMotion(): Boolean {
+    val context = LocalContext.current
+    return remember(context) {
+        try {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (_: Exception) {
+            false
+        }
+    }
+}
 
 /**
  * Latches the press state so that even ultra-fast taps (~20-40ms)
@@ -49,9 +72,14 @@ fun rememberExpressivePressed(
     interactionSource: InteractionSource,
     minDurationMillis: Long = 180L
 ): State<Boolean> {
+    val reducedMotion = rememberReducedMotion()
     val pressedState = remember { mutableStateOf(false) }
 
-    LaunchedEffect(interactionSource) {
+    LaunchedEffect(interactionSource, reducedMotion) {
+        if (reducedMotion) {
+            pressedState.value = false
+            return@LaunchedEffect
+        }
         var pressStart = 0L
         interactionSource.interactions.collect { interaction ->
             when (interaction) {
@@ -92,16 +120,19 @@ fun ExpressiveButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val reducedMotion = rememberReducedMotion()
     val isGesturePressed by rememberExpressivePressed(interactionSource)
     val clickPulse = remember { mutableStateOf(false) }
 
-    val isVisuallyPressed = isGesturePressed || clickPulse.value
+    val isVisuallyPressed = !reducedMotion && (isGesturePressed || clickPulse.value)
 
     val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
-        coroutineScope.launch {
-            clickPulse.value = true
-            delay(180)
-            clickPulse.value = false
+        if (!reducedMotion) {
+            coroutineScope.launch {
+                clickPulse.value = true
+                delay(180)
+                clickPulse.value = false
+            }
         }
         onClick()
     }
@@ -122,7 +153,7 @@ fun ExpressiveButton(
         onClick = hapticClick,
         modifier = modifier
             .scale(scale)
-            .defaultMinSize(minWidth = 64.dp, minHeight = 44.dp),
+            .defaultMinSize(minWidth = 64.dp, minHeight = 48.dp),
         enabled = enabled,
         shape = RoundedCornerShape(cornerRadius),
         color = if (enabled) colors.containerColor else colors.disabledContainerColor,
@@ -133,12 +164,14 @@ fun ExpressiveButton(
         CompositionLocalProvider(
             LocalContentColor provides (if (enabled) colors.contentColor else colors.disabledContentColor)
         ) {
-            Row(
-                modifier = Modifier.padding(contentPadding),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                content = content,
-            )
+            ProvideTextStyle(value = MaterialTheme.typography.labelLarge) {
+                Row(
+                    modifier = Modifier.padding(contentPadding),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -173,17 +206,20 @@ fun ExpressiveIconButton(
     content: @Composable () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val reducedMotion = rememberReducedMotion()
     val interactionSource = remember { MutableInteractionSource() }
     val isGesturePressed by rememberExpressivePressed(interactionSource)
     val clickPulse = remember { mutableStateOf(false) }
 
-    val isVisuallyPressed = isGesturePressed || clickPulse.value
+    val isVisuallyPressed = !reducedMotion && (isGesturePressed || clickPulse.value)
 
     val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
-        coroutineScope.launch {
-            clickPulse.value = true
-            delay(180)
-            clickPulse.value = false
+        if (!reducedMotion) {
+            coroutineScope.launch {
+                clickPulse.value = true
+                delay(180)
+                clickPulse.value = false
+            }
         }
         onClick()
     }
@@ -202,7 +238,9 @@ fun ExpressiveIconButton(
 
     Surface(
         onClick = hapticClick,
-        modifier = modifier
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .then(modifier)
             .scale(scale)
             .size(48.dp),
         enabled = enabled,
@@ -234,17 +272,20 @@ fun ExpressiveExtendedFloatingActionButton(
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val reducedMotion = rememberReducedMotion()
     val interactionSource = remember { MutableInteractionSource() }
     val isGesturePressed by rememberExpressivePressed(interactionSource)
     val clickPulse = remember { mutableStateOf(false) }
 
-    val isVisuallyPressed = isGesturePressed || clickPulse.value
+    val isVisuallyPressed = !reducedMotion && (isGesturePressed || clickPulse.value)
 
     val hapticClick = rememberHapticClick(HapticFeedbackType.TextHandleMove) {
-        coroutineScope.launch {
-            clickPulse.value = true
-            delay(180)
-            clickPulse.value = false
+        if (!reducedMotion) {
+            coroutineScope.launch {
+                clickPulse.value = true
+                delay(180)
+                clickPulse.value = false
+            }
         }
         onClick()
     }

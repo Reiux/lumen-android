@@ -83,16 +83,27 @@ class BackgroundUploadWorker(
         val notifyJob = notifyScope.launch {
             try {
                 combine(
-                    combine(uploadRepo.isUploading, uploadRepo.currentUploadingItem, uploadRepo.queue) { u, c, q -> Triple(u, c, q) },
-                    combine(uploadRepo.conditionNotice, settingsRepo.settings, uploadRepo.uploadSpeed) { cn, s, sp -> Triple(cn, s, sp) }
-                ) { (isUploading, currentItem, queue), (conditionNotice, settings, uploadSpeed) ->
+                    combine(
+                        uploadRepo.isUploading,
+                        uploadRepo.isPaused,
+                        uploadRepo.currentUploadingItem,
+                        uploadRepo.queue
+                    ) { u, p, c, q ->
+                        Pair(Pair(u, p), Pair(c, q))
+                    },
+                    combine(uploadRepo.conditionNotice, settingsRepo.settings, uploadRepo.uploadSpeed) { cn, s, sp ->
+                        Triple(cn, s, sp)
+                    }
+                ) { (statusPair, itemQueuePair), (conditionNotice, settings, uploadSpeed) ->
                     Triple(
-                        Triple(isUploading, currentItem, queue),
+                        Pair(statusPair, itemQueuePair),
                         conditionNotice,
                         Pair(settings.notificationsEnabled, uploadSpeed)
                     )
-                }.collectLatest { (uploadTriple, conditionNotice, settingsPair) ->
-                    val (isUploading, currentItem, queue) = uploadTriple
+                }.collectLatest { (uploadState, conditionNotice, settingsPair) ->
+                    val (statusPair, itemQueuePair) = uploadState
+                    val (isUploading, isPaused) = statusPair
+                    val (currentItem, queue) = itemQueuePair
                     val (notificationsEnabled, uploadSpeed) = settingsPair
                     if (isUploading && notificationsEnabled && !UploadForegroundService.isRunning) {
                         val processedCount = queue.count {
@@ -100,7 +111,7 @@ class BackgroundUploadWorker(
                                 it.status == UploadStatus.SKIPPED ||
                                 it.status == UploadStatus.FAILED
                         }
-                        val structuralKey = "${currentItem?.id}|${currentItem?.status}|$conditionNotice|${queue.size}|$processedCount"
+                        val structuralKey = "${currentItem?.id}|${currentItem?.status}|$conditionNotice|$isPaused|${queue.size}|$processedCount"
                         val progressPercent = if (queue.size > 1) {
                             ((processedCount.toDouble() / queue.size.toDouble()) * 100.0).toInt().coerceIn(0, 100)
                         } else {
@@ -124,7 +135,8 @@ class BackgroundUploadWorker(
                                     currentItem = currentItem,
                                     queue = queue,
                                     conditionNotice = conditionNotice,
-                                    uploadSpeed = uploadSpeed
+                                    uploadSpeed = uploadSpeed,
+                                    isPaused = isPaused
                                 )
                                 val nm = appContext.getSystemService(android.app.NotificationManager::class.java)
                                 nm?.notify(UploadForegroundService.NOTIFICATION_ID, notif)

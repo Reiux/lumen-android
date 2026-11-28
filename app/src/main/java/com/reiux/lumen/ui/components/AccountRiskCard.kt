@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
 
 @Composable
@@ -52,6 +52,7 @@ fun AccountRiskCard(
         Surface(
             modifier = modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .clickable { showSafetyDialog = true },
             shape = RoundedCornerShape(16.dp),
@@ -118,8 +119,7 @@ fun AccountRiskCard(
                 Text(
                     text = stringResource(R.string.account_risk_body),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    lineHeight = 18.sp
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))

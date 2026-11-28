@@ -17,10 +17,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -59,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -66,16 +64,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
 import com.reiux.lumen.ui.MainViewModel
 import com.reiux.lumen.ui.ShareUploadBatch
 import com.reiux.lumen.ui.components.DevDiagnosticsDialog
 import com.reiux.lumen.ui.components.ExpressiveExtendedFloatingActionButton
 import com.reiux.lumen.ui.components.ExpressiveNavBar
 import com.reiux.lumen.ui.components.ExpressiveNavRail
+import com.reiux.lumen.ui.components.FoldPosture
 import com.reiux.lumen.ui.components.LocalBlurEffectsEnabled
+import com.reiux.lumen.ui.components.LocalFoldPosture
 import com.reiux.lumen.ui.components.MockControlsBottomSheet
 import com.reiux.lumen.ui.components.NavDestination
 import com.reiux.lumen.ui.components.PredictiveBackScreenContainer
@@ -100,15 +103,24 @@ class MainActivity : ComponentActivity() {
         com.reiux.lumen.util.LumenLogger.i("Permissions", "Permission results: $results")
     }
 
+    private fun clearShareIntentExtras() {
+        intent?.action = null
+        intent?.clipData = null
+        intent?.removeExtra(Intent.EXTRA_STREAM)
+        intent?.data = null
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
     }
 
-    private fun handleIntent(intent: Intent?) {
+    private fun handleIntent(intent: Intent?, skipShareIntent: Boolean = false) {
         if (intent == null) return
-        handleShareIntent(intent)
+        if (!skipShareIntent) {
+            handleShareIntent(intent)
+        }
         if (isValidInternalUpdateIntent(intent)) {
             viewModel.setPendingShowUpdate(true)
         }
@@ -118,17 +130,21 @@ class MainActivity : ComponentActivity() {
             ?.settingsRepository
             ?.isValidInternalLaunchToken(token) == true
 
-        val resolvedShortcut = when {
-            (extraAction == "shortcut_sync" || extraAction == "shortcut_pick") && hasValidToken -> extraAction
-            intent.action == "com.reiux.lumen.action.SHORTCUT_SYNC" -> "shortcut_sync"
-            intent.action == "com.reiux.lumen.action.SHORTCUT_PICK" -> "shortcut_pick"
-            else -> null
+        val resolvedShortcut = if (
+            (extraAction == "shortcut_sync" || extraAction == "shortcut_pick") && hasValidToken
+        ) {
+            extraAction
+        } else {
+            null
         }
         if (resolvedShortcut != null) {
             viewModel.setPendingShortcutAction(resolvedShortcut)
-        } else if (extraAction == "shortcut_sync" || extraAction == "shortcut_pick") {
+        } else if (extraAction == "shortcut_sync" || extraAction == "shortcut_pick" ||
+            intent.action == "com.reiux.lumen.action.SHORTCUT_SYNC" ||
+            intent.action == "com.reiux.lumen.action.SHORTCUT_PICK"
+        ) {
             com.reiux.lumen.util.LumenLogger.w("Shortcuts") {
-                "Ignored unauthenticated shortcut launch intent: $extraAction"
+                "Ignored unauthenticated shortcut launch intent: ${extraAction ?: intent.action}"
             }
         }
     }
@@ -217,8 +233,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        handleIntent(intent)
         val isRestored = savedInstanceState != null
+        handleIntent(
+            intent,
+            skipShareIntent = isRestored && viewModel.incomingShareBatch.value != null
+        )
         com.reiux.lumen.util.LumenLogger.i("AppLifecycle") {
             "MainActivity onCreate (SDK ${Build.VERSION.SDK_INT}, processRestore=$isRestored)"
         }
@@ -270,6 +289,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val showUpdateRequest by viewModel.pendingShowUpdate.collectAsState()
+            val showUpdateSheet by viewModel.showUpdateSheet.collectAsState()
             val incomingShareBatch by viewModel.incomingShareBatch.collectAsState()
             val queuedShareReplacement by viewModel.queuedShareReplacement.collectAsState()
             val shortcutAction by viewModel.pendingShortcutAction.collectAsState()
@@ -318,10 +338,20 @@ class MainActivity : ComponentActivity() {
                 ) {
                     viewModel.checkForForegroundUpdateOnResume(this@MainActivity)
                 }
+            }
+
+            LaunchedEffect(
+                settings.hasCompletedOnboarding,
+                incomingShareBatch,
+                showUpdateRequest,
+                showUpdateSheet,
+                shortcutAction
+            ) {
                 if (settings.hasCompletedOnboarding &&
-                    viewModel.incomingShareBatch.value == null &&
-                    !viewModel.pendingShowUpdate.value &&
-                    viewModel.pendingShortcutAction.value == null
+                    incomingShareBatch == null &&
+                    !showUpdateRequest &&
+                    !showUpdateSheet &&
+                    shortcutAction == null
                 ) {
                     viewModel.checkPostUpdateWhatsNewSheet()
                 }
@@ -373,8 +403,37 @@ class MainActivity : ComponentActivity() {
                     ) == 0f
                 }
 
+                val density = LocalDensity.current
+                val foldPosture by produceState(initialValue = FoldPosture(), key1 = this@MainActivity) {
+                    WindowInfoTracker.getOrCreate(this@MainActivity)
+                        .windowLayoutInfo(this@MainActivity)
+                        .collect { layoutInfo ->
+                            val foldingFeature = layoutInfo.displayFeatures
+                                .filterIsInstance<FoldingFeature>()
+                                .firstOrNull()
+                            val isTabletop = foldingFeature != null &&
+                                foldingFeature.state == FoldingFeature.State.HALF_OPENED &&
+                                foldingFeature.orientation == FoldingFeature.Orientation.HORIZONTAL
+                            val isBookMode = foldingFeature != null &&
+                                foldingFeature.state == FoldingFeature.State.HALF_OPENED &&
+                                foldingFeature.orientation == FoldingFeature.Orientation.VERTICAL
+                            val windowHeightPx = androidx.window.layout.WindowMetricsCalculator.getOrCreate()
+                                .computeCurrentWindowMetrics(this@MainActivity)
+                                .bounds
+                                .height()
+                            value = FoldPosture(
+                                isTabletop = isTabletop,
+                                isBookMode = isBookMode,
+                                hingeTopDp = if (foldingFeature != null) with(density) { foldingFeature.bounds.top.toDp() } else 0.dp,
+                                hingeHeightDp = if (foldingFeature != null) with(density) { foldingFeature.bounds.height().toDp() } else 0.dp,
+                                windowHeightDp = with(density) { windowHeightPx.toDp() }
+                            )
+                        }
+                }
+
                 CompositionLocalProvider(
-                    LocalBlurEffectsEnabled provides settings.enableBlurEffects
+                    LocalBlurEffectsEnabled provides settings.enableBlurEffects,
+                    LocalFoldPosture provides foldPosture
                 ) {
                 var showDevDiagnostics by rememberSaveable { mutableStateOf(false) }
                 var showAboutScreen by rememberSaveable { mutableStateOf(false) }
@@ -390,11 +449,6 @@ class MainActivity : ComponentActivity() {
                     viewModel.setPendingShortcutAction(null)
                     intent?.removeExtra("action")
                     intent?.removeExtra("internal_token")
-                    if (intent?.action == "com.reiux.lumen.action.SHORTCUT_SYNC" ||
-                        intent?.action == "com.reiux.lumen.action.SHORTCUT_PICK"
-                    ) {
-                        intent?.action = null
-                    }
                     showAboutScreen = false
                     showWhatsNewScreen = false
                     showAlbumsScreen = false
@@ -444,7 +498,10 @@ class MainActivity : ComponentActivity() {
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-                val useNavRail = isLandscape || configuration.screenWidthDp >= 600
+                // Bottom NavigationBar in portrait (including unfolded book mode) AND in Tabletop posture
+                // (so all 4 tabs stay on the flat bottom half instead of straddling the horizontal hinge);
+                // NavigationRail in normal landscape.
+                val useNavRail = isLandscape && !foldPosture.isTabletop
 
                 val widthDp = configuration.screenWidthDp
                 val heightDp = configuration.screenHeightDp
@@ -484,9 +541,9 @@ class MainActivity : ComponentActivity() {
                     viewModel.setLastSeenDarkState(isDarkNow)
                 }
 
-                LaunchedEffect(useNavRail, widthDp, heightDp) {
+                LaunchedEffect(useNavRail, widthDp, heightDp, foldPosture.isTabletop) {
                     com.reiux.lumen.util.LumenLogger.i("Layout") {
-                        "Window layout: width=${widthDp}dp height=${heightDp}dp class=$widthClass mode=${if (useNavRail) "NavRail (Landscape/Wide)" else "NavBar (Portrait/Compact)"}"
+                        "Window layout: width=${widthDp}dp height=${heightDp}dp class=$widthClass tabletop=${foldPosture.isTabletop} mode=${if (useNavRail) "NavRail (Landscape)" else "NavBar (Portrait)"}"
                     }
                 }
 
@@ -557,6 +614,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel.selectDestination(NavDestination.ACCOUNTS) 
                             },
                             addAccountError = addAccountError,
+                            isAddingAccount = isAddingAccount,
                             onAddAccountToken = { viewModel.addAccountWithToken(it) },
                             onAddAccountCredential = { viewModel.addAccountWithCredential(it) },
                             onRemoveAccount = { viewModel.removeAccount(it) },
@@ -657,7 +715,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val showUpdateSheet by viewModel.showUpdateSheet.collectAsState()
                 val updateInfo by viewModel.updateInfo.collectAsState()
                 val updateDownloadProgress by viewModel.updateDownloadProgress.collectAsState()
                 val updateDownloadError by viewModel.updateDownloadError.collectAsState()
@@ -828,25 +885,31 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (playLightsOffAnim) {
-                        val animProgress = remember { androidx.compose.animation.core.Animatable(0f) }
-                        LaunchedEffect(Unit) {
-                            animProgress.animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(500, easing = LinearEasing)
-                            )
-                            playLightsOffAnim = false
-                        }
-                        val alpha = if (animProgress.value < 0.5f) {
-                            animProgress.value * 1.6f
+                        if (reducedMotion) {
+                            LaunchedEffect(Unit) {
+                                playLightsOffAnim = false
+                            }
                         } else {
-                            (1f - animProgress.value) * 1.6f
-                        }.coerceIn(0f, 0.8f)
+                            val animProgress = remember { Animatable(0f) }
+                            LaunchedEffect(Unit) {
+                                animProgress.animateTo(
+                                    targetValue = 1f,
+                                    animationSpec = motionScheme.slowEffectsSpec<Float>()
+                                )
+                                playLightsOffAnim = false
+                            }
+                            val alpha = if (animProgress.value < 0.5f) {
+                                animProgress.value * 1.6f
+                            } else {
+                                (1f - animProgress.value) * 1.6f
+                            }.coerceIn(0f, 0.8f)
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = alpha))
-                        )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = alpha))
+                            )
+                        }
                     }
 
                     AnimatedVisibility(
@@ -1063,9 +1126,11 @@ class MainActivity : ComponentActivity() {
                                         viewModel.setIncomingShareBatch(nextBatch)
                                         viewModel.setQueuedShareReplacement(null)
                                     }
+                                    clearShareIntentExtras()
                                 },
                                 onDiscardReplacement = {
                                     viewModel.setQueuedShareReplacement(null)
+                                    clearShareIntentExtras()
                                 },
                                 accounts = accounts,
                                 activeAccount = selectedAccount,
@@ -1085,13 +1150,13 @@ class MainActivity : ComponentActivity() {
                                         )
                                         viewModel.setIncomingShareBatch(null)
                                         viewModel.setQueuedShareReplacement(null)
-                                        intent?.action = null
+                                        clearShareIntentExtras()
                                     }
                                 },
                                 onDismiss = {
                                     viewModel.setIncomingShareBatch(null)
                                     viewModel.setQueuedShareReplacement(null)
-                                    intent?.action = null
+                                    clearShareIntentExtras()
                                 }
                             )
                         }
@@ -1316,7 +1381,8 @@ class MainActivity : ComponentActivity() {
                     val authority = uri.authority?.trim()
                     scheme == "content" &&
                         !authority.isNullOrBlank() &&
-                        !authority.equals(blockedAuthority, ignoreCase = true)
+                        !authority.contains('@') &&
+                        !authority.substringAfterLast('@').equals(blockedAuthority, ignoreCase = true)
                 }
                 .distinct()
                 .take(maxItems)

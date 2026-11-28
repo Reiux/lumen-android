@@ -696,4 +696,5 @@
     <string name="whats_new_see_all">See full history</string>
     <string name="dev_preview_whats_new_title">Preview What\'s New Sheet</string>
     <string name="dev_preview_whats_new_desc">Test the post-update highlights popup</string>
+    <string name="action_more_options">More options</string>
 </resources>

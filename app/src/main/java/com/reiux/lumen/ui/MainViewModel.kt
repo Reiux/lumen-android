@@ -117,15 +117,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isShowcaseMode: StateFlow<Boolean> = _isShowcaseMode.asStateFlow()
 
     private val _simulateOffline = MutableStateFlow(false)
-    val simulateOffline: StateFlow<Boolean> = _simulateOffline.asStateFlow()
+    val simulateOffline: StateFlow<Boolean> = combine(_isMockMode, _simulateOffline) { mock, simOff ->
+        mock && simOff
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _simulateMissingAlbum = MutableStateFlow(false)
-    val simulateMissingAlbum: StateFlow<Boolean> = _simulateMissingAlbum.asStateFlow()
+    val simulateMissingAlbum: StateFlow<Boolean> = combine(_isMockMode, _simulateMissingAlbum) { mock, simMissing ->
+        mock && simMissing
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val connectivityObserver = com.reiux.lumen.util.ConnectivityObserver(application)
-    val isOnline: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(connectivityObserver.isConnected, _simulateOffline) { online, simOffline ->
-        if (simOffline) false else online
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false)
+    val isOnline: StateFlow<Boolean> = combine(connectivityObserver.isConnected, _isMockMode, _simulateOffline) { connected, mock, simOff ->
+        connected && !(mock && simOff)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // Showcase Mode Dataset (Pristine static data for screenshots)
     private val _showcaseAccounts = listOf(
@@ -876,6 +880,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _mockIsPaused.value = false
             _mockForcedPunTitle.value = null
             _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
             _mockSettings.value = _mockSettings.value.copy(developerModeUnlocked = true)
@@ -920,6 +927,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _mockIsUploading.value = false
             _mockForcedPunTitle.value = null
             _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
         }
@@ -1315,6 +1325,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val appCtx = getApplication<LumenApplication>()
+        if (_isMockMode.value) {
+            if (!isOnline.value) {
+                LumenLogger.w("BackupUI", "Cannot upload selected URIs in mock mode: No internet connection")
+                android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (uris.isEmpty()) return
+            viewModelScope.launch {
+                val simulatedItems = withContext(Dispatchers.IO) {
+                    uris.mapIndexed { index, uri ->
+                        val name = MediaFileReader.getFileNameFromUri(appCtx, uri)
+                        UploadItem(
+                            id = UUID.randomUUID().toString(),
+                            filePath = uri.toString(),
+                            fileName = name,
+                            fileSize = 6_400_000L + (index * 1_200_000L),
+                            status = UploadStatus.QUEUED
+                        )
+                    }
+                }
+                if (!_isMockMode.value) return@launch
+                LumenLogger.i("MockMode", "Enqueued ${simulatedItems.size} simulated mock upload items from picker/share")
+                _mockQueue.value = _mockQueue.value + simulatedItems
+                if (!_mockIsUploading.value) {
+                    startMockSimulation(resetCounts = false)
+                } else {
+                    _mockIsPaused.value = false
+                }
+            }
+            return
+        }
+
         if (!com.reiux.lumen.util.DeviceConditions.isInternetAvailable(appCtx)) {
             LumenLogger.w("BackupUI", "Cannot upload selected URIs: No internet connection")
             android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
@@ -1550,6 +1592,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryFailedUploads() {
+        val appCtx = getApplication<LumenApplication>()
+        if (!isOnline.value) {
+            LumenLogger.w("BackupUI", "Cannot retry failed uploads: No internet connection")
+            android.widget.Toast.makeText(appCtx, appCtx.getString(R.string.backup_offline_toast), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         LumenLogger.i("BackupUI", "User clicked Retry Failed Uploads")
         if (_isMockMode.value) {
             _mockQueue.value = _mockQueue.value.map { item ->
@@ -1589,6 +1637,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     item.copy(status = UploadStatus.QUEUED, error = null, bytesUploaded = 0L)
                 } else item
             }
+            _mockIsPaused.value = false
             if (!_mockIsUploading.value) {
                 _mockIsUploading.value = true
                 startMockSimulation(resetCounts = false)
@@ -1997,6 +2046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         LumenLogger.i("SettingsUI", "Color preset updated to: $preset")
         if (_isMockMode.value) {
             _mockSettings.value = _mockSettings.value.copy(colorPreset = preset)
+            return
         }
         settingsRepo.updateColorPreset(preset)
     }
@@ -2091,23 +2141,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.updateHasCompletedOnboarding(completed)
     }
 
+    private var isWhatsNewSheetPreview = false
+
     fun checkPostUpdateWhatsNewSheet() {
-        if (com.reiux.lumen.data.model.WhatsNewCatalog.shouldShowPostUpdateSheet(
+        if (!_showPostUpdateWhatsNewSheet.value &&
+            com.reiux.lumen.data.model.WhatsNewCatalog.shouldShowPostUpdateSheet(
                 currentAppVersion = com.reiux.lumen.BuildConfig.VERSION_NAME,
                 lastSeenVersion = settingsRepo.getLastSeenWhatsNewVersion(),
                 hasCompletedOnboarding = settings.value.hasCompletedOnboarding
             )
         ) {
+            isWhatsNewSheetPreview = false
             _showPostUpdateWhatsNewSheet.value = true
         }
     }
 
     fun previewPostUpdateWhatsNewSheet() {
+        isWhatsNewSheetPreview = true
         _showPostUpdateWhatsNewSheet.value = true
     }
 
     fun dismissPostUpdateWhatsNewSheet() {
-        settingsRepo.setLastSeenWhatsNewVersion(com.reiux.lumen.BuildConfig.VERSION_NAME)
+        if (!isWhatsNewSheetPreview) {
+            settingsRepo.setLastSeenWhatsNewVersion(com.reiux.lumen.BuildConfig.VERSION_NAME)
+        }
+        isWhatsNewSheetPreview = false
         _showPostUpdateWhatsNewSheet.value = false
     }
 
@@ -2144,6 +2202,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _mockIsPaused.value = false
             _mockForcedPunTitle.value = null
             _mockEmptyStateSubtitle.value = null
+            _simulateOffline.value = false
+            _simulateMissingAlbum.value = false
+            _mockAccountBlock.value = null
             mockSimJob?.cancel()
             mockSimJob = null
         }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.minimumInteractiveComponentSize
 import com.reiux.lumen.data.model.AlbumTargetMode
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
@@ -121,13 +123,23 @@ fun AddFolderDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 340.dp, max = if (isWideLayout) 700.dp else 500.dp)
-            .padding(horizontal = 16.dp),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF,
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier.fillMaxWidth().fillMaxHeight()
+        } else {
+            Modifier
+                .widthIn(
+                    min = 340.dp,
+                    max = if (isWideLayout) 700.dp else 500.dp
+                )
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Text(
                 text = stringResource(R.string.add_folder_dialog_title),
@@ -597,7 +609,9 @@ private fun ExpressivePresetChip(
 
     Surface(
         onClick = hapticClick,
-        modifier = Modifier.scale(scale),
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .scale(scale),
         shape = shape,
         color = containerColor,
         border = BorderStroke(

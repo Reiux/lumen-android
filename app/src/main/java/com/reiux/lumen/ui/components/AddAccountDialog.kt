@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -61,6 +62,7 @@ fun AddAccountDialog(
 
     val configuration = LocalConfiguration.current
     val isWideLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
+    val foldPosture = LocalFoldPosture.current
 
     if (showWebView) {
         GoogleSignInWebViewDialog(
@@ -79,9 +81,18 @@ fun AddAccountDialog(
             dismissOnBackPress = !isLoading,
             dismissOnClickOutside = !isLoading
         ),
-        modifier = Modifier
-            .widthIn(min = 340.dp, max = if (isWideLayout) 560.dp else 500.dp)
-            .padding(horizontal = 16.dp),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF,
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 4.dp)
+        } else {
+            Modifier
+                .widthIn(min = 340.dp, max = if (isWideLayout) 560.dp else 500.dp)
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Text(
                 text = stringResource(R.string.account_add_dialog_title),

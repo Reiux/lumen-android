@@ -15,9 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -220,14 +222,35 @@ class FolderWatcherManager(
                 return
             }
             mediaStoreRescanPending = false
-            mediaStoreScanJob = scope.launch {
-                do {
-                    synchronized(mediaStoreQueryLock) {
-                        mediaStoreRescanPending = false
+            lateinit var launchedJob: Job
+            launchedJob = scope.launch {
+                try {
+                    while (true) {
+                        synchronized(mediaStoreQueryLock) {
+                            mediaStoreRescanPending = false
+                        }
+                        runMediaStoreWatermarkScan()
+                        val shouldContinue = synchronized(mediaStoreQueryLock) {
+                            if (mediaStoreRescanPending) {
+                                true
+                            } else {
+                                if (mediaStoreScanJob === launchedJob) {
+                                    mediaStoreScanJob = null
+                                }
+                                false
+                            }
+                        }
+                        if (!shouldContinue) break
                     }
-                    runMediaStoreWatermarkScan()
-                } while (synchronized(mediaStoreQueryLock) { mediaStoreRescanPending })
+                } finally {
+                    synchronized(mediaStoreQueryLock) {
+                        if (mediaStoreScanJob === launchedJob) {
+                            mediaStoreScanJob = null
+                        }
+                    }
+                }
             }
+            mediaStoreScanJob = launchedJob
         }
     }
 
@@ -383,6 +406,7 @@ class FolderWatcherManager(
 
             val filesToSend = mutableListOf<File>()
             synchronized(pendingLock) {
+                if (!isActive) return@synchronized
                 val nowMs = System.currentTimeMillis()
                 val stillWriting = mutableListOf<File>()
                 var discarded = 0
@@ -407,10 +431,12 @@ class FolderWatcherManager(
                 }
             }
 
+            ensureActive()
             if (filesToSend.isNotEmpty()) {
                 LumenLogger.i(TAG) {
                     "Debounce complete: enqueued ${filesToSend.size} new media file(s) for auto-backup: ${filesToSend.map { it.name }}"
                 }
+                ensureActive()
                 onNewMediaDetected(filesToSend)
             } else {
                 LumenLogger.d(TAG) { "Debounce complete: 0 valid files to enqueue" }

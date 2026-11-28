@@ -7,9 +7,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,14 +19,17 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -69,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,6 +90,8 @@ import com.reiux.lumen.ui.components.ExpressiveExtendedFloatingActionButton
 import com.reiux.lumen.ui.components.ExpressiveFilterChip
 import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTextButton
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
 
@@ -161,268 +169,131 @@ fun AlbumsScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
-        },
-        floatingActionButton = {
-            ExpressiveExtendedFloatingActionButton(
-                onClick = { showAddSheet = true },
-                icon = { Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.albums_btn_add)) },
-                text = {
-                    AnimatedVisibility(
-                        visible = fabExpanded,
-                        enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
-                            expandHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()),
-                        exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
-                            shrinkHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
-                    ) {
-                        Text(stringResource(R.string.albums_btn_add), fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
         }
     ) { innerPadding ->
-        Box(
+        val foldPosture = LocalFoldPosture.current
+
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .wrapContentWidth(Alignment.CenterHorizontally)
-                    .widthIn(max = 760.dp)
-            ) {
-                // Account Filter Chips (if accounts.size > 1)
-                if (accounts.size > 1) {
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ExpressiveFilterChip(
-                            selected = selectedFilterEmail == "ALL",
-                            onClick = { selectedFilterEmail = "ALL" },
-                            label = {
-                                Text(
-                                    text = stringResource(R.string.albums_filter_all),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold
+            val isTabletop = foldPosture.isTabletop && maxHeight >= 520.dp
+
+            if (isTabletop) {
+                val topScrollState = rememberScrollState()
+                TabletopSplitLayout(
+                    modifier = Modifier.fillMaxSize(),
+                    topContent = {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .verticalScroll(topScrollState)
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                        ) {
+                            if (accounts.size > 1) {
+                                AlbumsFilterRow(
+                                    accounts = accounts,
+                                    selectedFilterEmail = selectedFilterEmail,
+                                    onSelectFilter = { selectedFilterEmail = it }
                                 )
                             }
-                        )
-                        accounts.forEach { acc ->
-                            ExpressiveFilterChip(
-                                selected = selectedFilterEmail == acc.email,
-                                onClick = { selectedFilterEmail = acc.email },
-                                label = {
-                                    Text(
-                                        text = acc.displayName ?: acc.email,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+
+                            if (filteredAlbums.isEmpty()) {
+                                AlbumsEmptyStateCard()
+                            } else {
+                                AlbumsSummaryCard(
+                                    albumCount = filteredAlbums.size,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    },
+                    bottomContent = {
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 760.dp)
+                                .fillMaxSize()
+                                .align(Alignment.TopCenter)
+                        ) {
+                            if (filteredAlbums.isNotEmpty()) {
+                                AlbumsListColumn(
+                                    listState = listState,
+                                    filteredAlbums = filteredAlbums,
+                                    accounts = accounts,
+                                    onRenameAlbum = { albumToRename = it },
+                                    onDeleteAlbum = { albumToDelete = it }
+                                )
+                            }
+
+                            AlbumsAddFab(
+                                fabExpanded = fabExpanded || filteredAlbums.isEmpty(),
+                                onClick = { showAddSheet = true },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                             )
                         }
                     }
-                }
-
-                if (filteredAlbums.isEmpty()) {
-                    // M3E Centered Empty State
-                    Column(
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Box(
                         modifier = Modifier
+                            .widthIn(max = 760.dp)
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(28.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.widthIn(max = 420.dp)
+                        Column(
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            Column(
-                                modifier = Modifier.padding(32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Surface(
-                                    shape = MaterialShapes.Gem.toShape(),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(64.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.PhotoLibrary,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(32.dp)
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    text = stringResource(R.string.albums_empty_title),
-                                    style = MaterialTheme.typography.titleMediumEmphasized,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Text(
-                                    text = stringResource(R.string.albums_empty_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
+                            // Account Filter Chips (if accounts.size > 1)
+                            if (accounts.size > 1) {
+                                AlbumsFilterRow(
+                                    accounts = accounts,
+                                    selectedFilterEmail = selectedFilterEmail,
+                                    onSelectFilter = { selectedFilterEmail = it }
                                 )
                             }
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        item { Spacer(modifier = Modifier.height(9.dp)) }
 
-                        itemsIndexed(
-                            items = filteredAlbums,
-                            key = { _, album -> "${album.accountEmail}:${album.mediaKey}:${album.title}" }
-                        ) { index, album ->
-                            var menuExpanded by remember { mutableStateOf(false) }
-
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .animateItem(),
-                                shape = groupedCardShape(groupPositionOf(index, filteredAlbums.size)),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh
-                            ) {
-                                Row(
+                            if (filteredAlbums.isEmpty()) {
+                                // M3E Centered Empty State
+                                Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.PhotoLibrary,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = album.title,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = album.getSubtitle(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    // Account Avatar or "No account" badge
-                                    if (album.accountEmail.isNullOrBlank()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(50),
-                                            color = MaterialTheme.colorScheme.errorContainer
-                                        ) {
-                                            Text(
-                                                text = stringResource(R.string.albums_no_account),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    } else if (accounts.size > 1) {
-                                        val acc = accounts.find { it.email.equals(album.accountEmail, ignoreCase = true) }
-                                        com.reiux.lumen.ui.components.AccountAvatar(account = acc, emailFallback = album.accountEmail, size = 28.dp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-
-                                    // Single Overflow Menu Button
-                                    Box {
-                                        ExpressiveIconButton(
-                                            onClick = { menuExpanded = true },
-                                            colors = IconButtonDefaults.iconButtonColors()
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.MoreVert,
-                                                contentDescription = stringResource(R.string.albums_options_desc),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = menuExpanded,
-                                            onDismissRequest = { menuExpanded = false },
-                                            shape = RoundedCornerShape(20.dp),
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                            tonalElevation = 6.dp
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.btn_rename)) },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Edit,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                },
-                                                onClick = {
-                                                    menuExpanded = false
-                                                    albumToRename = album
-                                                },
-                                                modifier = Modifier.height(48.dp)
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.DeleteOutline,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.error,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                },
-                                                onClick = {
-                                                    menuExpanded = false
-                                                    albumToDelete = album
-                                                },
-                                                modifier = Modifier.height(48.dp)
-                                            )
-                                        }
-                                    }
+                                    AlbumsEmptyStateCard()
                                 }
+                            } else {
+                                AlbumsListColumn(
+                                    listState = listState,
+                                    filteredAlbums = filteredAlbums,
+                                    accounts = accounts,
+                                    onRenameAlbum = { albumToRename = it },
+                                    onDeleteAlbum = { albumToDelete = it }
+                                )
                             }
                         }
 
-                        item { Spacer(modifier = Modifier.height(88.dp)) }
+                        AlbumsAddFab(
+                            fabExpanded = fabExpanded,
+                            onClick = { showAddSheet = true },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                        )
                     }
                 }
             }
@@ -572,6 +443,14 @@ fun AlbumsScreen(
             isValidKeyOrUrl && nicknameInput.isNotBlank() && !isDuplicateKey && !isDuplicateNickname
         }
 
+        val foldPosture = LocalFoldPosture.current
+        val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+        val tabletopHeightMod = if (foldPosture.isTabletop) {
+            Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+        } else {
+            Modifier
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showAddSheet = false },
             sheetState = sheetState,
@@ -582,6 +461,7 @@ fun AlbumsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(tabletopHeightMod)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -747,6 +627,336 @@ fun AlbumsScreen(
             com.reiux.lumen.ui.components.FindAlbumLinkHelpDialog(onDismiss = { showHelpDialog = false })
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AlbumsFilterRow(
+    accounts: List<GoogleAccount>,
+    selectedFilterEmail: String?,
+    onSelectFilter: (String) -> Unit
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ExpressiveFilterChip(
+            selected = selectedFilterEmail == "ALL",
+            onClick = { onSelectFilter("ALL") },
+            label = {
+                Text(
+                    text = stringResource(R.string.albums_filter_all),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        )
+        accounts.forEach { acc ->
+            ExpressiveFilterChip(
+                selected = selectedFilterEmail == acc.email,
+                onClick = { onSelectFilter(acc.email) },
+                label = {
+                    Text(
+                        text = acc.displayName ?: acc.email,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumsEmptyStateCard(
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.widthIn(max = 420.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Surface(
+                shape = MaterialShapes.Gem.toShape(),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.PhotoLibrary,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.albums_empty_title),
+                style = MaterialTheme.typography.titleMediumEmphasized,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+
+            Text(
+                text = stringResource(R.string.albums_empty_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumsSummaryCard(
+    albumCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Surface(
+                shape = MaterialShapes.Gem.toShape(),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.PhotoLibrary,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.albums_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.albums_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Text(
+                    text = albumCount.toString(),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumsListColumn(
+    listState: LazyListState,
+    filteredAlbums: List<GoogleAlbum>,
+    accounts: List<GoogleAccount>,
+    onRenameAlbum: (GoogleAlbum) -> Unit,
+    onDeleteAlbum: (GoogleAlbum) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(bottom = 88.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        item { Spacer(modifier = Modifier.height(9.dp)) }
+
+        itemsIndexed(
+            items = filteredAlbums,
+            key = { _, album -> "${album.accountEmail}:${album.mediaKey}:${album.title}" }
+        ) { index, album ->
+            var menuExpanded by remember { mutableStateOf(false) }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateItem(),
+                shape = groupedCardShape(groupPositionOf(index, filteredAlbums.size)),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoLibrary,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = album.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = album.getSubtitle(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Account Avatar or "No account" badge
+                    if (album.accountEmail.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Text(
+                                text = stringResource(R.string.albums_no_account),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    } else if (accounts.size > 1) {
+                        val acc = accounts.find { it.email.equals(album.accountEmail, ignoreCase = true) }
+                        com.reiux.lumen.ui.components.AccountAvatar(account = acc, emailFallback = album.accountEmail, size = 28.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+
+                    // Single Overflow Menu Button
+                    Box {
+                        ExpressiveIconButton(
+                            onClick = { menuExpanded = true },
+                            colors = IconButtonDefaults.iconButtonColors()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = stringResource(R.string.albums_options_desc),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            shape = RoundedCornerShape(20.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 6.dp
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.btn_rename)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Edit,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRenameAlbum(album)
+                                },
+                                modifier = Modifier.height(48.dp)
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteAlbum(album)
+                                },
+                                modifier = Modifier.height(48.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumsAddFab(
+    fabExpanded: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ExpressiveExtendedFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        icon = { Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.albums_btn_add)) },
+        text = {
+            AnimatedVisibility(
+                visible = fabExpanded,
+                enter = fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    expandHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()),
+                exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    shrinkHorizontally(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
+            ) {
+                Text(stringResource(R.string.albums_btn_add), fontWeight = FontWeight.SemiBold)
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    )
 }
 
 private fun extractKeyFromPastedUrl(input: String): String {

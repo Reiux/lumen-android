@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -61,13 +62,20 @@ fun ManualUploadDestinationDialog(
     val currentMonth = remember {
         SimpleDateFormat("MMM yyyy", Locale.US).format(Date())
     }
+    val foldPosture = LocalFoldPosture.current
 
     PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(min = 320.dp, max = 480.dp)
-            .padding(horizontal = 16.dp),
+        tabletopPlacement = TabletopDialogPlacement.TOP_HALF,
+        fillTabletopHalf = true,
+        modifier = if (foldPosture.isTabletop) {
+            Modifier.fillMaxWidth().fillMaxHeight()
+        } else {
+            Modifier
+                .widthIn(min = 320.dp, max = 480.dp)
+                .padding(horizontal = 16.dp)
+        },
         title = {
             Column {
                 val fileWord = if (itemCount == 1) stringResource(R.string.manual_upload_word_file) else stringResource(R.string.manual_upload_word_files)

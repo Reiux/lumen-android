@@ -75,9 +75,9 @@ object WhatsNewCatalog {
                 ),
                 WhatsNewItem(
                     id = "v134_adaptive_ui",
-                    title = "Tablet, Foldable & Landscape Polish",
-                    summary = "Better layouts on unfolded foldables, tablets, and short landscape screens with cutout and keyboard fixes.",
-                    detail = "Adjusted two-pane breakpoints so unfolded foldables have room to breathe, capped overly wide layouts on large tablets, added display cutout and keyboard insets across screens and dialogs, and preserved pending Share Sheet uploads when folding or rotating.",
+                    title = "Tablet, Foldable & Tabletop Polish",
+                    summary = "Hinge-aware Tabletop layouts across all screens and dialogs, plus better tablet and landscape sizing.",
+                    detail = "Added hinge-aware Tabletop mode across every screen (including a Folder Inspector in Backup Folders), kept bottom sheets capped below the crease, anchored sign-in and form dialogs to the upper half above the keyboard, fixed two-pane layouts on unfolded foldables and large tablets, added proper cutout and keyboard insets, and kept pending Share Sheet uploads intact when folding or rotating.",
                     icon = Icons.Rounded.Devices,
                     accent = WhatsNewAccent.SECONDARY
                 ),

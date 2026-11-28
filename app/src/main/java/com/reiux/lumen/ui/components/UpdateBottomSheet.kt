@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,12 +68,19 @@ fun UpdateBottomSheet(
         }
     )
     val context = LocalContext.current
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val tabletopHeightMod = if (foldPosture.isTabletop) {
+        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+    } else {
+        Modifier
+    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!isDownloading) onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         androidx.activity.compose.BackHandler(enabled = isDownloading) {
             // Block back press dismissal while an update download is in progress
@@ -81,6 +89,7 @@ fun UpdateBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(tabletopHeightMod)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp)
                 .padding(bottom = 24.dp)

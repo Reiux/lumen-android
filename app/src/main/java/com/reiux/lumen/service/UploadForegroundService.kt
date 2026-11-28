@@ -463,6 +463,8 @@ class UploadForegroundService : Service() {
 
             val livePillText = if (isPaused || conditionNotice != null) {
                 context.getString(com.reiux.lumen.R.string.notif_paused_chip)
+            } else if (isUploading && queue.size == 1 && filePercent >= 0) {
+                "$filePercent%"
             } else if (isUploading && batchPercentByCount >= 0) {
                 "$batchPercentByCount%"
             } else {

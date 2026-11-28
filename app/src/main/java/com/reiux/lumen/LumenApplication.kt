@@ -67,16 +67,20 @@ class LumenApplication : Application() {
         val appStartMillis = System.currentTimeMillis()
         appScope.launch {
             try {
-                File(cacheDir, "staging").deleteRecursively()
+                com.reiux.lumen.util.MediaFileReader.cleanupStaleStagingOnStartup(
+                    this@LumenApplication,
+                    appStartMillis - 5_000L
+                )
             } catch (_: Exception) {}
             try {
                 val updatesDir = File(cacheDir, "updates")
                 if (updatesDir.exists() && updatesDir.isDirectory) {
+                    val stalePartCutoff = appStartMillis - 5_000L
                     val twoHoursAgo = appStartMillis - java.util.concurrent.TimeUnit.HOURS.toMillis(2)
                     updatesDir.listFiles()?.forEach { file ->
                         try {
                             if (file.isFile && (
-                                    (file.name.endsWith(".part") && file.lastModified() < appStartMillis) ||
+                                    (file.name.endsWith(".part") && file.lastModified() < stalePartCutoff) ||
                                         (file.name.endsWith(".apk") && file.lastModified() < twoHoursAgo)
                                 )) {
                                 file.delete()

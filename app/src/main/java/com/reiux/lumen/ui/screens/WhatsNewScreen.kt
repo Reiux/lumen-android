@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,12 +59,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +84,8 @@ import com.reiux.lumen.ui.components.ExpressiveIconButton
 import com.reiux.lumen.ui.components.ExpressiveTextButton
 import com.reiux.lumen.ui.components.ExpressiveTonalButton
 import com.reiux.lumen.ui.components.GroupPosition
+import com.reiux.lumen.ui.components.LocalFoldPosture
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.animatedGroupedCardShape
 import com.reiux.lumen.ui.components.groupPositionOf
 import com.reiux.lumen.ui.components.groupedCardShape
@@ -98,10 +105,16 @@ fun WhatsNewScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val motionScheme = MaterialTheme.motionScheme
+    val foldPosture = LocalFoldPosture.current
     val hasUnread = WhatsNewCatalog.hasUnread(readItemIds)
     var menuExpanded by remember { mutableStateOf(false) }
-    var selectedItem by remember { mutableStateOf<Pair<WhatsNewRelease, WhatsNewItem>?>(null) }
+    var selectedItemId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedItem = remember(selectedItemId) {
+        val id = selectedItemId ?: return@remember null
+        WhatsNewCatalog.releases.firstNotNullOfOrNull { release ->
+            release.items.firstOrNull { it.id == id }?.let { release to it }
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -137,7 +150,7 @@ fun WhatsNewScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = stringResource(R.string.whats_new_title),
+                            contentDescription = stringResource(R.string.action_more_options),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -184,124 +197,119 @@ fun WhatsNewScreen(
                 }
             }
 
-            LazyColumn(
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .wrapContentWidth(Alignment.CenterHorizontally)
-                    .widthIn(max = 720.dp),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 28.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                item(key = "header") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.whats_new_title),
-                            style = MaterialTheme.typography.headlineLargeEmphasized,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.whats_new_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                WhatsNewCatalog.releases.forEachIndexed { releaseIndex, release ->
-                    val releaseHasUnread = release.items.any {
-                        WhatsNewCatalog.isItemUnread(it.id, readItemIds)
-                    }
-                    val showNewBadge = releaseIndex == 0 && releaseHasUnread
-
-                    item(key = "release_${release.version}") {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
+                if (foldPosture.isTabletop && maxHeight >= 520.dp) {
+                    TabletopSplitLayout(
+                        modifier = Modifier.fillMaxSize(),
+                        topContent = {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    .align(Alignment.Center)
+                                    .widthIn(max = 720.dp)
+                                    .fillMaxSize()
+                                    .padding(horizontal = 24.dp),
+                                contentAlignment = Alignment.CenterStart
                             ) {
-                                Text(
-                                    text = release.headerLabel,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-
-                                AnimatedVisibility(
-                                    visible = showNewBadge,
-                                    enter = fadeIn(motionScheme.fastEffectsSpec()) +
-                                        scaleIn(motionScheme.fastSpatialSpec()),
-                                    exit = fadeOut(motionScheme.fastEffectsSpec()) +
-                                        scaleOut(motionScheme.fastSpatialSpec())
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(100.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.whats_new_badge_new),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                release.items.forEachIndexed { index, item ->
-                                    WhatsNewItemRow(
-                                        item = item,
-                                        position = groupPositionOf(index, release.items.size),
-                                        isUnread = WhatsNewCatalog.isItemUnread(item.id, readItemIds),
-                                        onClick = {
-                                            onMarkItemRead(item.id)
-                                            selectedItem = release to item
+                                    WhatsNewCatalog.releases.firstOrNull()?.let { latestRelease ->
+                                        Surface(
+                                            shape = RoundedCornerShape(100.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer
+                                        ) {
+                                            Text(
+                                                text = latestRelease.headerLabel,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                            )
                                         }
+                                    }
+                                    Text(
+                                        text = stringResource(R.string.whats_new_title),
+                                        style = MaterialTheme.typography.headlineLargeEmphasized,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.whats_new_subtitle),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
+                        },
+                        bottomContent = {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .widthIn(max = 720.dp)
+                                    .fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    end = 16.dp,
+                                    top = 8.dp,
+                                    bottom = 28.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                whatsNewReleaseAndFooterItems(
+                                    readItemIds = readItemIds,
+                                    context = context,
+                                    onItemClick = { itemId ->
+                                        onMarkItemRead(itemId)
+                                        selectedItemId = itemId
+                                    }
+                                )
+                            }
                         }
-                    }
-                }
-
-                item(key = "footer") {
-                    ExpressiveTonalButton(
-                        onClick = { openReleasesUrl(context) },
+                    )
+                } else {
+                    LazyColumn(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
+                            .fillMaxSize()
+                            .wrapContentWidth(Alignment.CenterHorizontally)
+                            .widthIn(max = 720.dp),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 8.dp,
+                            bottom = 28.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.whats_new_view_github),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
+                        item(key = "header") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.whats_new_title),
+                                    style = MaterialTheme.typography.headlineLargeEmphasized,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = stringResource(R.string.whats_new_subtitle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        whatsNewReleaseAndFooterItems(
+                            readItemIds = readItemIds,
+                            context = context,
+                            onItemClick = { itemId ->
+                                onMarkItemRead(itemId)
+                                selectedItemId = itemId
+                            }
                         )
                     }
                 }
@@ -313,8 +321,100 @@ fun WhatsNewScreen(
         WhatsNewDetailBottomSheet(
             release = release,
             item = item,
-            onDismiss = { selectedItem = null }
+            onDismiss = { selectedItemId = null }
         )
+    }
+}
+
+private fun LazyListScope.whatsNewReleaseAndFooterItems(
+    readItemIds: Set<String>,
+    context: Context,
+    onItemClick: (String) -> Unit
+) {
+    WhatsNewCatalog.releases.forEachIndexed { releaseIndex, release ->
+        val releaseHasUnread = release.items.any {
+            WhatsNewCatalog.isItemUnread(it.id, readItemIds)
+        }
+        val showNewBadge = releaseIndex == 0 && releaseHasUnread
+
+        item(key = "release_${release.version}") {
+            val motionScheme = MaterialTheme.motionScheme
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = release.headerLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    AnimatedVisibility(
+                        visible = showNewBadge,
+                        enter = fadeIn(motionScheme.fastEffectsSpec()) +
+                            scaleIn(motionScheme.fastSpatialSpec()),
+                        exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                            scaleOut(motionScheme.fastSpatialSpec())
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(100.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = stringResource(R.string.whats_new_badge_new),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    release.items.forEachIndexed { index, item ->
+                        WhatsNewItemRow(
+                            item = item,
+                            position = groupPositionOf(index, release.items.size),
+                            isUnread = WhatsNewCatalog.isItemUnread(item.id, readItemIds),
+                            onClick = { onItemClick(item.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    item(key = "footer") {
+        ExpressiveTonalButton(
+            onClick = { openReleasesUrl(context) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.whats_new_view_github),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -421,6 +521,8 @@ private fun WhatsNewDetailBottomSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     val (badgeContainerColor, badgeContentColor) = whatsNewAccentColors(item.accent)
 
     ModalBottomSheet(
@@ -433,6 +535,13 @@ private fun WhatsNewDetailBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (foldPosture.isTabletop) {
+                        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+                    } else {
+                        Modifier
+                    }
+                )
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(top = 8.dp, bottom = 28.dp),
@@ -515,6 +624,8 @@ fun PostUpdateWhatsNewSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val foldPosture = LocalFoldPosture.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -526,6 +637,13 @@ fun PostUpdateWhatsNewSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (foldPosture.isTabletop) {
+                        Modifier.heightIn(max = foldPosture.tabletopBottomSheetMaxHeight(screenHeightDp))
+                    } else {
+                        Modifier
+                    }
+                )
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(top = 8.dp, bottom = 24.dp),

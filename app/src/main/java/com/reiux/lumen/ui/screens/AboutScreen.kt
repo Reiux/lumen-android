@@ -6,9 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -84,7 +82,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.reiux.lumen.R
 import com.reiux.lumen.ui.components.DynamicLumenIcon
 import com.reiux.lumen.ui.components.ExpressiveAlertDialog
@@ -95,6 +92,7 @@ import com.reiux.lumen.ui.components.ExpressiveSwitch
 import com.reiux.lumen.ui.components.GroupPosition
 import com.reiux.lumen.ui.components.LogViewerDialog
 import com.reiux.lumen.ui.components.PlayfulParticleBurstOverlay
+import com.reiux.lumen.ui.components.TabletopSplitLayout
 import com.reiux.lumen.ui.components.animatedGroupedCardShape
 import com.reiux.lumen.ui.components.groupedCardShape
 import com.reiux.lumen.ui.components.rememberExpressivePressed
@@ -205,6 +203,9 @@ fun AboutScreen(
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val isWideLayout = maxWidth >= 700.dp
+            val foldPosture = com.reiux.lumen.ui.components.LocalFoldPosture.current
+            val isTallViewport = maxHeight >= 560.dp
+            val isTabletopMode = foldPosture.isTabletop && maxHeight >= 520.dp
 
             Column(
                 modifier = Modifier
@@ -216,7 +217,7 @@ fun AboutScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .wrapContentWidth(Alignment.CenterHorizontally)
-                        .widthIn(max = if (isWideLayout) 1080.dp else 720.dp)
+                        .widthIn(max = if (isWideLayout && !isTabletopMode) 1080.dp else 720.dp)
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -230,45 +231,118 @@ fun AboutScreen(
                     }
                 }
 
-                if (isWideLayout) {
-                    // Tablet / Landscape 2-Pane Split
+                if (isTabletopMode) {
+                    // Tabletop Mode: top angled display holds emblem, bottom flat touch deck holds actions
+                    val tabletopTopScroll = rememberScrollState()
+                    val tabletopBottomScroll = rememberScrollState()
+
+                    TabletopSplitLayout(
+                        modifier = Modifier.fillMaxSize(),
+                        topContent = {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .fillMaxWidth()
+                                    .verticalScroll(tabletopTopScroll)
+                                    .padding(horizontal = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                BrandHeaderSection(
+                                    appVersionName = appVersionName,
+                                    appVersionCode = appVersionCode,
+                                    developerModeUnlocked = developerModeUnlocked,
+                                    unlockedPrismTheme = unlockedPrismTheme,
+                                    activeSeason = activeSeason,
+                                    onUnlockMatrixTheme = onUnlockMatrixTheme,
+                                    onShowMatrixDialog = { showMatrixDialog = true }
+                                )
+                            }
+                        },
+                        bottomContent = {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .widthIn(max = 720.dp)
+                                    .fillMaxWidth()
+                                    .verticalScroll(tabletopBottomScroll)
+                                    .padding(horizontal = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                AboutLinksGroup(
+                                    context = context,
+                                    isCheckingUpdates = isCheckingUpdates,
+                                    hasUnreadWhatsNew = hasUnreadWhatsNew,
+                                    onOpenWhatsNew = onOpenWhatsNew,
+                                    onOpenLicenses = {
+                                        LumenLogger.i("AboutUI") { "Opened Open Source Licenses dialog" }
+                                        showLicensesDialog = true
+                                    },
+                                    onCheckForUpdates = handleCheckForUpdates
+                                )
+
+                                CreditsAndDisclaimerSection(context)
+
+                                if (developerModeUnlocked) {
+                                    DebugToolsGroup(
+                                        context = context,
+                                        saveLogsEnabled = saveLogsEnabled,
+                                        onToggleSaveLogs = onToggleSaveLogs,
+                                        onOpenLiveLogs = handleOpenLiveLogs,
+                                        onForceUpdateDialog = onForceUpdateDialog
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+                            }
+                        }
+                    )
+                } else if (isWideLayout && !foldPosture.isTabletop) {
+                    // Tablet / Unfolded Landscape 2-Pane Split
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
                             .wrapContentWidth(Alignment.CenterHorizontally)
                             .widthIn(max = 1080.dp)
                             .padding(horizontal = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        horizontalArrangement = Arrangement.spacedBy(if (isTallViewport) 32.dp else 24.dp)
                     ) {
                         // Left Pane: Brand Aperture, Title & Secret Developer Unlock
                         val leftScrollState = rememberScrollState()
-                        Column(
+                        Box(
                             modifier = Modifier
-                                .weight(0.44f)
-                                .fillMaxHeight()
-                                .verticalScroll(leftScrollState),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .weight(if (isTallViewport) 1f else 0.44f)
+                                .fillMaxHeight(),
+                            contentAlignment = if (isTallViewport) Alignment.Center else Alignment.TopCenter
                         ) {
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(leftScrollState),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Spacer(modifier = Modifier.height(16.dp))
 
-                            BrandHeaderSection(
-                                appVersionName = appVersionName,
-                                appVersionCode = appVersionCode,
-                                developerModeUnlocked = developerModeUnlocked,
-                                unlockedPrismTheme = unlockedPrismTheme,
-                                activeSeason = activeSeason,
-                                onUnlockMatrixTheme = onUnlockMatrixTheme,
-                                onShowMatrixDialog = { showMatrixDialog = true }
-                            )
+                                BrandHeaderSection(
+                                    appVersionName = appVersionName,
+                                    appVersionCode = appVersionCode,
+                                    developerModeUnlocked = developerModeUnlocked,
+                                    unlockedPrismTheme = unlockedPrismTheme,
+                                    activeSeason = activeSeason,
+                                    onUnlockMatrixTheme = onUnlockMatrixTheme,
+                                    onShowMatrixDialog = { showMatrixDialog = true }
+                                )
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
                         }
 
                         // Right Pane: About Actions & Debug Tools
                         val rightScrollState = rememberScrollState()
                         Column(
                             modifier = Modifier
-                                .weight(0.56f)
+                                .weight(if (isTallViewport) 1f else 0.56f)
                                 .fillMaxHeight()
                                 .verticalScroll(rightScrollState),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -303,7 +377,7 @@ fun AboutScreen(
                         }
                     }
                 } else {
-                    // Portrait / Unfolded Single Column Layout
+                    // Portrait / Single Column Layout
                     val scrollState = rememberScrollState()
                     Column(
                         modifier = Modifier
@@ -556,26 +630,27 @@ private fun BrandHeaderSection(
     var isHolding by remember { mutableStateOf(false) }
 
     val wordmarkPunchScale = remember { Animatable(1.0f) }
+    val fastSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
     val defaultSpatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
 
     val onBrandTap: () -> Unit = {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         manualRotation += 360f // Spin logo 360 clockwise!
         coroutineScope.launch {
-            wordmarkPunchScale.animateTo(1.26f, defaultSpatialSpec)
-            wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+            wordmarkPunchScale.animateTo(1.26f, fastSpatialSpec)
+            wordmarkPunchScale.animateTo(1.0f, defaultSpatialSpec)
         }
     }
 
     LaunchedEffect(Unit) {
         delay(220L) // Wait for screen slide-in to finish before springing in
-        wordmarkPunchScale.animateTo(1.26f, defaultSpatialSpec)
-        wordmarkPunchScale.animateTo(1.0f, spring(dampingRatio = 0.58f, stiffness = 240f))
+        wordmarkPunchScale.animateTo(1.26f, fastSpatialSpec)
+        wordmarkPunchScale.animateTo(1.0f, defaultSpatialSpec)
     }
 
     val animatedRotation by animateFloatAsState(
         targetValue = manualRotation + (if (developerModeUnlocked) 360f else 0f),
-        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        animationSpec = defaultSpatialSpec,
         label = "logoDevRotation"
     )
 
@@ -639,7 +714,6 @@ private fun BrandHeaderSection(
             text = "Lumen",
             style = MaterialTheme.typography.displaySmallEmphasized,
             fontWeight = dynamicWeight,
-            letterSpacing = (-0.5).sp,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .graphicsLayer {
@@ -851,7 +925,8 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
         title = stringResource(R.string.about_licenses_title),
         tone = ExpressiveDialogTone.SECONDARY,
         confirmText = stringResource(R.string.btn_close),
-        onConfirm = onDismiss
+        onConfirm = onDismiss,
+        fillTabletopHalf = true
     ) {
         licenses.forEach { (lib, license) ->
             Column {
